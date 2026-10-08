@@ -208,7 +208,6 @@ pub fn clear_session_state() {
     }
     assign(&START_HOLD_FRAMES, 0);
     assign(&START_RELEASE_FRAMES, 0);
-    crate::trio_probe::clear_input_state();
 }
 
 /// Observe ownership without consuming a request needed by its normal handler.
