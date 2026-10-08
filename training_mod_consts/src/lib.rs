@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod trio;
 pub use trio::*;
-pub mod cpu_roster;
-pub use cpu_roster::*;
+pub mod menu_json;
 pub mod ordered_roster;
 pub use ordered_roster::*;
 
@@ -106,64 +105,58 @@ pub struct TrainingModpackMenu {
     pub lobby_practice: OnOff,
     #[serde(default = "lobby_practice_default")]
     pub trio_practice: OnOff,
-    #[serde(default = "trio_first_default")]
-    pub trio_fighter_1: TrioFighter,
-    #[serde(default = "trio_second_default")]
-    pub trio_fighter_2: TrioFighter,
-    #[serde(default = "trio_third_default")]
-    pub trio_fighter_3: TrioFighter,
     #[serde(default = "cpu_character_default")]
     pub cpu_character: TrioFighter,
-    #[serde(default)]
-    pub cpu_roster_size: CpuRosterSize,
-    #[serde(default = "cpu_roster_1_default")]
-    pub cpu_roster_1: TrioFighter,
-    #[serde(default = "cpu_roster_2_default")]
-    pub cpu_roster_2: TrioFighter,
-    #[serde(default = "cpu_roster_3_default")]
-    pub cpu_roster_3: TrioFighter,
-    #[serde(default = "cpu_roster_4_default")]
-    pub cpu_roster_4: TrioFighter,
-    #[serde(default = "cpu_roster_5_default")]
-    pub cpu_roster_5: TrioFighter,
-    #[serde(default = "cpu_roster_6_default")]
-    pub cpu_roster_6: TrioFighter,
-    #[serde(default = "cpu_roster_7_default")]
-    pub cpu_roster_7: TrioFighter,
-    #[serde(default = "cpu_roster_8_default")]
-    pub cpu_roster_8: TrioFighter,
     #[serde(default = "cpu_cycle_default")]
     pub cpu_cycle: ButtonConfig,
     #[serde(default = "player_character_default")]
     pub player_character: TrioFighter,
-    #[serde(default = "player_roster_size_default")]
-    pub player_roster_size: CpuRosterSize,
-    #[serde(default = "player_roster_4_default")]
-    pub player_roster_4: TrioFighter,
-    #[serde(default = "player_roster_5_default")]
-    pub player_roster_5: TrioFighter,
-    #[serde(default = "player_roster_6_default")]
-    pub player_roster_6: TrioFighter,
-    #[serde(default = "player_roster_7_default")]
-    pub player_roster_7: TrioFighter,
-    #[serde(default = "player_roster_8_default")]
-    pub player_roster_8: TrioFighter,
     #[serde(default = "player_cycle_default")]
     pub player_cycle: ButtonConfig,
-    #[serde(default)]
-    pub player_roster: Option<OrderedFighterRoster>,
-    #[serde(default)]
-    pub cpu_roster: Option<OrderedFighterRoster>,
+    // Always present after `menu_json::deserialize_menu`, which imports the
+    // retired fixed-slot keys of older files.
+    pub player_roster: OrderedFighterRoster,
+    pub cpu_roster: OrderedFighterRoster,
 }
 
 fn lobby_practice_default() -> OnOff {
     OnOff::OFF
 }
 
+pub const DEFAULT_CPU_CYCLE: ButtonConfig = ButtonConfig {
+    ZL: 1,
+    DPAD_LEFT: 1,
+    ..ButtonConfig::empty()
+};
+
+pub const DEFAULT_PLAYER_CYCLE: ButtonConfig = ButtonConfig {
+    ZL: 1,
+    DPAD_RIGHT: 1,
+    ..ButtonConfig::empty()
+};
+
+fn cpu_character_default() -> TrioFighter {
+    TrioFighter::PIKACHU
+}
+
+fn cpu_cycle_default() -> ButtonConfig {
+    DEFAULT_CPU_CYCLE
+}
+
+fn player_character_default() -> TrioFighter {
+    TrioFighter::GAMEWATCH
+}
+
+fn player_cycle_default() -> ButtonConfig {
+    DEFAULT_PLAYER_CYCLE
+}
+
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MenuJsonStruct {
+    #[serde(deserialize_with = "menu_json::deserialize_menu")]
     pub menu: TrainingModpackMenu,
+    #[serde(deserialize_with = "menu_json::deserialize_menu")]
     pub defaults_menu: TrainingModpackMenu,
 }
 
@@ -268,30 +261,12 @@ pub static BASE_MENU: TrainingModpackMenu = TrainingModpackMenu {
     lra_reset: OnOff::ON,
     lobby_practice: OnOff::OFF,
     trio_practice: OnOff::OFF,
-    trio_fighter_1: TrioFighter::GAMEWATCH,
-    trio_fighter_2: TrioFighter::PALUTENA,
-    trio_fighter_3: TrioFighter::PIKACHU,
     cpu_character: TrioFighter::PIKACHU,
-    cpu_roster_size: CpuRosterSize::Four,
-    cpu_roster_1: TrioFighter::PIKACHU,
-    cpu_roster_2: TrioFighter::KIRBY,
-    cpu_roster_3: TrioFighter::BOWSER,
-    cpu_roster_4: TrioFighter::BAYONETTA,
-    cpu_roster_5: TrioFighter::MARIO,
-    cpu_roster_6: TrioFighter::LUCINA,
-    cpu_roster_7: TrioFighter::PALUTENA,
-    cpu_roster_8: TrioFighter::GAMEWATCH,
     cpu_cycle: DEFAULT_CPU_CYCLE,
     player_character: TrioFighter::GAMEWATCH,
-    player_roster_size: CpuRosterSize::Three,
-    player_roster_4: TrioFighter::KIRBY,
-    player_roster_5: TrioFighter::BOWSER,
-    player_roster_6: TrioFighter::BAYONETTA,
-    player_roster_7: TrioFighter::MARIO,
-    player_roster_8: TrioFighter::LUCINA,
     player_cycle: DEFAULT_PLAYER_CYCLE,
-    player_roster: Some(DEFAULT_PLAYER_ROSTER),
-    cpu_roster: Some(DEFAULT_CPU_ROSTER),
+    player_roster: DEFAULT_PLAYER_ROSTER,
+    cpu_roster: DEFAULT_CPU_ROSTER,
 };
 
 pub static DEFAULTS_MENU: RwLock<TrainingModpackMenu> = RwLock::new(BASE_MENU);

@@ -3,7 +3,7 @@ use training_mod_tui::{
     StatefulTable, SubMenu, SubMenuType, Toggle, NX_SUBMENU_COLUMNS, NX_SUBMENU_ROWS,
 };
 
-use crate::{trio::CHOICES, TrainingModpackMenu, TrioFighter};
+use crate::{trio::CHOICES, TrioFighter};
 
 /// Catalog positions stay fixed; nonzero ranks represent the user's cycle order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,38 +141,6 @@ pub const DEFAULT_CPU_ROSTER: OrderedFighterRoster = match OrderedFighterRoster:
     None => unreachable!(),
 };
 
-/// Resolve old numbered settings once, preserving custom legacy selection order.
-pub fn normalize_rosters(menu: &mut TrainingModpackMenu) {
-    if menu.player_roster.is_none() {
-        let legacy = [
-            menu.trio_fighter_1,
-            menu.trio_fighter_2,
-            menu.trio_fighter_3,
-            menu.player_roster_4,
-            menu.player_roster_5,
-            menu.player_roster_6,
-            menu.player_roster_7,
-            menu.player_roster_8,
-        ];
-        menu.player_roster =
-            OrderedFighterRoster::from_fighters(&legacy[..menu.player_roster_size.count()]);
-    }
-    if menu.cpu_roster.is_none() {
-        let legacy = [
-            menu.cpu_roster_1,
-            menu.cpu_roster_2,
-            menu.cpu_roster_3,
-            menu.cpu_roster_4,
-            menu.cpu_roster_5,
-            menu.cpu_roster_6,
-            menu.cpu_roster_7,
-            menu.cpu_roster_8,
-        ];
-        menu.cpu_roster =
-            OrderedFighterRoster::from_fighters(&legacy[..menu.cpu_roster_size.count()]);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,50 +219,6 @@ mod tests {
             choose(&mut picker, *fighter);
         }
         assert_eq!(read_picker(&picker).fighters(), reversed);
-    }
-
-    #[test]
-    fn old_custom_slots_normalize_once_in_legacy_order() {
-        let mut original = crate::BASE_MENU;
-        original.trio_fighter_1 = TrioFighter::BOWSER;
-        original.trio_fighter_2 = TrioFighter::KIRBY;
-        original.trio_fighter_3 = TrioFighter::BAYONETTA;
-        original.cpu_roster_1 = TrioFighter::MARIO;
-        original.cpu_roster_2 = TrioFighter::PIKACHU;
-        original.cpu_roster_3 = TrioFighter::MARIO;
-        original.cpu_roster_4 = TrioFighter::KIRBY;
-        let mut json = serde_json::to_value(original).unwrap();
-        json.as_object_mut().unwrap().remove("player_roster");
-        json.as_object_mut().unwrap().remove("cpu_roster");
-        let mut old: TrainingModpackMenu = serde_json::from_value(json).unwrap();
-        assert!(old.player_roster.is_none() && old.cpu_roster.is_none());
-        normalize_rosters(&mut old);
-        assert_eq!(
-            old.player_roster.unwrap().fighters(),
-            vec![
-                TrioFighter::BOWSER,
-                TrioFighter::KIRBY,
-                TrioFighter::BAYONETTA
-            ]
-        );
-        assert_eq!(
-            old.cpu_roster.unwrap().fighters(),
-            vec![TrioFighter::MARIO, TrioFighter::PIKACHU, TrioFighter::KIRBY]
-        );
-        old.trio_fighter_1 = TrioFighter::MARIO;
-        normalize_rosters(&mut old);
-        assert_eq!(
-            old.player_roster.unwrap().fighters()[0],
-            TrioFighter::BOWSER
-        );
-
-        let mut app = unsafe { crate::create_app() };
-        app.update_all_from_json(&serde_json::to_string(&old).unwrap());
-        let committed: TrainingModpackMenu =
-            serde_json::from_str(&app.current_settings_to_json()).unwrap();
-        assert_eq!(committed.trio_fighter_2, TrioFighter::KIRBY);
-        assert_eq!(committed.player_roster, old.player_roster);
-        assert_eq!(committed.cpu_roster, old.cpu_roster);
     }
 
     #[test]
