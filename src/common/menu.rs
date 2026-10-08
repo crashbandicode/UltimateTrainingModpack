@@ -87,9 +87,6 @@ pub fn set_menu_from_json(message: &str) {
         assign(&DEFAULTS_MENU, message_json.defaults_menu);
         filesystem::write_json(MENU_OPTIONS_PATH, &message_json);
         crate::training::lobby::settings_changed();
-        if cfg!(feature = "trio-probe") {
-            crate::trio_probe::settings_changed();
-        }
         crate::character_roster::settings_changed(&previous);
     } else {
         skyline::error::show_error(

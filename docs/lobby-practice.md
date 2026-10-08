@@ -1,6 +1,6 @@
 # Lobby Practice and shared character rosters
 
-This independent private fork targets Smash Ultimate 13.0.5. It uses the native asynchronous fighter loader to replace one existing practice entry per role. It adds no CSS slots or custom fighter IDs. P1 and CPU use the same mechanism with separate settings. Physical Switch validation remains pending.
+This independent experimental fork targets Smash Ultimate 13.0.5. It uses the native asynchronous fighter loader to replace one existing practice entry per role. It adds no CSS slots or custom fighter IDs. P1 and CPU use the same mechanism with separate settings. Physical Switch validation remains pending.
 
 ## Configure and swap characters
 
@@ -56,3 +56,7 @@ Candidate29w adds the waiting CPU icon correction. See the versioned handoff's a
 The native Training-menu object is no longer cached for later HUD access. Version-checked hooks copy the game's combo-display setting into an atomic boolean at the native read sites; HUD drawing consumes only that scalar. The stale-moves setting write now uses the game's byte width. This removes an inherited lifetime hazard without claiming it caused any particular earlier crash. The rest of the fighter/module/scene lifetime assumptions still require physical Switch testing.
 
 The corrected separate G&W plugin is v0.1.1-experimental. Its earlier 0.1.0 binary has a known hardware SVC-clobber defect and must not be deployed. See the separate plugin's validation notes; the corrected release still needs physical confirmation.
+
+## Source cleanup
+
+The superseded lobby/trio investigation plugins remain in commit abd6ca9 and the local research archive. The normal NRO retains the five entry lifecycle and portrait hooks it needs in character_lifecycle.rs, along with persistent crash diagnostics. Scene, entry identity, destruction, ABI/version and conflicting-action checks remain in place.
