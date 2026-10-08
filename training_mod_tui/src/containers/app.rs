@@ -94,14 +94,12 @@ impl<'a> App<'a> {
     }
 
     pub fn update_all_from_json(&mut self, json: &str) {
-        let all_settings: HashMap<String, Option<Vec<u8>>> =
+        let all_settings: HashMap<String, Vec<u8>> =
             serde_json::from_str(json).expect("Could not parse the json!");
-        // Preserve settings without visible controls, including legacy roster fields.
-        self.serialized_settings = json.to_owned();
         for tab in self.tabs.iter_mut() {
             for submenu_opt in tab.submenus.iter_mut() {
                 if let Some(submenu) = submenu_opt {
-                    if let Some(Some(val)) = all_settings.get(submenu.id) {
+                    if let Some(val) = all_settings.get(submenu.id) {
                         submenu.update_from_vec(val.clone());
                     }
                 }
@@ -112,9 +110,9 @@ impl<'a> App<'a> {
 
     #[allow(unused_labels)]
     pub fn update_one_from_json(&mut self, json: &str, submenu_id: &str) {
-        let all_settings: HashMap<String, Option<Vec<u8>>> =
+        let all_settings: HashMap<String, Vec<u8>> =
             serde_json::from_str(json).expect("Could not parse the json!");
-        if let Some(Some(val)) = all_settings.get(submenu_id) {
+        if let Some(val) = all_settings.get(submenu_id) {
             // No need to iterate through all the submenus if the id doesn't exist in the hashmap
             'tabs_scope: for tab in self.tabs.iter_mut() {
                 'submenus_scope: for submenu_opt in tab.submenus.iter_mut() {
@@ -173,26 +171,12 @@ impl<'a> Serialize for App<'a> {
     {
         // Serializes as a mapping between submenu titles and values
         // Need to iterate through tabs to avoid making a list of mappings
-        let previous: HashMap<String, serde_json::Value> =
-            serde_json::from_str(&self.serialized_settings).unwrap_or_default();
-        let hidden: Vec<_> = previous
-            .iter()
-            .filter(|(id, _)| {
-                !self
-                    .tabs
-                    .iter()
-                    .any(|tab| tab.submenus.iter().any(|submenu| submenu.id == id.as_str()))
-            })
-            .collect();
         let len: usize = self.tabs.iter().map(|tab| tab.len()).sum();
-        let mut map = serializer.serialize_map(Some(len + hidden.len()))?;
+        let mut map = serializer.serialize_map(Some(len))?;
         for tab in self.tabs.iter() {
             for submenu in tab.submenus.iter() {
                 map.serialize_entry(submenu.id, submenu)?;
             }
-        }
-        for (id, value) in hidden {
-            map.serialize_entry(id, value)?;
         }
         map.end()
     }
