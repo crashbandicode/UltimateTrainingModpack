@@ -16,6 +16,14 @@ static BUFF_REMAINING_CPU: RwLock<usize> = RwLock::new(0);
 static IS_BUFFING_PLAYER: RwLock<bool> = RwLock::new(false);
 static IS_BUFFING_CPU: RwLock<bool> = RwLock::new(false);
 
+pub fn clear_session_state() {
+    assign(&IS_BUFFING_PLAYER, false);
+    assign(&IS_BUFFING_CPU, false);
+    assign(&BUFF_REMAINING_PLAYER, 0);
+    assign(&BUFF_REMAINING_CPU, 0);
+    frame_counter::full_reset(*BUFF_DELAY_COUNTER);
+}
+
 static BUFF_DELAY_COUNTER: LazyLock<usize> =
     LazyLock::new(|| frame_counter::register_counter(frame_counter::FrameCounterType::InGame));
 

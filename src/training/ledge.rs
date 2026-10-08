@@ -46,7 +46,8 @@ fn roll_ledge_case() {
     if *ledge_case_lock != LedgeOption::empty() {
         return;
     }
-    *ledge_case_lock = read(&MENU).ledge_state.get_random();
+    *ledge_case_lock =
+        crate::training::lobby::available_ledge_options(read(&MENU).ledge_state).get_random();
 }
 
 fn get_ledge_option() -> Option<Action> {
@@ -102,6 +103,9 @@ pub unsafe fn force_option(module_accessor: &mut app::BattleObjectModuleAccessor
     let current_frame = MotionModule::frame(module_accessor) as i32;
     let ledge_delay = read(&LEDGE_DELAY);
     let ledge_case = read(&LEDGE_CASE);
+    if ledge_case == LedgeOption::empty() {
+        return;
+    }
     // Allow this because sometimes we want to make sure our NNSDK doesn't have
     // an erroneous definition
     #[allow(clippy::unnecessary_cast)]
@@ -180,6 +184,11 @@ pub unsafe fn is_enable_transition_term(
     // Disallow the default cliff-climb if we are waiting or we didn't get up during a recording
     let ledge_case = read(&LEDGE_CASE);
     let ledge_delay = read(&LEDGE_DELAY);
+    if crate::training::lobby::is_waiting_scene()
+        && (ledge_case == LedgeOption::empty() || ledge_case.is_playback())
+    {
+        return None;
+    }
     if term == *FIGHTER_STATUS_TRANSITION_TERM_ID_CONT_CLIFF_CLIMB
         && ((ledge_case == LedgeOption::WAIT
             || frame_counter::get_frame_count(*LEDGE_DELAY_COUNTER) < ledge_delay)

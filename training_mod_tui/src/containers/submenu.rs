@@ -19,7 +19,7 @@ impl<'a> Serialize for SubMenu<'a> {
         S: Serializer,
     {
         match self.submenu_type {
-            SubMenuType::ToggleMultiple | SubMenuType::ToggleSingle => {
+            SubMenuType::ToggleMultiple | SubMenuType::ToggleSingle | SubMenuType::Ordered => {
                 self.toggles.serialize(serializer)
             }
             SubMenuType::Slider => self.slider.serialize(serializer),
@@ -39,6 +39,7 @@ impl<'a> InputControl for SubMenu<'a> {
                 self.selected_toggle().increment();
             }
             SubMenuType::ToggleMultiple => self.selected_toggle().increment(),
+            SubMenuType::Ordered => self.toggle_ordered(),
             SubMenuType::Slider => {
                 let slider = self.slider.as_mut().expect("No slider selected!");
                 slider.select_deselect();
@@ -49,6 +50,7 @@ impl<'a> InputControl for SubMenu<'a> {
         match self.submenu_type {
             SubMenuType::ToggleSingle => {}
             SubMenuType::ToggleMultiple => {}
+            SubMenuType::Ordered => {}
             SubMenuType::Slider => {
                 let slider = self.slider.as_mut().expect("No slider selected!");
                 if slider.is_handle_selected() {
@@ -73,6 +75,7 @@ impl<'a> InputControl for SubMenu<'a> {
         match self.submenu_type {
             SubMenuType::ToggleSingle => self.toggles.prev_row_checked(),
             SubMenuType::ToggleMultiple => self.toggles.prev_row_checked(),
+            SubMenuType::Ordered => self.toggles.prev_row_checked(),
             SubMenuType::Slider => {
                 let slider = self.slider.as_mut().expect("No slider selected!");
                 if slider.is_handle_selected() {
@@ -85,6 +88,7 @@ impl<'a> InputControl for SubMenu<'a> {
         match self.submenu_type {
             SubMenuType::ToggleSingle => self.toggles.next_row_checked(),
             SubMenuType::ToggleMultiple => self.toggles.next_row_checked(),
+            SubMenuType::Ordered => self.toggles.next_row_checked(),
             SubMenuType::Slider => {
                 let slider = self.slider.as_mut().expect("No slider selected!");
                 if slider.is_handle_selected() {
@@ -97,6 +101,7 @@ impl<'a> InputControl for SubMenu<'a> {
         match self.submenu_type {
             SubMenuType::ToggleSingle => self.toggles.prev_col_checked(),
             SubMenuType::ToggleMultiple => self.toggles.prev_col_checked(),
+            SubMenuType::Ordered => self.toggles.prev_col_checked(),
             SubMenuType::Slider => {
                 let slider = self.slider.as_mut().expect("No slider selected!");
                 if slider.is_handle_selected() {
@@ -111,6 +116,7 @@ impl<'a> InputControl for SubMenu<'a> {
         match self.submenu_type {
             SubMenuType::ToggleSingle => self.toggles.next_col_checked(),
             SubMenuType::ToggleMultiple => self.toggles.next_col_checked(),
+            SubMenuType::Ordered => self.toggles.next_col_checked(),
             SubMenuType::Slider => {
                 let slider = self.slider.as_mut().expect("No slider selected!");
                 if slider.is_handle_selected() {
@@ -129,13 +135,48 @@ impl<'a> InputControl for SubMenu<'a> {
 }
 
 impl<'a> SubMenu<'a> {
+    fn toggle_ordered(&mut self) {
+        let selected = self.toggles.state.selected_row().unwrap_or(0) * self.toggles.cols
+            + self.toggles.state.selected_col().unwrap_or(0);
+        if selected == 0 {
+            // All is a separate mode, never mixed with a custom order.
+            for toggle in self.toggles.iter_mut().flatten() {
+                toggle.value = 0;
+            }
+            self.toggles.get_by_idx_mut(0).unwrap().value = 1;
+            return;
+        }
+        let rank = self.selected_toggle().value;
+        let count = self
+            .toggles
+            .iter()
+            .skip(1)
+            .filter(|toggle| toggle.value != 0)
+            .count();
+        if rank != 0 {
+            // Keep at least one fighter so closing the editor always commits a valid roster.
+            if count == 1 {
+                return;
+            }
+            self.selected_toggle().value = 0;
+            for toggle in self.toggles.iter_mut().flatten() {
+                if toggle.value > rank {
+                    toggle.value -= 1;
+                }
+            }
+        } else {
+            self.toggles.get_by_idx_mut(0).unwrap().value = 0;
+            self.selected_toggle().value = (count + 1) as u8;
+        }
+    }
+
     pub fn selected_toggle(&mut self) -> &mut Toggle<'a> {
         self.toggles.get_selected().expect("No toggle selected!")
     }
 
     pub fn update_from_vec(&mut self, values: Vec<u8>) {
         match self.submenu_type {
-            SubMenuType::ToggleSingle | SubMenuType::ToggleMultiple => {
+            SubMenuType::ToggleSingle | SubMenuType::ToggleMultiple | SubMenuType::Ordered => {
                 for (idx, value) in values.iter().enumerate() {
                     if let Some(toggle) = self.toggles.get_by_idx_mut(idx) {
                         toggle.value = *value;
@@ -164,5 +205,6 @@ impl<'a> SubMenu<'a> {
 pub enum SubMenuType {
     ToggleSingle,
     ToggleMultiple,
+    Ordered,
     Slider,
 }

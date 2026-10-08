@@ -164,6 +164,8 @@ pub enum ButtonCombo {
     LoadState,
     InputRecord,
     InputPlayback,
+    CpuCycle,
+    PlayerCycle,
 }
 
 pub const DEFAULT_OPEN_MENU_CONFIG: ButtonConfig = ButtonConfig {
@@ -180,6 +182,8 @@ unsafe fn get_combo_keys(combo: ButtonCombo) -> ButtonConfig {
         ButtonCombo::LoadState => read(&MENU).save_state_load,
         ButtonCombo::InputRecord => read(&MENU).input_record,
         ButtonCombo::InputPlayback => read(&MENU).input_playback,
+        ButtonCombo::CpuCycle => read(&MENU).cpu_cycle,
+        ButtonCombo::PlayerCycle => read(&MENU).player_cycle,
     }
 }
 
@@ -191,10 +195,45 @@ static BUTTON_COMBO_REQUESTS: LazyLock<RwLock<HashMap<ButtonCombo, bool>>> = Laz
         (ButtonCombo::LoadState, false),
         (ButtonCombo::InputRecord, false),
         (ButtonCombo::InputPlayback, false),
+        (ButtonCombo::CpuCycle, false),
+        (ButtonCombo::PlayerCycle, false),
     ]))
 });
 static START_HOLD_FRAMES: RwLock<u32> = RwLock::new(0);
 static START_RELEASE_FRAMES: RwLock<u32> = RwLock::new(0);
+
+pub fn clear_session_state() {
+    for request in lock_write(&BUTTON_COMBO_REQUESTS).values_mut() {
+        *request = false;
+    }
+    assign(&START_HOLD_FRAMES, 0);
+    assign(&START_RELEASE_FRAMES, 0);
+    crate::trio_probe::clear_input_state();
+}
+
+/// Observe ownership without consuming a request needed by its normal handler.
+pub fn has_pending_request() -> bool {
+    let native_training = unsafe { crate::common::is_native_training_mode() };
+    lock_read(&BUTTON_COMBO_REQUESTS)
+        .iter()
+        .any(|(combo, requested)| {
+            *requested
+                && match combo {
+                    ButtonCombo::OpenMenu => true,
+                    ButtonCombo::SaveState | ButtonCombo::LoadState => {
+                        native_training && read(&MENU).save_state_enable == OnOff::ON
+                    }
+                    ButtonCombo::InputRecord => {
+                        native_training
+                            && read(&MENU)
+                                .record_trigger
+                                .contains(&training_mod_consts::RecordTrigger::COMMAND)
+                    }
+                    ButtonCombo::InputPlayback => native_training,
+                    ButtonCombo::CpuCycle | ButtonCombo::PlayerCycle => native_training,
+                }
+        })
+}
 
 fn _combo_passes(p1_controller: Controller, combo: ButtonCombo) -> bool {
     unsafe {
@@ -204,6 +243,14 @@ fn _combo_passes(p1_controller: Controller, combo: ButtonCombo) -> bool {
         }
 
         let combo_keys = get_combo_keys(combo).to_vec();
+        // Even a one-button character mapping is an edge, never repeat while held.
+        if matches!(combo, ButtonCombo::CpuCycle | ButtonCombo::PlayerCycle)
+            && !combo_keys
+                .iter()
+                .any(|button| button_mapping(*button, p1_controller.style, p1_controller.just_down))
+        {
+            return false;
+        }
         let mut this_combo_passes = false;
 
         for hold_button in combo_keys.iter() {
@@ -237,6 +284,16 @@ pub fn combo_passes(combo: ButtonCombo) -> bool {
         *passes = false;
     }
     did_pass
+}
+
+/// Consume only the CPU cycle chord; other practice requests retain ownership.
+pub fn consume_cpu_cycle_request() -> bool {
+    combo_passes(ButtonCombo::CpuCycle)
+}
+
+/// Consume only the player cycle chord; other practice requests retain ownership.
+pub fn consume_player_cycle_request() -> bool {
+    combo_passes(ButtonCombo::PlayerCycle)
 }
 
 fn handle_menu_open_start_press(controller: &mut Controller) -> bool {

@@ -309,6 +309,13 @@ fn insert_in_front<T>(array: &mut [T], value: T) {
 pub static P1_INPUT_LOGS: LazyLock<RwLock<[InputLog; NUM_LOGS]>> =
     LazyLock::new(|| RwLock::new([InputLog::default(); NUM_LOGS]));
 
+pub fn clear_session_state() {
+    assign(&P1_INPUT_LOGS, [InputLog::default(); NUM_LOGS]);
+    assign(&DRAW_LOG_BASE_IDX, 0);
+    frame_counter::full_reset(*PER_LOG_FRAME_COUNTER);
+    frame_counter::full_reset(*OVERALL_FRAME_COUNTER);
+}
+
 pub fn handle_final_input_mapping(
     player_idx: i32,
     controller_struct: &SomeControllerStruct,

@@ -10,7 +10,7 @@ use PossessionState::*;
 use crate::common::consts::{FighterId, HitstunPlayback, OnOff, RecordTrigger};
 use crate::common::input::*;
 use crate::common::offsets::OFFSET_SET_CPU_CONTROLS;
-use crate::common::{button_config, is_training_mode};
+use crate::common::{button_config, is_native_training_mode as is_training_mode};
 use crate::common::{is_in_hitstun, is_in_shieldstun, try_get_module_accessor, MENU};
 use crate::training::mash;
 use crate::training::ui::notifications::{clear_notification, color_notification};
@@ -194,11 +194,26 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
     );
 
     if entry_id_int == 0 && !fighter_is_nana {
-        if button_config::combo_passes(button_config::ButtonCombo::InputPlayback) {
+        // Consume both queued shortcuts even during a state load. Otherwise a
+        // held/overlapping playback chord can restart the recorder immediately
+        // after save_states cancels it, moving the CPU during restoration.
+        // Automatic record/playback-on-load remains owned by save_states.
+        let playback_requested =
+            button_config::combo_passes(button_config::ButtonCombo::InputPlayback);
+        let record_requested = button_config::combo_passes(button_config::ButtonCombo::InputRecord);
+        let state_loading = crate::training::save_states::is_loading();
+        if state_loading && (playback_requested || record_requested) {
+            crate::logging::diagnostic(format_args!(
+                "[PracticeRecording] shortcut_ignored_during_state_load playback={} record={}",
+                playback_requested, record_requested
+            ));
+        } else if playback_requested {
+            crate::logging::diagnostic(format_args!(
+                "[PracticeRecording] playback_shortcut player_kind=0x{:x}",
+                fighter_kind
+            ));
             playback(read(&MENU).playback_button_slots.get_random().into_idx());
-        } else if read(&MENU).record_trigger.contains(&RecordTrigger::COMMAND)
-            && button_config::combo_passes(button_config::ButtonCombo::InputRecord)
-        {
+        } else if read(&MENU).record_trigger.contains(&RecordTrigger::COMMAND) && record_requested {
             lockout_record();
         }
         let input_record = read(&INPUT_RECORD);
@@ -210,6 +225,13 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
         let last_frame = read(&CURRENT_FRAME_LENGTH) - 1;
         if (input_record == Record || input_record == Playback) && input_record_frame >= last_frame
         {
+            if input_record == Record {
+                crate::logging::diagnostic(format_args!(
+                    "[PracticeRecording] recording_complete slot={} frames={}",
+                    read(&CURRENT_RECORD_SLOT),
+                    input_record_frame + 1
+                ));
+            }
             assign(&POSSESSION, Player);
             if mash::is_playback_queued() {
                 mash::reset();
@@ -328,9 +350,17 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
 }
 
 pub unsafe fn lockout_record() {
+    if !is_training_mode() {
+        return;
+    }
     let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
         .expect("Could not get CPU module accessor in lockout_record");
     let recording_duration = read(&MENU).recording_duration.into_frames();
+    crate::logging::diagnostic(format_args!(
+        "[PracticeRecording] record_lockout cpu_kind=0x{:x} frames={}",
+        utility::get_kind(&mut *cpu_module_accessor),
+        recording_duration
+    ));
     let current_record_slot = read(&CURRENT_RECORD_SLOT);
     let mut p1_final_mapping = lock_write(&P1_FINAL_MAPPING);
     (*p1_final_mapping)[current_record_slot] = [{ MappedInputs::empty() }; FINAL_RECORD_MAX];
@@ -351,6 +381,9 @@ pub unsafe fn lockout_record() {
 
 // Returns whether we did playback
 pub unsafe fn playback(slot: Option<usize>) -> bool {
+    if !is_training_mode() {
+        return false;
+    }
     if read(&INPUT_RECORD) == Pause {
         warn!("Tried to playback during lockout!");
         return false;
@@ -374,6 +407,9 @@ pub unsafe fn playback(slot: Option<usize>) -> bool {
 }
 
 pub unsafe fn playback_ledge(slot: Option<usize>) {
+    if !is_training_mode() {
+        return;
+    }
     let did_playback = playback(slot);
     if did_playback {
         let mut buffer_frame = lock_write(&BUFFER_FRAME);
@@ -390,6 +426,14 @@ pub unsafe fn playback_ledge(slot: Option<usize>) {
 }
 
 pub unsafe fn stop_playback() {
+    let previous = read(&INPUT_RECORD);
+    if previous != None {
+        crate::logging::diagnostic(format_args!(
+            "[PracticeRecording] stop state={:?} frame={}",
+            previous,
+            read(&INPUT_RECORD_FRAME)
+        ));
+    }
     assign(&INPUT_RECORD, None);
     assign(&INPUT_RECORD_FRAME, 0);
     assign(&POSSESSION, Player);
