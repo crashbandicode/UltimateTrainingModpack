@@ -71,6 +71,9 @@ macro_rules! impl_submenutrait {
                             slider: None,
                         }
                     }
+                    SubMenuType::Ordered => {
+                        panic!("Ordered rosters use OrderedFighterRoster::to_submenu")
+                    }
                     SubMenuType::Slider => {
                         let slider = StatefulSlider {
                             lower: 0,

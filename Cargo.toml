@@ -67,3 +67,9 @@ plugin-dependencies = [
 
 [features]
 layout_arc_from_file = []
+# Observation-only plugin: no Training Modpack gameplay hooks or UI replacement.
+lobby-probe = []
+# Exclusive diagnostic build for the fixed trio and guarded native switches.
+trio-probe = []
+# Experimental boundary-test build only until native LDN interruption acceptance.
+waiting-roster-reload = []

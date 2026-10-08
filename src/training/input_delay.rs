@@ -8,6 +8,10 @@ use crate::common::MENU;
 
 static P1_DELAYED_INPUT_MAPPINGS: RwLock<VecDeque<MappedInputs>> = RwLock::new(VecDeque::new());
 
+pub fn clear_session_state() {
+    lock_write(&P1_DELAYED_INPUT_MAPPINGS).clear();
+}
+
 pub unsafe fn handle_final_input_mapping(player_idx: i32, out: *mut MappedInputs) {
     if player_idx == 0 {
         let mut delayed_mappings = lock_write(&P1_DELAYED_INPUT_MAPPINGS);

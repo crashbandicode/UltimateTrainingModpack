@@ -168,6 +168,16 @@ fn save_to_file(save_state_slots: SaveStateSlots) {
     filesystem::write_toml(SAVE_STATES_TOML_PATH, &save_state_slots);
 }
 
+pub fn cancel_pending() {
+    let mut slots = SAVE_STATE_SLOTS.lock();
+    for state in &mut slots.player {
+        state.state = NoAction;
+    }
+    for state in &mut slots.cpu {
+        state.state = NoAction;
+    }
+}
+
 unsafe fn save_state_player(slot: usize) -> &'static mut SavedState {
     &mut (*SAVE_STATE_SLOTS.data_ptr()).player[slot]
 }
@@ -234,6 +244,9 @@ unsafe fn get_slot() -> usize {
 }
 
 pub unsafe fn is_killing() -> bool {
+    if !crate::common::is_native_training_mode() {
+        return false;
+    }
     let selected_slot = get_slot();
     (save_state_player(selected_slot).state == KillPlayer
         || save_state_player(selected_slot).state == WaitForAlive)
@@ -242,6 +255,9 @@ pub unsafe fn is_killing() -> bool {
 }
 
 pub unsafe fn is_loading() -> bool {
+    if !crate::common::is_native_training_mode() {
+        return false;
+    }
     let selected_slot = get_slot();
     save_state_player(selected_slot).state != NoAction
         || save_state_cpu(selected_slot).state != NoAction
@@ -264,6 +280,9 @@ pub unsafe fn get_param_int(
     param_type: u64,
     param_hash: u64,
 ) -> Option<i32> {
+    if !crate::common::is_native_training_mode() {
+        return None;
+    }
     if param_type == hash40("common") {
         if param_hash == hash40("dead_rebirth_wait_frame") {
             let jostle_frame = WorkModule::get_int(
@@ -409,7 +428,7 @@ pub unsafe fn on_death(fighter_kind: i32, module_accessor: &mut app::BattleObjec
 }
 
 pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor) {
-    if read(&MENU).save_state_enable == OnOff::OFF {
+    if !crate::common::is_native_training_mode() || read(&MENU).save_state_enable == OnOff::OFF {
         return;
     }
 
@@ -460,6 +479,12 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
 
             save_state_player(slot).state = KillPlayer;
             save_state_cpu(slot).state = KillPlayer;
+            crate::logging::diagnostic(format_args!(
+                "[PracticeSave] load_requested slot={} caller_kind=0x{:x} saved_player_kind=0x{:x}",
+                slot,
+                fighter_kind,
+                save_state_player(slot).fighter_kind
+            ));
         }
         MIRROR_STATE = should_mirror();
         // end input recording playback
@@ -564,6 +589,7 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         // If we're done moving, reset percent, handle charges, and apply buffs
         if save_state.state == NoAction {
             // Set damage of the save state
+            crate::logging::diagnostic(format_args!("[PracticeSave] position_restored cpu={} active_kind=0x{:x} saved_kind=0x{:x} x={} y={}", is_cpu, fighter_kind, save_state.fighter_kind, pos.x, pos.y));
             if !is_cpu {
                 match read(&MENU).save_damage_player {
                     SaveDamage::SAVED => {
@@ -726,6 +752,10 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         save_state.charge = charge::get_charge(module_accessor, fighter_kind);
         // Perform fighter specific saving actions
         save_state.steve_state = steve::save_steve_state(module_accessor);
+        crate::logging::diagnostic(format_args!(
+            "[PracticeSave] snapshot_saved slot={} cpu={} kind=0x{:x} x={} y={} damage={}",
+            selected_slot, is_cpu, fighter_kind, save_state.x, save_state.y, save_state.percent
+        ));
 
         let zeros = Vector3f {
             x: 0.0,

@@ -16,6 +16,14 @@ static PLAYER_WAS_ACTIONABLE: RwLock<bool> = RwLock::new(false);
 static CPU_WAS_ACTIONABLE: RwLock<bool> = RwLock::new(false);
 static IS_COUNTING: RwLock<bool> = RwLock::new(false);
 
+pub fn clear_session_state() {
+    assign(&PLAYER_WAS_ACTIONABLE, false);
+    assign(&CPU_WAS_ACTIONABLE, false);
+    assign(&IS_COUNTING, false);
+    frame_counter::full_reset(*PLAYER_FRAME_COUNTER_INDEX);
+    frame_counter::full_reset(*CPU_FRAME_COUNTER_INDEX);
+}
+
 static PLAYER_FRAME_COUNTER_INDEX: LazyLock<usize> =
     LazyLock::new(|| frame_counter::register_counter(frame_counter::FrameCounterType::InGame));
 static CPU_FRAME_COUNTER_INDEX: LazyLock<usize> =
@@ -74,10 +82,12 @@ pub unsafe fn once_per_frame(module_accessor: &mut BattleObjectModuleAccessor) {
     if entry_id_int != (FighterId::Player as i32) || read(&MENU).mash_state != Action::empty() {
         return;
     }
-    let player_module_accessor = try_get_module_accessor(FighterId::Player)
-        .expect("Could not get player module accessor in once_per_frame");
-    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-        .expect("Could not get CPU module accessor in once_per_frame");
+    let Some(player_module_accessor) = try_get_module_accessor(FighterId::Player) else {
+        return;
+    };
+    let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else {
+        return;
+    };
     let player_is_actionable = is_actionable(player_module_accessor);
     let player_was_actionable = read(&PLAYER_WAS_ACTIONABLE);
     let player_just_actionable = !player_was_actionable && player_is_actionable;

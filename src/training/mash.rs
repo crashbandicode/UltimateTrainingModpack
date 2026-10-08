@@ -63,6 +63,7 @@ pub unsafe fn is_dashing_for_dash_attack(
 }
 
 pub fn buffer_action(action: Action) {
+    let action = crate::training::lobby::available_actions(action);
     let queue = lock_read(&QUEUE);
     if !queue.is_empty() {
         // Something is already buffered
@@ -103,7 +104,7 @@ pub fn buffer_action(action: Action) {
 }
 
 pub fn buffer_follow_up() {
-    let action = read(&MENU).follow_up.get_random();
+    let action = crate::training::lobby::available_actions(read(&MENU).follow_up).get_random();
 
     if action == Action::empty() {
         return;
@@ -193,7 +194,21 @@ unsafe fn get_buffered_action(
         return None;
     }
     let fighter_distance = get_fighter_distance();
-    let menu = read(&MENU);
+    let mut menu = read(&MENU);
+    // Filter the effective choices without overwriting persisted Training settings.
+    for actions in [
+        &mut menu.mash_state,
+        &mut menu.tech_action_override,
+        &mut menu.clatter_override,
+        &mut menu.tumble_override,
+        &mut menu.hitstun_override,
+        &mut menu.parry_override,
+        &mut menu.footstool_override,
+        &mut menu.trump_override,
+        &mut menu.landing_override,
+    ] {
+        *actions = crate::training::lobby::available_actions(*actions);
+    }
     if is_in_tech(module_accessor) {
         let action = menu.tech_action_override.get_random();
         if action != Action::empty() {

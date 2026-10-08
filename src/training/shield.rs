@@ -32,6 +32,16 @@ static SHIELD_DECAY: RwLock<bool> = RwLock::new(false);
 /// Vanilla is 1.19, but mods can change this.
 static CACHED_SHIELD_DAMAGE_MUL: RwLock<Option<f32>> = RwLock::new(None);
 
+pub fn clear_session_state() {
+    assign(&MULTI_HIT_OFFSET, 0);
+    assign(&SHIELD_DELAY, 0);
+    assign(&WAS_IN_SHIELDSTUN, false);
+    assign(&SUSPEND_SHIELD, false);
+    assign(&SHIELD_DECAY, false);
+    frame_counter::full_reset(*REACTION_COUNTER_INDEX);
+    // Keep CACHED_SHIELD_DAMAGE_MUL so param_installer can restore the game value.
+}
+
 static REACTION_COUNTER_INDEX: LazyLock<usize> =
     LazyLock::new(|| frame_counter::register_counter(frame_counter::FrameCounterType::InGame));
 
@@ -157,6 +167,7 @@ fn handle_shield_decay(param_type: u64, param_hash: u64) -> Option<f32> {
 pub unsafe fn param_installer() {
     if crate::training::COMMON_PARAMS as usize != 0 {
         let common_params = &mut *crate::training::COMMON_PARAMS;
+        let previous_multiplier = common_params.shield_damage_mul;
         let mut cached_shield_damage_mul_lock = lock_write(&CACHED_SHIELD_DAMAGE_MUL);
         // cache the original shield damage multiplier once
         if (*cached_shield_damage_mul_lock).is_none() {
@@ -173,6 +184,10 @@ pub unsafe fn param_installer() {
             common_params.shield_damage_mul = (*cached_shield_damage_mul_lock).expect(
                 "Something went wrong with the cached_shield_damage_mul in param_installer",
             );
+        }
+        if previous_multiplier != common_params.shield_damage_mul {
+            println!("[TrainingModpack] shield_damage_mul {} -> {} training={}",
+                previous_multiplier, common_params.shield_damage_mul, is_training_mode());
         }
     }
 }

@@ -8,16 +8,17 @@ use training_mod_consts::{OnOff, MENU};
 
 use crate::common::menu::QUICK_MENU_ACTIVE;
 use crate::common::offsets::{OFFSET_DRAW, OFFSET_LAYOUT_ARC_MALLOC};
-use crate::common::{is_ready_go, is_training_mode};
+use crate::common::{is_native_training_mode, is_ready_go, is_training_mode};
 #[cfg(feature = "layout_arc_from_file")]
 use crate::consts::LAYOUT_ARC_PATH;
-use crate::training::frame_counter;
+use crate::training::{frame_counter, lobby};
 use training_mod_sync::*;
 
 mod damage;
 mod display;
 mod input_log;
 pub mod menu;
+pub(crate) mod native_menu;
 pub mod notifications;
 
 pub unsafe fn set_icon_text(pane: &mut TextBox, icons: &[u16]) {
@@ -56,8 +57,31 @@ pub fn fade_out(pane: &mut Pane, current_frame: u32, total_frames: u32) {
 
 #[skyline::hook(offset = *OFFSET_DRAW)]
 pub unsafe fn handle_draw(layout: *mut Layout, draw_info: u64, cmd_buffer: u64) {
+    lobby::update();
     let layout_name = skyline::from_c_str((*layout).layout_name);
     let root_pane = &mut *(*layout).root_pane;
+    let waiting_host = layout_name == "info_waiting" && lobby::requested();
+    if waiting_host {
+        lobby::set_ui_ready(
+            root_pane
+                .find_pane_by_name_recursive("TrModPort")
+                .is_some_and(|host| {
+                    ["TrModMenu", "TrModInputLog", "TrModDisp0", "TrModSlider"]
+                        .iter()
+                        .all(|name| host.find_pane_by_name_recursive(name).is_some())
+                }),
+        );
+        lobby::update();
+    }
+    if layout_name == "info_waiting" && !lobby::active() {
+        if let Some(host) = root_pane.find_pane_by_name_recursive("TrModPort") {
+            host.set_visible(false);
+        }
+    } else if waiting_host {
+        if let Some(host) = root_pane.find_pane_by_name_recursive("TrModPort") {
+            host.set_visible(true);
+        }
+    }
 
     // Set HUD to invisible if HUD is toggled off
     if is_training_mode()
@@ -78,11 +102,18 @@ pub unsafe fn handle_draw(layout: *mut Layout, draw_info: u64, cmd_buffer: u64) 
 
     damage::draw(root_pane, &layout_name);
 
-    if layout_name == "info_training" {
+    if (layout_name == "info_training" && is_native_training_mode())
+        || (waiting_host && lobby::active())
+    {
+        let custom_root: &Pane = if waiting_host {
+            root_pane.find_pane_by_name_recursive_expect("TrModPort")
+        } else {
+            &*root_pane
+        };
         frame_counter::tick_real();
-        input_log::draw(root_pane);
-        display::draw(root_pane);
-        menu::draw(root_pane);
+        input_log::draw(custom_root);
+        display::draw(custom_root);
+        menu::draw(custom_root, root_pane);
     }
 
     original!()(layout, draw_info, cmd_buffer);
@@ -132,12 +163,35 @@ static mut LAYOUT_ARC: &mut [u8; LAYOUT_ARC_SIZE] = &mut [0u8; LAYOUT_ARC_SIZE];
 /// ```
 #[skyline::hook(offset = *OFFSET_LAYOUT_ARC_MALLOC, inline)]
 unsafe fn handle_layout_arc_malloc(ctx: &mut skyline::hooks::InlineCtx) {
-    if !is_training_mode() {
+    if !is_native_training_mode() && !lobby::requested() {
         return;
     }
 
     let decompressed_file = ctx.registers[21].x() as *const u8;
     let decompressed_size = ctx.registers[1].x() as usize;
+
+    if decompressed_file.is_null() || !(4..=16 * 1024 * 1024).contains(&decompressed_size) {
+        return;
+    }
+
+    if lobby::requested() {
+        let bytes = std::slice::from_raw_parts(decompressed_file, decompressed_size);
+        if bytes.starts_with(b"SARC")
+            && memchr::memmem::find(bytes, b"blyt/info_waiting.bflyt\0").is_some()
+        {
+            // Also covers reconstruction without a change to the mode tuple.
+            lobby::set_ui_ready(false);
+            lobby::update();
+            if let Some(inject) = waiting_archive() {
+                ctx.registers[21].set_x(inject.as_ptr() as u64);
+                for register in [1, 23, 24] {
+                    ctx.registers[register].set_x(inject.len() as u64);
+                }
+                println!("[LobbyPractice] injected waiting UI bytes={}", inject.len());
+            }
+        }
+        return;
+    }
 
     let layout_arc = SarcFile::read(std::slice::from_raw_parts(
         decompressed_file,
@@ -186,6 +240,38 @@ unsafe fn handle_layout_arc_malloc(ctx: &mut skyline::hooks::InlineCtx) {
     ctx.registers[24].set_x(inject_arc_size);
 }
 
+fn waiting_archive() -> Option<&'static [u8]> {
+    // This prototype consumes a locally grafted owned-game archive. Never bundle it
+    // into the NRO. Keep the allocation alive for the game's resource lifetime.
+    static ARCHIVE: std::sync::OnceLock<Option<Vec<u8>>> = std::sync::OnceLock::new();
+    ARCHIVE
+        .get_or_init(|| {
+            let path = "sd:/ultimate/TrainingModpack/info_waiting.arc";
+            let result = (|| {
+                let size = std::fs::metadata(path).ok()?.len();
+                if !(4..=8 * 1024 * 1024).contains(&size) {
+                    return None;
+                }
+                let bytes = std::fs::read(path).ok()?;
+                let arc = SarcFile::read(&bytes).ok()?;
+                if !arc
+                    .files
+                    .iter()
+                    .any(|file| file.name.as_deref() == Some("blyt/info_waiting.bflyt"))
+                {
+                    return None;
+                }
+                Some(bytes)
+            })();
+            println!(
+                "[LobbyPractice] waiting UI file loaded={}",
+                result.is_some()
+            );
+            result
+        })
+        .as_deref()
+}
+
 pub trait PaneExt {
     unsafe fn find_pane_by_name_recursive_expect(&self, name: &str) -> &mut Pane;
 }
@@ -198,5 +284,6 @@ impl PaneExt for Pane {
 }
 
 pub fn init() {
+    native_menu::init();
     skyline::install_hooks!(handle_draw, handle_layout_arc_malloc);
 }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use skyline::nn::ui2d::*;
 use smash::ui2d::{SmashPane, SmashTextBox};
 use training_mod_tui::{
-    App, AppPage, ConfirmationState, SliderState, NX_SUBMENU_COLUMNS, NX_SUBMENU_ROWS,
+    App, AppPage, ConfirmationState, SliderState, SubMenuType, NX_SUBMENU_COLUMNS, NX_SUBMENU_ROWS,
 };
 
 use crate::common::menu::{
@@ -167,6 +167,20 @@ unsafe fn render_submenu_page(app: &mut App, root_pane: &Pane) {
 unsafe fn render_toggle_page(app: &mut App, root_pane: &Pane) {
     let tabs_clone = app.tabs.clone(); // Need this to avoid double-borrow later on
     let submenu = app.selected_submenu();
+    let selected_row = submenu.toggles.state.selected_row().unwrap_or(0);
+    let first_row = selected_row / NX_SUBMENU_ROWS * NX_SUBMENU_ROWS;
+    if submenu.toggles.rows > NX_SUBMENU_ROWS {
+        root_pane
+            .find_pane_by_name_recursive_expect("FooterTxt")
+            .as_textbox()
+            .set_text_string(&format!(
+                "{} - page {}/{}; Up/Down moves between pages.\n{}",
+                submenu.title,
+                first_row / NX_SUBMENU_ROWS + 1,
+                submenu.toggles.rows.div_ceil(NX_SUBMENU_ROWS),
+                submenu.help_text.lines().next().unwrap_or("")
+            ));
+    }
     // If the options can only be toggled on or off, then use the check icon
     // instead of the number icons
     let use_check_icon = submenu.toggles.get(0, 0).unwrap().max == 1;
@@ -175,7 +189,7 @@ unsafe fn render_toggle_page(app: &mut App, root_pane: &Pane) {
             .find_pane_by_name_recursive_expect(format!("TrModMenuButtonRow{row}").as_str());
         menu_button_row.set_visible(true);
         for col in 0..NX_SUBMENU_COLUMNS {
-            if let Some(toggle) = submenu.toggles.get(row, col) {
+            if let Some(toggle) = submenu.toggles.get(first_row + row, col) {
                 let menu_button = menu_button_row
                     .find_pane_by_name_recursive_expect(format!("Button{col}").as_str());
                 menu_button.set_visible(true);
@@ -186,7 +200,7 @@ unsafe fn render_toggle_page(app: &mut App, root_pane: &Pane) {
                     .find_pane_by_name_recursive_expect("TitleBg")
                     .as_picture();
                 let title_bg_material = &mut *title_bg.material;
-                let is_selected = row == submenu.toggles.state.selected_row().unwrap()
+                let is_selected = first_row + row == selected_row
                     && col == submenu.toggles.state.selected_col().unwrap();
 
                 if is_selected {
@@ -213,7 +227,19 @@ unsafe fn render_toggle_page(app: &mut App, root_pane: &Pane) {
                     }
                 }
 
-                title_text.set_text_string(toggle.title);
+                let ordered = matches!(submenu.submenu_type, SubMenuType::Ordered);
+                let index = (first_row + row) * submenu.toggles.cols + col;
+                let all = ordered && submenu.toggles.get(0, 0).unwrap().value != 0;
+                let displayed_value = if all && index > 0 {
+                    index as u8
+                } else {
+                    toggle.value
+                };
+                if ordered && displayed_value > 0 && index > 0 {
+                    title_text.set_text_string(&format!("{}. {}", displayed_value, toggle.title));
+                } else {
+                    title_text.set_text_string(toggle.title);
+                }
 
                 if use_check_icon {
                     menu_button
@@ -222,14 +248,14 @@ unsafe fn render_toggle_page(app: &mut App, root_pane: &Pane) {
 
                     menu_button
                         .find_pane_by_name_recursive_expect("Icon")
-                        .set_visible(toggle.value > 0);
+                        .set_visible(displayed_value > 0);
                 } else {
                     menu_button
                         .find_pane_by_name_recursive_expect("check")
                         .set_visible(false);
                     menu_button
                         .find_pane_by_name_recursive_expect("Icon")
-                        .set_visible(toggle.value > 0);
+                        .set_visible(displayed_value > 0);
 
                     // Note there's no pane for 0
                     for value in 1..=toggle.max {
@@ -427,17 +453,27 @@ unsafe fn render_confirmation_page(app: &mut App, root_pane: &Pane) {
     }
 }
 
-pub unsafe fn draw(root_pane: &Pane) {
+pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
     // Determine if we're in the menu by seeing if the "help" footer has
     // begun moving upward. It starts at -80 and moves to 0 over 10 frames
     // in info_training_in_menu.bflan
-    assign(
-        &VANILLA_MENU_ACTIVE,
-        root_pane
+    let waiting = crate::training::lobby::is_waiting_scene();
+    let vanilla_active = if waiting {
+        let popup_busy = crate::common::game_mode::popup_busy().unwrap_or(true);
+        popup_busy
+            || native_root
+                .find_pane_by_name_recursive("option_menu_setting")
+                .is_none_or(|pane| pane.pos_x != -540.0)
+    } else {
+        native_root
             .find_pane_by_name_recursive_expect("L_staying_help")
             .pos_y
-            != -80.0,
-    );
+            != -80.0
+    };
+    if waiting {
+        crate::training::lobby::set_native_ui_busy(vanilla_active);
+    }
+    assign(&VANILLA_MENU_ACTIVE, vanilla_active);
 
     let overall_parent_pane = root_pane.find_pane_by_name_recursive_expect("TrModMenu");
     overall_parent_pane.set_visible(read(&QUICK_MENU_ACTIVE) && !read(&VANILLA_MENU_ACTIVE));
@@ -459,7 +495,13 @@ pub unsafe fn draw(root_pane: &Pane) {
     if let Some(quit_button) = root_pane.find_pane_by_name_recursive("TrModTitle") {
         for quit_txt_s in &["set_txt_00", "set_txt_01"] {
             if let Some(quit_txt) = quit_button.find_pane_by_name_recursive(quit_txt_s) {
-                quit_txt.as_textbox().set_text_string("Modpack Menu");
+                quit_txt.as_textbox().set_text_string(
+                    if crate::training::lobby::is_waiting_scene() {
+                        "Lobby Practice"
+                    } else {
+                        "Modpack Menu"
+                    },
+                );
             }
         }
     }
@@ -484,11 +526,9 @@ pub unsafe fn draw(root_pane: &Pane) {
 
     // Make normal training panes invisible if we're active
     // InfluencedAlpha means "Should my children panes' alpha be influenced by mine, as the parent?"
-    let status_r_pane = root_pane
-        .find_pane_by_name_recursive("status_R")
-        .expect("Unable to find status_R pane");
-    // status_r_pane.flags |= 1 << PaneFlag::InfluencedAlpha as u8;
-    status_r_pane.set_visible(!read(&QUICK_MENU_ACTIVE));
+    if let Some(status_r_pane) = native_root.find_pane_by_name_recursive("status_R") {
+        status_r_pane.set_visible(!read(&QUICK_MENU_ACTIVE));
+    }
 
     root_pane
         .find_pane_by_name_recursive_expect("TrModSlider")
@@ -628,5 +668,36 @@ pub unsafe fn draw(root_pane: &Pane) {
         AppPage::TOGGLE => render_toggle_page(&mut app, root_pane),
         AppPage::CONFIRMATION => render_confirmation_page(&mut app, root_pane),
         AppPage::CLOSE => {}
+    }
+
+    // Preferences can still be edited for the next ordinary Training session.
+    // Explain the current capability instead of silently promising a lobby action.
+    if crate::training::lobby::is_waiting_scene()
+        && !matches!(app.page, AppPage::CONFIRMATION | AppPage::CLOSE)
+    {
+        let tab = app.selected_tab().id;
+        let submenu = app.selected_submenu().id;
+        if matches!(tab, "input" | "save_state")
+            || (!cfg!(feature = "waiting-roster-reload")
+                && matches!(tab, "player_characters" | "cpu_characters"))
+            || matches!(
+                submenu,
+                "save_state_save"
+                    | "save_state_load"
+                    | "input_record"
+                    | "input_playback"
+                    | "stage_hazards"
+                    | "lra_reset"
+                    | "hitbox_vis"
+                    | "tech_hide"
+            )
+        {
+            root_pane
+                .find_pane_by_name_recursive_expect("FooterTxt")
+                .as_textbox()
+                .set_text_string(
+                    "Available in Training mode only.\nChanges here are saved for Training mode.",
+                );
+        }
     }
 }
