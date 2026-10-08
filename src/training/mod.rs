@@ -46,12 +46,10 @@ pub mod input_delay;
 mod input_log;
 mod input_record;
 
-pub(crate) fn recording_owns_player_input() -> bool {
-    input_record::is_recording() || unsafe { input_record::is_standby() }
-}
-
 pub(crate) fn recording_or_playback() -> bool {
-    recording_owns_player_input() || input_record::is_playback()
+    input_record::is_recording()
+        || unsafe { input_record::is_standby() }
+        || input_record::is_playback()
 }
 mod mash;
 mod reset;
@@ -141,9 +139,6 @@ pub unsafe fn handle_get_command_flag_cat(
     }
     lobby::observe_fighter(module_accessor);
 
-    if category == FIGHTER_PAD_COMMAND_CATEGORY1 && crate::common::is_fighter(module_accessor) {
-        crate::trio_probe::command(module_accessor);
-    }
 
     if lobby::is_waiting_scene()
         && (!crate::common::is_fighter(module_accessor)
@@ -926,7 +921,6 @@ unsafe fn handle_final_input_mapping(
     button_config::handle_final_input_mapping(player_idx, controller_struct);
     if player_idx == 0 {
         crate::character_roster::handle_input(&mut *out);
-        crate::trio_probe::reserve_hotkey_inputs(&mut *out);
     }
 
     // Potentially apply input delay
@@ -951,7 +945,7 @@ unsafe fn handle_final_input_mapping(
 pub fn training_mods() {
     info!("Applying training mods.");
     lobby::init();
-    crate::trio_probe::init();
+    crate::character_lifecycle::init();
 
     unsafe {
         let mut fighter_manager_addr_lock = lock_write(&FIGHTER_MANAGER_ADDR);

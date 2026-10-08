@@ -184,7 +184,7 @@ fn queue(role: Role, selection: Selection) {
     if !role.enabled() {
         return;
     }
-    if BASE.load(Ordering::Acquire) == 0 || !crate::trio_probe::native_hooks_ready() {
+    if BASE.load(Ordering::Acquire) == 0 || !crate::character_lifecycle::native_hooks_ready() {
         notify(role, "Unavailable on this game version".into());
         return;
     }

@@ -1,7 +1,4 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use training_mod_tui::{
-    StatefulTable, SubMenu, SubMenuType, Toggle, NX_SUBMENU_COLUMNS, NX_SUBMENU_ROWS,
-};
 
 use crate::{ButtonConfig, TrioFighter};
 
@@ -41,25 +38,6 @@ impl CpuRosterSize {
             Self::Six => 6,
             Self::Seven => 7,
             Self::Eight => 8,
-        }
-    }
-
-    pub fn to_submenu<'a>(title: &'a str, id: &'a str, help_text: &'a str) -> SubMenu<'a> {
-        let toggles = ["1", "2", "3", "4", "5", "6", "7", "8"]
-            .iter()
-            .map(|title| Toggle {
-                title,
-                value: 0,
-                max: 1,
-            })
-            .collect();
-        SubMenu {
-            title,
-            id,
-            help_text,
-            submenu_type: SubMenuType::ToggleSingle,
-            toggles: StatefulTable::with_items(NX_SUBMENU_ROWS, NX_SUBMENU_COLUMNS, toggles),
-            slider: None,
         }
     }
 }

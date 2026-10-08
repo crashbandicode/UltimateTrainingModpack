@@ -23,9 +23,8 @@ mod hitbox_visualizer;
 mod training;
 
 mod character_roster;
-mod lobby_probe;
 mod logging;
-mod trio_probe;
+mod character_lifecycle;
 
 fn nro_main(nro: &NroInfo<'_>) {
     if nro.module.isLoaded {
@@ -44,15 +43,8 @@ fn nro_main(nro: &NroInfo<'_>) {
 #[skyline::main(name = "training_modpack")]
 pub fn main() {
     logging::init_diagnostics();
-    if cfg!(feature = "trio-probe") {
-        lobby_probe::init();
-        trio_probe::init();
-    } else if cfg!(feature = "lobby-probe") {
-        lobby_probe::init();
-    } else {
-        character_roster::init();
-        initialize_training_modpack();
-    }
+    character_roster::init();
+    initialize_training_modpack();
 }
 
 fn initialize_training_modpack() {
