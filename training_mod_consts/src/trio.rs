@@ -173,16 +173,6 @@ impl<'de> Deserialize<'de> for TrioFighter {
     }
 }
 
-pub fn trio_first_default() -> TrioFighter {
-    TrioFighter::GAMEWATCH
-}
-pub fn trio_second_default() -> TrioFighter {
-    TrioFighter::PALUTENA
-}
-pub fn trio_third_default() -> TrioFighter {
-    TrioFighter::PIKACHU
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,19 +235,6 @@ mod tests {
         assert_eq!(picker.toggles.state.selected_row(), Some(0));
     }
     #[test]
-    fn old_menu_keeps_other_settings_and_gets_default_roster() {
-        let mut json = serde_json::to_value(crate::BASE_MENU).unwrap();
-        for field in ["trio_fighter_1", "trio_fighter_2", "trio_fighter_3"] {
-            json.as_object_mut().unwrap().remove(field);
-        }
-        let old: crate::TrainingModpackMenu = serde_json::from_value(json).unwrap();
-        assert_eq!(old.trio_fighter_1, TrioFighter::GAMEWATCH);
-        assert_eq!(old.trio_fighter_2, TrioFighter::PALUTENA);
-        assert_eq!(old.trio_fighter_3, TrioFighter::PIKACHU);
-        assert_eq!(old.save_state_enable, crate::BASE_MENU.save_state_enable);
-    }
-
-    #[test]
     fn full_menu_reopens_selected_page_and_commits_a_new_fighter() {
         let mut app = unsafe { crate::create_app() };
         let mut initial = crate::BASE_MENU;
@@ -288,7 +265,6 @@ mod tests {
         let menu: crate::TrainingModpackMenu =
             serde_json::from_str(&app.current_settings_to_json()).unwrap();
         assert_eq!(menu.player_character.name(), "Sora");
-        assert_eq!(menu.trio_fighter_1, TrioFighter::GAMEWATCH);
         assert_eq!(menu.save_state_enable, crate::BASE_MENU.save_state_enable);
     }
 }

@@ -10,7 +10,7 @@ This independent experimental fork targets Smash Ultimate 13.0.5. It uses the na
 4. Use **Cycle Characters** in either tab to choose that role's independent ordered roster.
 5. Close with **B** to commit. Fighters load without leaving practice; no matching first CSS choice or re-entry is needed.
 
-Defaults: **P1 G&W → Palutena → Pikachu**; **CPU Pikachu → Kirby → Bowser → Bayonetta**. Existing explicit settings migrate. Hidden legacy trio fields remain for compatibility; the preloaded-three implementation is no longer the normal runtime.
+Defaults: **P1 G&W → Palutena → Pikachu**; **CPU Pikachu → Kirby → Bowser → Bayonetta**. Existing ordered rosters and older fixed-slot selections migrate when loaded. New saves write only ordered rosters, which release29 can also read. Earlier fixed-slot-only development builds cannot recover edited rosters from the new file; keep a backup if downgrading to those builds.
 
 Choose **All (menu order)** to cycle through the whole supported chooser catalog in displayed order. Manual selections show numbered order; deselect and reselect to move a fighter to the end. Selecting a fighter while All is active starts a custom sequence. Up/Down crosses pages. There is no eight-character limit, and at least one fighter remains selected.
 
@@ -60,3 +60,4 @@ The corrected separate G&W plugin is v0.1.1-experimental. Its earlier 0.1.0 bina
 ## Source cleanup
 
 The superseded lobby/trio investigation plugins remain in commit abd6ca9 and the local research archive. The normal NRO retains the five entry lifecycle and portrait hooks it needs in character_lifecycle.rs, along with persistent crash diagnostics. Scene, entry identity, destruction, ABI/version and conflicting-action checks remain in place.
+Roster settings now have one stored representation per player. A shared JSON importer validates the retired fixed-slot values and converts them once; the editor and runtime then use the same ordered roster. Invalid legacy values still reject the file even when a modern roster is present. Required upstream fields remain required, and duplicate menu keys are rejected.

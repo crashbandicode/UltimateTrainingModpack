@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use skyline::hooks::{getRegionAddress, InlineCtx, Region};
-use training_mod_consts::{normalize_rosters, OnOff, TrainingModpackMenu, TrioFighter, MENU};
+use training_mod_consts::{OnOff, TrainingModpackMenu, TrioFighter, MENU};
 use training_mod_sync::{lock_write, read as setting};
 
 use crate::common::{
@@ -136,13 +136,10 @@ pub fn busy() -> bool {
 }
 
 fn roster(m: &TrainingModpackMenu, role: Role) -> Vec<TrioFighter> {
-    let mut normalized = *m;
-    normalize_rosters(&mut normalized);
     match role {
-        Role::Player => normalized.player_roster,
-        Role::Cpu => normalized.cpu_roster,
+        Role::Player => m.player_roster,
+        Role::Cpu => m.cpu_roster,
     }
-    .expect("Roster normalization always produces a supported nonempty roster")
     .fighters()
 }
 
