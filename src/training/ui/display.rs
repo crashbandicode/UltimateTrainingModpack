@@ -2,7 +2,6 @@ use skyline::nn::ui2d::*;
 use smash::ui2d::SmashTextBox;
 
 use crate::common::menu::QUICK_MENU_ACTIVE;
-use crate::common::TRAINING_MENU_ADDR;
 use crate::training::ui::notifications::*;
 use crate::training::ui::PaneExt;
 use training_mod_sync::*;
@@ -26,7 +25,7 @@ macro_rules! display_txt_fmt {
 }
 
 pub unsafe fn draw(root_pane: &Pane) {
-    if (*TRAINING_MENU_ADDR).combo_display_toggle == 0 {
+    if crate::common::is_native_training_mode() && !super::native_menu::combo_display_enabled() {
         // User has turned off the "combo display" option in the vanilla menu
         // Remove all notifications from the queue so we don't show them
         // This will also set the pane's visibility to false

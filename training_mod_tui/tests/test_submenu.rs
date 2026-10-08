@@ -39,7 +39,7 @@ fn initialize_submenu<'a>(submenu_type: SubMenuType) -> SubMenu<'a> {
             toggles: make_toggle_table_single(2, 3, 4),
             slider: None,
         },
-        SubMenuType::ToggleMultiple => SubMenu {
+        SubMenuType::ToggleMultiple | SubMenuType::Ordered => SubMenu {
             title: "Multi Option Menu",
             id: "multi_option",
             help_text: "Multiple Options",

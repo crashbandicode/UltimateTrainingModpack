@@ -10,8 +10,11 @@ use crate::filesystem;
 use crate::input::{ButtonBitfield, ControllerStyle, MappedInputs, SomeControllerStruct};
 use crate::logging::*;
 use crate::training::frame_counter;
+use crate::training::ui::menu::VANILLA_MENU_ACTIVE;
 
-use training_mod_consts::{create_app, InputControl, MenuJsonStruct, MENU_OPTIONS_PATH};
+use training_mod_consts::{
+    create_app, normalize_rosters, InputControl, MenuJsonStruct, MENU_OPTIONS_PATH,
+};
 use training_mod_sync::*;
 use training_mod_tui::AppPage;
 
@@ -19,6 +22,21 @@ use DirectionButton::*;
 
 pub const MENU_CLOSE_WAIT_FRAMES: u32 = 15;
 pub static QUICK_MENU_ACTIVE: RwLock<bool> = RwLock::new(false);
+
+pub fn captures_input() -> bool {
+    let frames = frame_counter::get_frame_count(*MENU_CLOSE_FRAME_COUNTER);
+    read(&QUICK_MENU_ACTIVE) || (frames > 0 && frames < MENU_CLOSE_WAIT_FRAMES)
+}
+
+pub fn clear_session_state() {
+    assign(&QUICK_MENU_ACTIVE, false);
+    assign(&VANILLA_MENU_ACTIVE, false);
+    assign(&MENU_RECEIVED_INPUT, true);
+    for frames in lock_write(&DIRECTION_HOLD_FRAMES).values_mut() {
+        *frames = 0;
+    }
+    frame_counter::full_reset(*MENU_CLOSE_FRAME_COUNTER);
+}
 
 pub unsafe fn menu_condition() -> bool {
     button_config::combo_passes(button_config::ButtonCombo::OpenMenu)
@@ -30,7 +48,9 @@ pub fn load_from_file() {
     info!("Checking for previous menu in {MENU_OPTIONS_PATH}...");
     if fs::metadata(MENU_OPTIONS_PATH).is_ok() {
         match filesystem::read_json::<MenuJsonStruct>(MENU_OPTIONS_PATH) {
-            Ok(menu_conf_json) => {
+            Ok(mut menu_conf_json) => {
+                normalize_rosters(&mut menu_conf_json.menu);
+                normalize_rosters(&mut menu_conf_json.defaults_menu);
                 assign(&MENU, menu_conf_json.menu);
                 assign(&DEFAULTS_MENU, menu_conf_json.defaults_menu);
                 info!("Previous menu found. Loading...");
@@ -44,6 +64,8 @@ pub fn load_from_file() {
     } else {
         info!("No previous menu file found.");
     }
+    normalize_rosters(&mut lock_write(&MENU));
+    normalize_rosters(&mut lock_write(&DEFAULTS_MENU));
     info!("Setting initial menu selections...");
     let mut app = lock_write(&QUICK_MENU_APP);
     app.serialized_default_settings =
@@ -56,11 +78,19 @@ pub fn load_from_file() {
 pub fn set_menu_from_json(message: &str) {
     let response = serde_json::from_str::<MenuJsonStruct>(message);
     info!("Received menu message: {message}");
-    if let Ok(message_json) = response {
+    if let Ok(mut message_json) = response {
+        normalize_rosters(&mut message_json.menu);
+        normalize_rosters(&mut message_json.defaults_menu);
+        let previous = read(&MENU);
         // Includes both MENU and DEFAULTS_MENU
         assign(&MENU, message_json.menu);
         assign(&DEFAULTS_MENU, message_json.defaults_menu);
         filesystem::write_json(MENU_OPTIONS_PATH, &message_json);
+        crate::training::lobby::settings_changed();
+        if cfg!(feature = "trio-probe") {
+            crate::trio_probe::settings_changed();
+        }
+        crate::character_roster::settings_changed(&previous);
     } else {
         skyline::error::show_error(
             0x70,
@@ -71,9 +101,15 @@ pub fn set_menu_from_json(message: &str) {
 }
 
 pub fn spawn_menu() {
-    assign(&QUICK_MENU_ACTIVE, true);
+    normalize_rosters(&mut lock_write(&MENU));
+    normalize_rosters(&mut lock_write(&DEFAULTS_MENU));
     let mut app = lock_write(&QUICK_MENU_APP);
+    // A scene change can cancel an open editor before its normal commit path.
+    app.update_all_from_json(&serde_json::to_string(&read(&MENU)).expect("Serialize MENU"));
+    app.serialized_default_settings =
+        serde_json::to_string(&read(&DEFAULTS_MENU)).expect("Serialize DEFAULTS_MENU");
     app.page = AppPage::SUBMENU;
+    assign(&QUICK_MENU_ACTIVE, true);
     assign(&MENU_RECEIVED_INPUT, true);
 }
 

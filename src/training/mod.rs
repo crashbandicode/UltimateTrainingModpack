@@ -4,8 +4,8 @@ use crate::common::button_config;
 use crate::common::consts::{BuffOption, FighterId, MENU};
 use crate::common::offsets::*;
 use crate::common::{
-    dev_config, is_operation_cpu, is_training_mode, menu, try_get_module_accessor, PauseMenu,
-    FIGHTER_MANAGER_ADDR, ITEM_MANAGER_ADDR, STAGE_MANAGER_ADDR, TRAINING_MENU_ADDR,
+    dev_config, is_operation_cpu, is_training_mode, menu, try_get_module_accessor,
+    FIGHTER_MANAGER_ADDR, ITEM_MANAGER_ADDR, STAGE_MANAGER_ADDR,
 };
 use crate::filesystem;
 use crate::hitbox_visualizer;
@@ -30,6 +30,7 @@ pub mod crouch;
 pub mod directional_influence;
 pub mod frame_counter;
 pub mod ledge;
+pub mod lobby;
 pub mod sdi;
 pub mod shield;
 pub mod tech;
@@ -44,10 +45,42 @@ mod full_hop;
 pub mod input_delay;
 mod input_log;
 mod input_record;
+
+pub(crate) fn recording_owns_player_input() -> bool {
+    input_record::is_recording() || unsafe { input_record::is_standby() }
+}
+
+pub(crate) fn recording_or_playback() -> bool {
+    recording_owns_player_input() || input_record::is_playback()
+}
 mod mash;
 mod reset;
 pub mod save_states;
 mod shield_tilt;
+
+/// Cancel a departing practice session without touching game objects or game RNG.
+pub fn clear_session_state() {
+    menu::clear_session_state();
+    button_config::clear_session_state();
+    input_delay::clear_session_state();
+    input_log::clear_session_state();
+    combo::clear_session_state();
+    shield::clear_session_state();
+    buff::clear_session_state();
+    mash::full_reset();
+    mash::set_aerial(crate::consts::Action::empty());
+    ledge::reset_ledge_case();
+    ledge::reset_ledge_delay();
+    throw::reset_throw_case();
+    throw::reset_throw_delay();
+    throw::reset_pummel_delay();
+    frame_counter::reset_all();
+    save_states::cancel_pending();
+    ui::notifications::clear_all_notifications();
+    unsafe {
+        input_record::stop_playback();
+    }
+}
 
 #[cfg(debug_assertions)]
 mod debug;
@@ -101,7 +134,24 @@ pub unsafe fn handle_get_command_flag_cat(
 ) -> i32 {
     let mut flag = original!()(module_accessor, category);
 
+    lobby::update();
+
     if !is_training_mode() {
+        return flag;
+    }
+    lobby::observe_fighter(module_accessor);
+
+    if category == FIGHTER_PAD_COMMAND_CATEGORY1 && crate::common::is_fighter(module_accessor) {
+        crate::trio_probe::command(module_accessor);
+    }
+
+    if lobby::is_waiting_scene()
+        && (!crate::common::is_fighter(module_accessor)
+            || !lobby::permits_entry(WorkModule::get_int(
+                module_accessor,
+                *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID,
+            )))
+    {
         return flag;
     }
 
@@ -122,27 +172,47 @@ unsafe extern "C" fn fighter_vtable_on_frame(fighter: &mut smash::app::Fighter) 
 
 fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) {
     unsafe {
+        lobby::update();
+        // Restore shield parameters on departure even when practice is inactive.
         shield::param_installer();
+        if !is_training_mode() {
+            return;
+        }
+        if lobby::is_waiting_scene()
+            && !lobby::permits_entry(WorkModule::get_int(
+                module_accessor,
+                *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID,
+            ))
+        {
+            return;
+        }
 
         if menu::menu_condition() {
             menu::spawn_menu();
         }
 
         if is_operation_cpu(module_accessor) {
+            lobby::prepare_cpu_options();
             // Handle dodge staling here b/c input recording or mash can cause dodging
             WorkModule::set_flag(
                 module_accessor,
                 !(read(&MENU).stale_dodges.as_bool()),
                 *FIGHTER_INSTANCE_WORK_ID_FLAG_DISABLE_ESCAPE_PENALTY,
             );
-            input_record::handle_recording();
+            if crate::common::is_native_training_mode() {
+                input_record::handle_recording();
+            }
             frame_counter::tick_ingame();
-            tech::hide_tech();
+            if crate::common::is_native_training_mode() {
+                tech::hide_tech();
+            }
         }
 
         combo::once_per_frame(module_accessor);
-        hitbox_visualizer::once_per_frame(module_accessor);
-        save_states::save_states(module_accessor);
+        if crate::common::is_native_training_mode() {
+            hitbox_visualizer::once_per_frame(module_accessor);
+            save_states::save_states(module_accessor);
+        }
         tech::once_per_frame(module_accessor);
         clatter::handle_clatter(module_accessor);
     }
@@ -158,7 +228,9 @@ unsafe extern "C" fn fighter_vtable_on_init_inner(fighter: &mut smash::app::Figh
 
 unsafe extern "C" fn fighter_vtable_on_init(fighter: &mut smash::app::Fighter, param_2: u64) {
     fighter_vtable_on_init_inner(fighter, param_2);
-    reset::check_reset(&mut *fighter.battle_object.module_accessor);
+    if crate::common::is_native_training_mode() && !crate::character_roster::busy() {
+        reset::check_reset(&mut *fighter.battle_object.module_accessor);
+    }
 }
 
 /**
@@ -331,7 +403,7 @@ extern "C" {
 
 #[skyline::hook(replace = set_dead_rumble)]
 pub unsafe fn handle_set_dead_rumble(lua_state: u64) -> u64 {
-    if is_training_mode() {
+    if crate::common::is_native_training_mode() {
         return 0;
     }
 
@@ -343,7 +415,7 @@ pub unsafe fn handle_req_quake(
     module_accessor: &mut BattleObjectModuleAccessor,
     my_int: i32,
 ) -> u64 {
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         return original!()(module_accessor, my_int);
     }
     if save_states::is_killing() {
@@ -358,6 +430,11 @@ fn params_main(params_info: &ParamsInfo<'_>) {
     if let Ok(common) = params_info.get::<CommonParams>() {
         unsafe {
             COMMON_PARAMS = common as *mut _;
+            println!(
+                "[TrainingModpack] common params loaded shield_damage_mul={} mode={:?}",
+                (*COMMON_PARAMS).shield_damage_mul,
+                crate::common::game_mode::current()
+            );
         }
     }
 }
@@ -380,7 +457,7 @@ pub unsafe fn handle_req_screen(
     bool_2: bool,
     bool_3: bool,
 ) -> u64 {
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         return original!()(module_accessor, my_hash, bool_1, bool_2, bool_3);
     }
     let new_hash = my_hash.hash;
@@ -399,7 +476,7 @@ pub unsafe fn handle_check_doyle_summon_dispatch(
     bool_2: bool,
 ) -> u64 {
     let ori = original!()(module_accessor, bool_1, bool_2);
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         return ori;
     }
     if ori == *FIGHTER_JACK_STATUS_KIND_SUMMON as u64 && buff::is_buffing(module_accessor) {
@@ -414,7 +491,7 @@ pub unsafe fn handle_add_damage(
     mut damage_to_add: f32,
     param_2: i32,
 ) -> u64 {
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         return original!()(damage_module, damage_to_add, param_2);
     }
     let module_accessor =
@@ -432,6 +509,9 @@ pub unsafe fn handle_add_damage(
 // This function already checks for training mode, so we don't need to check for training mode here
 #[skyline::hook(offset = *OFFSET_TRAINING_RESET_CHECK, inline)]
 unsafe fn lra_handle(ctx: &mut InlineCtx) {
+    if !crate::common::is_native_training_mode() {
+        return;
+    }
     if !(read(&MENU).lra_reset.as_bool()) {
         ctx.registers[8].set_x(0);
     }
@@ -441,14 +521,24 @@ unsafe fn lra_handle(ctx: &mut InlineCtx) {
 // One instruction after stale moves toggle register is set to 0
 #[skyline::hook(offset = *OFFSET_STALE, inline)]
 unsafe fn stale_handle(ctx: &mut InlineCtx) {
-    TRAINING_MENU_ADDR = ctx.registers[22].x() as *mut PauseMenu;
-    (*TRAINING_MENU_ADDR).stale_move_toggle = 1;
+    lobby::update();
+    if !crate::common::is_native_training_mode() || ctx.registers[22].x() == 0 {
+        return;
+    }
+    // Native 13.0.5 writes a byte at +0xb60. The caller owns this menu here;
+    // never retain its address for a later HUD draw or scene.
+    let pause_menu = ctx.registers[22].x() as *mut u8;
+    *pause_menu.add(0xb60) = 1;
+    ui::native_menu::observe_combo_display(*pause_menu.add(0xb6c));
 }
 
 // Set Stale Moves to On in the menu text
 // One instruction after menu text register is set to off
 #[skyline::hook(offset = *OFFSET_STALE_MENU, inline)]
 unsafe fn stale_menu_handle(ctx: &mut InlineCtx) {
+    if !crate::common::is_native_training_mode() {
+        return;
+    }
     // Set the text pointer to where "mel_training_on" is located
     let on_text_ptr = (getRegionAddress(Region::Text) as u64) + 0x42b415e;
     ctx.registers[1].set_x(on_text_ptr);
@@ -464,7 +554,7 @@ pub unsafe fn handle_se(
     bool4: bool,
     se_type: enSEType,
 ) -> u64 {
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         return original!()(
             module_accessor,
             my_hash,
@@ -516,7 +606,7 @@ pub unsafe fn handle_fighter_play_se(
     bool4: bool,
     se_type: enSEType,
 ) -> u64 {
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         return original!()(sound_module, my_hash, bool1, bool2, bool3, bool4, se_type);
     }
     // Supress Buff Sound Effects while buffing
@@ -560,7 +650,7 @@ pub unsafe fn handle_effect_follow(
     arg11: bool,
     arg12: bool,
 ) -> u64 {
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         return original!()(
             module_accessor,
             eff_hash,
@@ -612,7 +702,7 @@ pub unsafe fn handle_fighter_effect(
     arg8: bool,
     arg9: i32,
 ) -> u64 {
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         return original!()(
             module_accessor,
             eff_hash,
@@ -654,7 +744,7 @@ pub unsafe fn handle_fighter_joint_effect(
     arg7: i32,
     arg9: i32,
 ) -> u64 {
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         return original!()(
             module_accessor,
             eff_hash,
@@ -699,7 +789,7 @@ pub unsafe fn handle_effect(
     arg8: bool,
     arg9: i32,
 ) -> u64 {
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         return original!()(
             module_accessor,
             eff_hash,
@@ -743,7 +833,7 @@ pub unsafe fn handle_effect(
 #[skyline::hook(offset = *OFFSET_CAN_FUTTOBI_BACK)]
 pub unsafe fn handle_star_ko(my_long_ptr: &mut u64) -> bool {
     let ori = original!()(my_long_ptr);
-    if !is_training_mode() {
+    if !crate::common::is_native_training_mode() {
         ori
     } else {
         false
@@ -809,7 +899,16 @@ unsafe fn handle_final_input_mapping(
 
     // Go through the original mapping function first
     original!()(mappings, player_idx, out, controller_struct, arg);
+    lobby::update();
     if !is_training_mode() {
+        if player_idx == 0 {
+            crate::character_roster::suppress_owned_buttons(&mut *out);
+        }
+        return;
+    }
+
+    if lobby::active() && lobby::native_ui_busy() {
+        // Leave the original mapping and controller edges intact for native dialogs.
         return;
     }
 
@@ -819,26 +918,40 @@ unsafe fn handle_final_input_mapping(
 
     // Grab menu inputs from player
     // MUTATES controller state to kill inputs when in or closing menu
+    let menu_was_capturing = player_idx == 0 && menu::captures_input();
     menu::handle_final_input_mapping(player_idx, controller_struct, out);
 
     // Grab button input requests from player
     // MUTATES controller state to kill start presses for menu
     button_config::handle_final_input_mapping(player_idx, controller_struct);
+    if player_idx == 0 {
+        crate::character_roster::handle_input(&mut *out);
+        crate::trio_probe::reserve_hotkey_inputs(&mut *out);
+    }
 
     // Potentially apply input delay
     // MUTATES controller state to delay inputs
-    input_delay::handle_final_input_mapping(player_idx, out);
+    if player_idx == 0 && (menu_was_capturing || menu::captures_input()) {
+        input_delay::clear_session_state();
+        *out = MappedInputs::empty();
+    } else {
+        input_delay::handle_final_input_mapping(player_idx, out);
+    }
 
     // Read potentially delayed state for loggers
     input_log::handle_final_input_mapping(player_idx, controller_struct, out);
 
     // Potentially apply input recording, thus with delay
     // MUTATES controller state to apply recording or playback
-    input_record::handle_final_input_mapping(player_idx, out);
+    if crate::common::is_native_training_mode() {
+        input_record::handle_final_input_mapping(player_idx, out);
+    }
 }
 
 pub fn training_mods() {
     info!("Applying training mods.");
+    lobby::init();
+    crate::trio_probe::init();
 
     unsafe {
         let mut fighter_manager_addr_lock = lock_write(&FIGHTER_MANAGER_ADDR);

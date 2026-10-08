@@ -4,6 +4,13 @@ extern crate num_derive;
 
 use serde::{Deserialize, Serialize};
 
+pub mod trio;
+pub use trio::*;
+pub mod cpu_roster;
+pub use cpu_roster::*;
+pub mod ordered_roster;
+pub use ordered_roster::*;
+
 pub mod options;
 pub use options::*;
 pub mod files;
@@ -95,6 +102,62 @@ pub struct TrainingModpackMenu {
     pub tech_hide: OnOff,
     pub update_policy: UpdatePolicy,
     pub lra_reset: OnOff,
+    #[serde(default = "lobby_practice_default")]
+    pub lobby_practice: OnOff,
+    #[serde(default = "lobby_practice_default")]
+    pub trio_practice: OnOff,
+    #[serde(default = "trio_first_default")]
+    pub trio_fighter_1: TrioFighter,
+    #[serde(default = "trio_second_default")]
+    pub trio_fighter_2: TrioFighter,
+    #[serde(default = "trio_third_default")]
+    pub trio_fighter_3: TrioFighter,
+    #[serde(default = "cpu_character_default")]
+    pub cpu_character: TrioFighter,
+    #[serde(default)]
+    pub cpu_roster_size: CpuRosterSize,
+    #[serde(default = "cpu_roster_1_default")]
+    pub cpu_roster_1: TrioFighter,
+    #[serde(default = "cpu_roster_2_default")]
+    pub cpu_roster_2: TrioFighter,
+    #[serde(default = "cpu_roster_3_default")]
+    pub cpu_roster_3: TrioFighter,
+    #[serde(default = "cpu_roster_4_default")]
+    pub cpu_roster_4: TrioFighter,
+    #[serde(default = "cpu_roster_5_default")]
+    pub cpu_roster_5: TrioFighter,
+    #[serde(default = "cpu_roster_6_default")]
+    pub cpu_roster_6: TrioFighter,
+    #[serde(default = "cpu_roster_7_default")]
+    pub cpu_roster_7: TrioFighter,
+    #[serde(default = "cpu_roster_8_default")]
+    pub cpu_roster_8: TrioFighter,
+    #[serde(default = "cpu_cycle_default")]
+    pub cpu_cycle: ButtonConfig,
+    #[serde(default = "player_character_default")]
+    pub player_character: TrioFighter,
+    #[serde(default = "player_roster_size_default")]
+    pub player_roster_size: CpuRosterSize,
+    #[serde(default = "player_roster_4_default")]
+    pub player_roster_4: TrioFighter,
+    #[serde(default = "player_roster_5_default")]
+    pub player_roster_5: TrioFighter,
+    #[serde(default = "player_roster_6_default")]
+    pub player_roster_6: TrioFighter,
+    #[serde(default = "player_roster_7_default")]
+    pub player_roster_7: TrioFighter,
+    #[serde(default = "player_roster_8_default")]
+    pub player_roster_8: TrioFighter,
+    #[serde(default = "player_cycle_default")]
+    pub player_cycle: ButtonConfig,
+    #[serde(default)]
+    pub player_roster: Option<OrderedFighterRoster>,
+    #[serde(default)]
+    pub cpu_roster: Option<OrderedFighterRoster>,
+}
+
+fn lobby_practice_default() -> OnOff {
+    OnOff::OFF
 }
 
 #[repr(C)]
@@ -203,6 +266,32 @@ pub static BASE_MENU: TrainingModpackMenu = TrainingModpackMenu {
     tech_hide: OnOff::OFF,
     update_policy: UpdatePolicy::default(),
     lra_reset: OnOff::ON,
+    lobby_practice: OnOff::OFF,
+    trio_practice: OnOff::OFF,
+    trio_fighter_1: TrioFighter::GAMEWATCH,
+    trio_fighter_2: TrioFighter::PALUTENA,
+    trio_fighter_3: TrioFighter::PIKACHU,
+    cpu_character: TrioFighter::PIKACHU,
+    cpu_roster_size: CpuRosterSize::Four,
+    cpu_roster_1: TrioFighter::PIKACHU,
+    cpu_roster_2: TrioFighter::KIRBY,
+    cpu_roster_3: TrioFighter::BOWSER,
+    cpu_roster_4: TrioFighter::BAYONETTA,
+    cpu_roster_5: TrioFighter::MARIO,
+    cpu_roster_6: TrioFighter::LUCINA,
+    cpu_roster_7: TrioFighter::PALUTENA,
+    cpu_roster_8: TrioFighter::GAMEWATCH,
+    cpu_cycle: DEFAULT_CPU_CYCLE,
+    player_character: TrioFighter::GAMEWATCH,
+    player_roster_size: CpuRosterSize::Three,
+    player_roster_4: TrioFighter::KIRBY,
+    player_roster_5: TrioFighter::BOWSER,
+    player_roster_6: TrioFighter::BAYONETTA,
+    player_roster_7: TrioFighter::MARIO,
+    player_roster_8: TrioFighter::LUCINA,
+    player_cycle: DEFAULT_PLAYER_CYCLE,
+    player_roster: Some(DEFAULT_PLAYER_ROSTER),
+    cpu_roster: Some(DEFAULT_CPU_ROSTER),
 };
 
 pub static DEFAULTS_MENU: RwLock<TrainingModpackMenu> = RwLock::new(BASE_MENU);
@@ -628,6 +717,20 @@ pub unsafe fn create_app<'a>() -> App<'a> {
         ToggleMultiple,
         false,
     ));
+    button_tab_submenus.push(ButtonConfig::to_submenu(
+        "Cycle CPU Character",
+        "cpu_cycle",
+        "Hold any one button and press the others to cycle through the selected CPU characters",
+        ToggleMultiple,
+        false,
+    ));
+    button_tab_submenus.push(ButtonConfig::to_submenu(
+        "Cycle Player Character",
+        "player_cycle",
+        "Hold any one button and press the others to cycle through the selected player characters",
+        ToggleMultiple,
+        false,
+    ));
     let button_tab = Tab {
         id: "button",
         title: "Button Config",
@@ -788,12 +891,62 @@ pub unsafe fn create_app<'a>() -> App<'a> {
         ToggleSingle,
         false,
     ));
+    misc_tab_submenus.push(OnOff::to_submenu(
+        "Lobby Practice",
+        "lobby_practice",
+        "Enable waiting-room practice controls; re-enter practice after enabling.\nSave states and recording require Training mode.",
+        ToggleSingle,
+        false,
+    ));
     let misc_tab = Tab {
         id: "misc",
         title: "Misc Settings",
         submenus: StatefulTable::with_items(NX_SUBMENU_ROWS, NX_SUBMENU_COLUMNS, misc_tab_submenus),
     };
     overall_menu.tabs.push(misc_tab);
+
+    let player_tab_submenus = vec![OnOff::to_submenu(
+        "Player Swapping",
+        "trio_practice",
+        "Enable changing your character during practice. Choose a character or cycle through your selected character order.",
+        ToggleSingle,
+        false,
+    ), TrioFighter::to_submenu(
+        "Player Character",
+        "player_character",
+        "Apply after closing the menu, without leaving practice.",
+    ), OrderedFighterRoster::to_submenu(
+        "Cycle Characters",
+        "player_roster",
+        "Select characters in the order you want to cycle; numbers show the order.\nAll cycles every menu character in menu order. Keep at least one character selected.",
+    )];
+    overall_menu.tabs.push(Tab {
+        id: "player_characters",
+        title: "Player Characters",
+        submenus: StatefulTable::with_items(
+            NX_SUBMENU_ROWS,
+            NX_SUBMENU_COLUMNS,
+            player_tab_submenus,
+        ),
+    });
+
+    let cpu_tab_submenus = vec![
+        TrioFighter::to_submenu(
+            "CPU Character",
+            "cpu_character",
+            "Apply after closing the menu, without leaving practice.",
+        ),
+        OrderedFighterRoster::to_submenu(
+            "Cycle Characters",
+            "cpu_roster",
+            "Select characters in the order you want to cycle; numbers show the order.\nAll cycles every menu character in menu order. Keep at least one character selected.",
+        ),
+    ];
+    overall_menu.tabs.push(Tab {
+        id: "cpu_characters",
+        title: "CPU Characters",
+        submenus: StatefulTable::with_items(NX_SUBMENU_ROWS, NX_SUBMENU_COLUMNS, cpu_tab_submenus),
+    });
 
     // Ensure that a tab is always selected
     if overall_menu.tabs.get_selected().is_none() {

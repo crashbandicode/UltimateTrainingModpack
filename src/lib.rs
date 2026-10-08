@@ -22,7 +22,10 @@ mod hazard_manager;
 mod hitbox_visualizer;
 mod training;
 
+mod character_roster;
+mod lobby_probe;
 mod logging;
+mod trio_probe;
 
 fn nro_main(nro: &NroInfo<'_>) {
     if nro.module.isLoaded {
@@ -40,6 +43,19 @@ fn nro_main(nro: &NroInfo<'_>) {
 
 #[skyline::main(name = "training_modpack")]
 pub fn main() {
+    logging::init_diagnostics();
+    if cfg!(feature = "trio-probe") {
+        lobby_probe::init();
+        trio_probe::init();
+    } else if cfg!(feature = "lobby-probe") {
+        lobby_probe::init();
+    } else {
+        character_roster::init();
+        initialize_training_modpack();
+    }
+}
+
+fn initialize_training_modpack() {
     std::panic::set_hook(Box::new(|info| {
         let location = info.location().unwrap();
 
@@ -57,6 +73,10 @@ pub fn main() {
             format!("Smash version: {game_version}.\nAtmosphere version: {atmosphere_version}");
 
         let complete_error_message = format!("{msg}\n{location}\n{version_report}");
+        logging::diagnostic(format_args!(
+            "[PracticeDiagnostics] rust_panic {}",
+            complete_error_message
+        ));
 
         skyline::error::show_error(
             69,

@@ -15,6 +15,7 @@ pub mod dev_config;
 pub mod dialog;
 pub mod events;
 pub mod filesystem;
+pub mod game_mode;
 pub mod input;
 pub mod menu;
 pub mod offsets;
@@ -24,22 +25,17 @@ pub mod release;
 pub static FIGHTER_MANAGER_ADDR: RwLock<usize> = RwLock::new(0);
 pub static ITEM_MANAGER_ADDR: RwLock<usize> = RwLock::new(0);
 pub static STAGE_MANAGER_ADDR: RwLock<usize> = RwLock::new(0);
-pub static mut TRAINING_MENU_ADDR: *mut PauseMenu = core::ptr::null_mut();
 
 extern "C" {
     #[link_name = "\u{1}_ZN3app9smashball16is_training_modeEv"]
-    pub fn is_training_mode() -> bool;
+    pub fn is_native_training_mode() -> bool;
 }
 
-#[repr(C)]
-// FUN_71013e7be0 sets this up (13.0.1) so look here if more values are needed
-// If you need full size use gdb to look at allocator
-pub struct PauseMenu {
-    padding: [u8; 0xb60],       // Unknown Values
-    pub stale_move_toggle: u32, // Handles if Stale Moves are on, 0 for off, 1 for on
-    unknown1: u32,
-    unknown2: u32,
-    pub combo_display_toggle: u32, // Handles if Combo Counter displays, 0 for off, 1 for on
+pub unsafe fn is_training_mode() -> bool {
+    if crate::character_roster::busy() {
+        return false;
+    }
+    is_native_training_mode() || crate::training::lobby::active()
 }
 
 #[skyline::from_offset(*OFFSET_GET_BATTLE_OBJECT_FROM_ID as isize)]
@@ -61,19 +57,25 @@ pub unsafe fn try_get_battle_object(battle_object_id: u32) -> Option<&'static ap
 pub fn try_get_module_accessor(
     fighter_id: FighterId,
 ) -> Option<*mut app::BattleObjectModuleAccessor> {
-    let entry_id_int = fighter_id as i32;
+    if crate::character_roster::busy() {
+        return None;
+    }
+    let entry_id_int = crate::training::lobby::entry_id(fighter_id);
     let entry_id = app::FighterEntryID(entry_id_int);
     unsafe {
-        let mgr = *(read(&FIGHTER_MANAGER_ADDR) as *mut *mut app::FighterManager);
+        let address = read(&FIGHTER_MANAGER_ADDR) as *mut *mut app::FighterManager;
+        if address.is_null() || (*address).is_null() {
+            return None;
+        }
+        let mgr = *address;
         let fighter_entry =
             FighterManager::get_fighter_entry(mgr, entry_id) as *mut app::FighterEntry;
         if fighter_entry.is_null() {
             return None;
         }
         let current_fighter_id = FighterEntry::current_fighter_id(fighter_entry);
-        Some(app::sv_battle_object::module_accessor(
-            current_fighter_id as u32,
-        ))
+        let accessor = app::sv_battle_object::module_accessor(current_fighter_id as u32);
+        (!accessor.is_null()).then_some(accessor)
     }
 }
 
@@ -90,15 +92,19 @@ pub fn is_operation_cpu(module_accessor: &mut app::BattleObjectModuleAccessor) -
         let entry_id_int =
             WorkModule::get_int(module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID);
 
-        if entry_id_int == 0 {
+        if entry_id_int == 0 || !crate::training::lobby::permits_entry(entry_id_int) {
             return false;
         }
 
         let entry_id = app::FighterEntryID(entry_id_int);
-        let mgr = *(read(&FIGHTER_MANAGER_ADDR) as *mut *mut app::FighterManager);
+        let address = read(&FIGHTER_MANAGER_ADDR) as *mut *mut app::FighterManager;
+        if address.is_null() || (*address).is_null() {
+            return false;
+        }
+        let mgr = *address;
         let fighter_information = FighterManager::get_fighter_information(mgr, entry_id);
 
-        FighterInformation::is_operation_cpu(fighter_information)
+        !fighter_information.is_null() && FighterInformation::is_operation_cpu(fighter_information)
     }
 }
 
@@ -290,13 +296,15 @@ pub unsafe fn get_player_dmg_digits(p: FighterId) -> (u8, u8, u8, u8) {
 }
 
 pub unsafe fn get_fighter_distance() -> f32 {
-    let player_module_accessor = try_get_module_accessor(FighterId::Player)
-        .expect("Could not get player_module_accessor in get_fighter_distance");
+    let Some(player_module_accessor) = try_get_module_accessor(FighterId::Player) else {
+        return f32::MAX;
+    };
     if StatusModule::status_kind(player_module_accessor) == *FIGHTER_STATUS_KIND_NONE {
         return f32::MAX;
     }
-    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-        .expect("Could not get CPU module_accessor in get_fighter_distance");
+    let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else {
+        return f32::MAX;
+    };
     let player_pos = *PostureModule::pos(player_module_accessor);
     let cpu_pos = *PostureModule::pos(cpu_module_accessor);
     app::sv_math::vec3_distance(
