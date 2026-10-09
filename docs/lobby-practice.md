@@ -36,20 +36,31 @@ Save loading, recording/playback, native UI, another character replacement and p
 
 ## Installation and diagnostics
 
-With the game stopped, replace the existing Training Modpack NRO; never load two copies. Install the required generated waiting editor archive as well:
+With the game stopped, replace the existing Training Modpack NRO; never load two copies. Candidate32w packages the waiting editor in the NRO:
 
     sd:/atmosphere/contents/01006A800016E000/romfs/skyline/plugins/libtraining_modpack.nro
-    sd:/ultimate/TrainingModpack/info_waiting.arc
 
-Preserve the existing training_modpack_menu.conf, saves, other plugins and emulator settings. The waiting archive derives from the operator's owned assets and is supplied only in the private handoff, not a source release. Native version fingerprints and the expected archive must match before activation.
+Preserve the existing training_modpack_menu.conf, saves, other plugins and emulator settings. No separate info_waiting.arc installation is needed; any old copy is ignored. The NRO reconstructs the accepted waiting UI from the game's loaded stock archive, its existing embedded Training UI and a small compiled patch. Input and output fingerprints must match before injection; a mismatch leaves Lobby Practice inactive and logs the reason. The first reconstruction result and its owned allocation are cached for the process lifetime. Fully restart the game after replacing the NRO.
+
+This is a single-file Training Modpack update within an existing Skyline installation; it does not replace Skyline or unrelated plugins. The player and CPU share one ordered-roster implementation. The retired fixed-three P1 implementation is absent; three defaults are just an initial selection.
 
 Persistent logs are sd:/ultimate/TrainingModpack/practice-diagnostics.log and practice-diagnostics.previous.log. Rotation keeps two files of at most 128 KiB each. Records include build/version, scene, request/entry identity, loader phase, completion, HUD/icon refresh, destruction, save/record events and Rust panics. Preserve both files and Atmosphère crash reports after a fault, along with exact NRO hashes, game version, fighter/costume choices and last action. A native fault can prevent the final record.
+
+## Rebuilding the waiting UI patch
+
+The shipped patch is src/static/waiting_ui.patch. It is a bounded copy/literal recipe, not a second full archive. Regenerate it only against a validated target when the embedded Training UI or supported stock archive changes:
+
+    python3 scripts/make_waiting_patch.py STOCK.arc src/static/layout.arc ACCEPTED-WAITING.arc src/static/waiting_ui.patch --report PATCH-REPORT.json
+
+The generator checks reconstruction and records SHA-256 hashes; scripts/waiting_patch_manifest.json pins the accepted inputs and output. Compare the new report before committing a regenerated patch. The runtime separately checks source lengths/fingerprints, copy ranges, maximum output size, and exact output length/fingerprint. The private validation inputs remain outside the repository. The development-only layout_arc_from_file feature affects ordinary Training; waiting reconstruction always uses the pinned embedded donor. The decoder unit tests use synthetic data; the private fixture check also runs the actual Rust decoder against the accepted archive.
 
 ## Validation
 
 Candidate26w passed ordinary P1/CPU reload, ordered/All menus, representative moves, save/record conflicts, reset and re-entry. Both native LDN host roles versus a vanilla peer produced matching combat and results. A separate test destroyed the waiting CPU during an active Bayonetta load; references were invalidated and the actual match retained original CSS G&W.
 
 Candidate29w adds the waiting CPU icon correction. See the versioned handoff's acceptance evidence for its runtime tests and hashes. Physical Switch repeated swaps, transitions, restarts and vanilla-peer desync checks remain required. Emulator/LDN passes do not establish Nintendo online-service or ban safety. One controller per peer is the exercised scope.
+
+Candidate32w passed with the external waiting archive removed: ordinary Training editor and P1/CPU swaps; waiting editor, P1/CPU swaps and CPU icon; native LDN against a vanilla guest with original G&W selection and matching combat/results; and a second waiting load that reused the cached UI and reopened the editor. The actual Rust decoder also reproduced the accepted archive byte-for-byte. Three decoder tests, warning-free all-target NRO Clippy and the no-default-features release build passed. Save/record and actual mid-load interruption evidence remains the unchanged31 regression; those cases were not repeated32.
 
 ## Candidate21 hardware hardening
 

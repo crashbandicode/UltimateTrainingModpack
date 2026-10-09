@@ -20,6 +20,10 @@ mod input_log;
 pub mod menu;
 pub(crate) mod native_menu;
 pub mod notifications;
+mod waiting_archive;
+
+include_flate::flate!(static TRAINING_ARCHIVE: [u8] from "src/static/layout.arc");
+include_flate::flate!(static WAITING_UI_PATCH: [u8] from "src/static/waiting_ui.patch");
 
 pub unsafe fn set_icon_text(pane: &mut TextBox, icons: &[u16]) {
     pane.set_text_string("");
@@ -182,12 +186,15 @@ unsafe fn handle_layout_arc_malloc(ctx: &mut skyline::hooks::InlineCtx) {
             // Also covers reconstruction without a change to the mode tuple.
             lobby::set_ui_ready(false);
             lobby::update();
-            if let Some(inject) = waiting_archive() {
+            if let Some(inject) = waiting_archive(bytes) {
                 ctx.registers[21].set_x(inject.as_ptr() as u64);
                 for register in [1, 23, 24] {
                     ctx.registers[register].set_x(inject.len() as u64);
                 }
-                println!("[LobbyPractice] injected waiting UI bytes={}", inject.len());
+                crate::logging::diagnostic(format_args!(
+                    "[LobbyPractice] injected embedded waiting UI bytes={}",
+                    inject.len()
+                ));
             }
         }
         return;
@@ -225,10 +232,8 @@ unsafe fn handle_layout_arc_malloc(ctx: &mut skyline::hooks::InlineCtx) {
 
     #[cfg(not(feature = "layout_arc_from_file"))]
     {
-        include_flate::flate!(static INJECT_ARC_FROM_FILE: [u8] from "src/static/layout.arc");
-
-        inject_arc = INJECT_ARC_FROM_FILE.as_ptr();
-        inject_arc_size = INJECT_ARC_FROM_FILE.len() as u64;
+        inject_arc = TRAINING_ARCHIVE.as_ptr();
+        inject_arc_size = TRAINING_ARCHIVE.len() as u64;
     }
 
     // Decompressed file pointer
@@ -240,34 +245,29 @@ unsafe fn handle_layout_arc_malloc(ctx: &mut skyline::hooks::InlineCtx) {
     ctx.registers[24].set_x(inject_arc_size);
 }
 
-fn waiting_archive() -> Option<&'static [u8]> {
-    // This prototype consumes a locally grafted owned-game archive. Never bundle it
-    // into the NRO. Keep the allocation alive for the game's resource lifetime.
+fn waiting_archive(stock: &[u8]) -> Option<&'static [u8]> {
+    // Native resources retain this allocation after the hook returns. Build once
+    // from version-checked input; never cache a pointer into the game's input.
     static ARCHIVE: std::sync::OnceLock<Option<Vec<u8>>> = std::sync::OnceLock::new();
     ARCHIVE
         .get_or_init(|| {
-            let path = "sd:/ultimate/TrainingModpack/info_waiting.arc";
-            let result = (|| {
-                let size = std::fs::metadata(path).ok()?.len();
-                if !(4..=8 * 1024 * 1024).contains(&size) {
-                    return None;
+            let result = waiting_archive::build(stock, &TRAINING_ARCHIVE, &WAITING_UI_PATCH);
+            match result {
+                Ok(bytes) => {
+                    crate::logging::diagnostic(format_args!(
+                        "[LobbyPractice] embedded waiting UI ready bytes={}",
+                        bytes.len()
+                    ));
+                    Some(bytes)
                 }
-                let bytes = std::fs::read(path).ok()?;
-                let arc = SarcFile::read(&bytes).ok()?;
-                if !arc
-                    .files
-                    .iter()
-                    .any(|file| file.name.as_deref() == Some("blyt/info_waiting.bflyt"))
-                {
-                    return None;
+                Err(error) => {
+                    crate::logging::diagnostic(format_args!(
+                        "[LobbyPractice] embedded waiting UI disabled: {error}; stock_bytes={}",
+                        stock.len()
+                    ));
+                    None
                 }
-                Some(bytes)
-            })();
-            println!(
-                "[LobbyPractice] waiting UI file loaded={}",
-                result.is_some()
-            );
-            result
+            }
         })
         .as_deref()
 }

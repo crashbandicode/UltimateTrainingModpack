@@ -62,7 +62,7 @@ pub fn init_diagnostics() {
             println!("[PracticeDiagnostics] SD log unavailable: {}", e);
         }
     }
-    diagnostic(format_args!("[PracticeDiagnostics] adapter=shared-roster31 game=13.0.5 main=21450c647b8c5940ed5b68218ea128fd3c5d597d; session_start; max_files=2 max_bytes_each={}", DIAGNOSTIC_LIMIT));
+    diagnostic(format_args!("[PracticeDiagnostics] adapter=single-file32 game=13.0.5 main=21450c647b8c5940ed5b68218ea128fd3c5d597d; session_start; max_files=2 max_bytes_each={}", DIAGNOSTIC_LIMIT));
 }
 
 pub fn diagnostic(args: fmt::Arguments<'_>) {
