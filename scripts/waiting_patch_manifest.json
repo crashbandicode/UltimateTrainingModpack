@@ -1,0 +1,14 @@
+{
+  "ops": 3534,
+  "stock_copied": 1360818,
+  "donor_copied": 3694710,
+  "literal_bytes": 36828,
+  "patch_bytes": 61982,
+  "target_bytes": 5092356,
+  "sha256": {
+    "stock": "7dcc45360bd84dadffcfe8b47771f5d6b40e44468c6a54cbd3dbb6b4142eea64",
+    "donor": "8dd9523eac8716199fbea50f9a5baa9d8146568b41c8a0ae9bf7f08da3d06f96",
+    "target": "3504ddb64e0299cd72c962c6657ecca339a23a64dca0e76761cc58c28cc7a668",
+    "patch": "d566eff96dcc8d90eeb972b76f06c1019daaaab7a4dba14aa5b76742d738eabf"
+  }
+}
