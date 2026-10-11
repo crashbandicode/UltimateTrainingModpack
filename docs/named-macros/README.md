@@ -4,10 +4,11 @@ Turn one fighter's replay inputs into a reusable Training drill, or record a new
 drill by controlling the CPU. Give it a name, load it from the library, and play
 it from your saved Training setup with adjustable position and starting momentum.
 
-**Development preview · Updated October 11, 2026, through revision 20.** These are real captures from native
-game tests of the local implementation. This documentation branch publishes the
-walkthrough; the macro implementation is still undergoing acceptance testing and
-has not been released or deployed to a physical Switch.
+**Development preview · Updated October 11, 2026, through revision 21.** These are
+real captures from native game tests of the local implementation. Native input
+preview has passed the scoped emulator checks below. This documentation branch
+publishes the walkthrough; the implementation has not been released or deployed
+to a physical Switch.
 
 ## Implemented features
 
@@ -19,14 +20,18 @@ has not been released or deployed to a physical Switch.
   validation keeps the draft available for another attempt.
 - **Replay capture:** retain the latest and previous observed captures in memory,
   select one fighter, and export an exact input window.
-- **Visual crop editor:** recorded-pose preview, separate playhead/In/Out handles,
-  single-frame and accelerated seeking, 60-frame jumps, and selected/full playback.
+- **Native input preview:** run the selected inputs through the Training CPU so
+  movement, attacks, projectiles and effects happen normally. Play, Stop and Restart
+  use a saved Training setup; progress follows emitted inputs.
+- **Crop editor:** independent In/Out boundaries, one-frame and accelerated edits,
+  and modifier-assisted 60-frame edits. Editing the range does not seek the game.
 - **Placement and playback:** restore a Training setup, apply relative whole- or
   quarter-unit offsets, preserve recorded momentum or start at rest, and mirror
   horizontal inputs/momentum with facing. Temporary edits, overwrite and Save As
   are available.
 - **Preview lifecycle:** grounded acquisition after character loading, P1 input
-  isolation, standard HUD/statistics hiding, cancellation and CPU-anchor restoration.
+  isolation, standard HUD/statistics hiding, and restoration of both saved fighters
+  after Stop, range edits or close.
 
 ## Saved replay → named macro
 
@@ -68,33 +73,57 @@ Open **Replay Window** while the CPU is idle or falling. **Up/Down** changes the
 selected fighter. **ZL+X** switches between the latest and previous capture when
 both exist. On a GameCube controller, use **Z** for modifier combinations.
 
-![Visual editor showing Dr. Mario's recorded pose and the full 1,862-frame timeline.](images/09-visual-editor.png)
+Before previewing, **enable save states and save a Training setup with both current
+fighters**. After changing CPU kind, close the editor, save the new setup and reopen
+Replay Window. A saved setup for different fighters is rejected without starting
+input playback. Preview uses the explicitly selected slot, its original facing and
+saved damage, independently of random-slot/mirroring/damage options.
 
-*Revision 17: P2 / fighter 18 is Dr. Mario. This latest capture contains 1,862 frames.
-The visible CPU previews Dr. Mario's recorded poses; P1 Pac-Man is held in place.
-Exporting P2 selects Dr. Mario's inputs.*
+![Native preview editor after Stop restored Steve and Dr. Mario to the saved Training setup.](images/15-native-stop-restored.png)
+
+*Revision 21: P2 / fighter 18 selects Dr. Mario's 1,862 captured inputs. Steve is
+the current Training P1. After Stop, both fighters have returned to the saved setup
+and the marker is back at the selection's start.*
 
 ### 4. Select an exact frame window
 
-**Left/Right** seeks one frame; holding accelerates. Hold **ZL or ZR** while
-seeking for 60-frame steps. **L** selects the In handle and **R** selects Out;
-press the same handle button again to return to the playhead. Handles cannot cross.
+**L** selects In and **R** selects Out. **Left/Right** edits that boundary one frame
+at a time; holding accelerates. Hold **ZL or ZR** for 60-frame edits. Handles cannot
+cross. An edit stops any active preview and restores the saved setup; it does not
+move a fighter to a recorded pose.
 
-![Visual crop paused at frame 7 with In 0, exclusive Out 8 and an eight-frame selection.](images/10-eight-frame-selection.png)
+| Control | Native preview action |
+| --- | --- |
+| **X** | Play the selected range from the saved setup; while playing, Stop and restore. |
+| **Y** | Restart the selected range from the saved setup. |
+| **L / R**, then **Left / Right** | Choose and edit In / Out. |
+| **ZL or ZR + Left / Right** | Edit the chosen boundary by 60 frames. |
+| **B** | Close the editor and clean up preview. |
 
-*This selection is **[0, 8)**: frames 0–7, exactly eight inputs. Out is exclusive;
-its preview is the last included frame, 7. The CPU's airborne pose is from that
-recorded frame, not newly simulated from injected replay inputs.*
+![Native input preview in progress, with Dr. Mario's red-and-blue capsule visible.](images/13-native-preview.png)
 
-**X** plays/pauses from the current playhead. **Y** selects cropped or full-capture
-playback. At the finished endpoint, X restarts the chosen range. Playback stops at
-the last included frame. Frame labels use 60 gameplay frames per second; preview
-advancement follows presentation and can be slower on a slow emulator.
+*The marker reports input 93 of the full selection during a restarted preview.
+Dr. Mario and the capsule are running in the game's native simulation. Both
+fighters can react; P1's controller remains owned by the editor.*
+
+![Eight-input selection completed at marker 7, with native effects allowed to finish.](images/14-native-selection.png)
+
+*This selection is **[0, 8)**: inputs 0–7, exactly eight inputs. Out is exclusive.
+The marker stays at 7 after input completion while native animation/effects finish;
+the fighters are not frozen at recorded poses.*
+
+At the end of the range, injection stops and native attacks/effects continue under
+neutral controls. Restart, edit or close to restore the setup. X can also start
+another preview after completion. The marker advances with emitted inputs, not
+draw callbacks. Duration labels assume 60 input frames per second; slow emulation
+can take longer in real time. Pause, arbitrary seeking and frame-step are not offered.
 
 Choose an idle/fall starting point. **ZL+Y** explicitly extends the
 lead-in to a supported clean start. Starting partway through an arbitrary animation is
 not supported. The editor reports analog rounding when CPU AI values fall between
-controller steps.
+controller steps. Use a suitable airborne saved setup for aerial starts. Preview's
+temporary input sequence does not replace the loaded library entry or change the
+loop/record/playback-on-load settings.
 
 ### 5. Name and save the export
 
@@ -105,7 +134,7 @@ retains the crop/draft so you can retry. Check the fighter and frame count first
 ![Native system keyboard showing the default Replay P2 name.](images/11-system-keyboard.png)
 
 *Native keyboard from the revision 13 eight-frame export test, before confirmation.
-It is a separate test moment from the revision 17 crop above. Follow the keyboard's
+It is a separate test moment from the revision 21 crop above. Follow the keyboard's
 own cancel/confirm labels; they differ from the editor's B-to-close control.*
 
 Exported macros persist in `sd:/ultimate/TrainingModpack/macros/`. Unsaved capture
@@ -182,20 +211,48 @@ so use the ones assigned in your setup.
 
 Changing fighter kind parks the crop while the CPU reloads. P1 remains held and
 jump/Plus input is consumed. The percent HUD and native Training statistics remain
-hidden until the editor closes. The new CPU settles to grounded idle before preview
-resumes. Use an idle CPU behavior for this switching workflow.
+hidden until the editor closes. The new CPU settles to grounded idle before the
+editor returns. Use an idle CPU behavior for this switching workflow, then save a
+matching setup before playing the newly selected fighter's inputs.
 
 ![Loading preview fighter with P1 held and B available to close the editor.](images/12-preview-loading.png)
 
 **B closes the editor during loading; an already-started native character install
-finishes safely.** Closing after preview restores the CPU's Training anchor, facing
-and clean idle/fall state. Normal controls and native Training menus become available
-again. This does not restore an arbitrary internal action or the entire replay match.
+finishes safely.** Stop, Restart and close use the native death/rebirth save-state
+cleanup. They restore the saved Training baseline for both fighters, not the world
+that happened to be present when the editor opened. Normal controls and native
+Training menus become available after cleanup. If restoration stalls, B closes the
+editor and native Plus can exit Training; stalled cleanup is not reported as success.
 
 ## What has been tested
 
+### Revision 21: native preview
+
+- A saved setup with mismatched fighters was rejected before any preview injection.
+- With a matching Steve / Dr. Mario setup, all **1,862 selected inputs** completed.
+  Native attacks, a visible capsule, hit interactions and effects were observed.
+- **Y Restart** restored the setup and began at input zero; **X Stop** after
+  424 inputs restored both saved anchors.
+- Two **[0, 8)** runs each emitted exactly eight inputs and ended at marker 7.
+- A **1.5-second held B** closed and restored without leaking a special into
+  gameplay. Native Plus then opened the menu and Quit Training returned to CSS.
+- Legacy macro source with loop, record-on-load and playback-on-load enabled did
+  not hijack preview, and the settings file remained unchanged.
+- All emitted indices were contiguous. Native getter observations covered every
+  write with matching buttons and raw/deadzoned main-stick values. The full run had
+  1,865 observations for 1,862 writes; the interrupted restart had 427 for 424.
+  Repeated observations are not proof of one callback per gameplay tick.
+- **21 panel tests**, strict host/native all-target Clippy and no-default builds
+  passed. The runtime exited normally; the test clone was restored and the original
+  profile's recorded comparison set was unchanged.
+
+These runtime checks used the diagnostic build. The normal build passed its build
+checks and has the same 111 source fingerprints, but is a different binary.
+
+### Earlier recording, library and lifecycle checks
+
 - Native replay observation, switching between latest and preceding captures,
-  fighter selection, and exact frame seeking.
+  fighter selection and exact input-window export.
 - A full 1,862-frame P2 export completing playback, plus an exact **[0, 8)** export
   equal to that full export's first eight inputs.
 - Eight-frame button/left-stick delivery, including mirrored playback, and a
@@ -207,13 +264,14 @@ again. This does not restore an arbitrary internal action or the entire replay m
   nonaccumulating restores, and Dr. Mario rising/falling/at-rest momentum checks.
 - A 143-frame manual recording with native-keyboard cancellation, invalid-name
   rejection, retry/save and library selection without automatic playback.
-- Revision 17 visual crop **[0, 8)** endpoint/restart and full **0…1861** preview.
+- Revision 17 tested the earlier recorded-pose crop backend. Its frame-seeking and
+  presentation-driven preview controls have been replaced by the native controls above.
 - Y/Plus blocked during native loading; the revision 17 short B-cancel case,
   grounded fighter acquisition and standard HUD/statistics hiding passed.
-- A native non-ready CPU reached the 600-tick loading timeout: the editor returned
+- A native non-ready CPU reached the 600-callback loading timeout: the editor returned
   with the selection preserved and the expected notification.
-- The same CPU reacquired its original anchor 33.8 seconds after a full-preview
-  close. Closed-editor Training leave/reentry retained the in-memory capture.
+- The old pose-preview lifecycle reacquired its original CPU anchor after close.
+  Closed-editor Training leave/reentry retained the in-memory capture.
 - Revision 20 fixed the closing-button leak: six 120 ms closes and holds of
   300 ms, 1.5 seconds and 3 seconds stayed neutral. A fresh B press after release
   still worked; a 1.5-second loading cancel also finished safely. These checks used
@@ -221,22 +279,21 @@ again. This does not restore an arbitrary internal action or the entire replay m
 - Strict native all-target Clippy and release/no-default builds passed. Test
   profiles were restored and the original profile's fingerprints remained unchanged.
 
-The revision 20 runtime checks used the diagnostic build. The normal build passed
-its build checks and has identical source fingerprints, but is a different binary.
-
 ## Remaining qualification work
 
 | Item | Current evidence / remaining work |
 | --- | --- |
-| Post-close input | The revision 20 native regression passed short and held closes, fresh-press recovery and loading cancellation. The root fix preserves the physical B level across repeated input-mapping calls while consuming gameplay input. Broader controller mappings and physical hardware remain unverified. |
-| Reload failure / scene changes | The natural non-ready timeout and preserved selection passed. Recovery after timeout and deliberate non-idle CPU cases remain open. Open/busy scene departure was source-audited, but is unreachable through the owned single-controller test controls. |
-| Airborne and visual fidelity | Broader airborne anchors, secondary motion, articles/effects, fighter coverage and exact presentation timing remain qualified. |
-| Exported playback coverage | Longer traces now cover every written input and its native getter values. Repeated observer callbacks and general C-stick/remapping behavior still need qualification. Native source review rejected a proposed “right-stick” field assignment because those bytes are rumble state. Full original-match trajectory reconstruction is outside the design. |
+| Post-close input | Revision 21 passed a 1.5-second held close and native-menu exit. Revision 20 separately covered short/three-second holds, fresh-press recovery and loading cancellation. Broader controller mappings remain unverified. |
+| Reload failure / scene changes | Earlier character-loading timeout preserved the selection. Revision 21's separate failed-restore recovery route was source-reviewed, but a stalled restore was not deliberately induced. Open/busy departure and deliberate non-idle CPU cases remain unqualified. |
+| Fighter and effect coverage | Native Dr. Mario attacks/capsule and settling were observed. Broader airborne setups, other fighters/partners and complete article cleanup remain unqualified. Restoring a saved Training baseline is not arbitrary simulation rewind. |
+| Input timing and controls | Traces cover every emitted input and its native getter values. Repeated callbacks do not establish universal gameplay-tick timing. General C-stick/remapping remains unqualified; native review identifies the upstream “right-stick” fields as rumble state. |
+| Library-selection combinations | Temporary preview ownership is source-reviewed. The revision 21 runtime stressed legacy source and automatic actions; it did not exercise a separate preloaded named-library selection matrix. |
+| Performance | Emulator frame rate varied. This is not a real-time 60 FPS guarantee. |
 | Physical Switch | Local emulator acceptance does not establish hardware validation. |
 
-The follow-up used Opus 5.5 **xhigh** for native source review, Fable 5.1 **high**
-for lifecycle tests, and Grok 4.7 **xhigh** for fidelity and direct-import research.
-The evidence above states the actual results rather than treating assignments as passes.
+Revision 21 received independent source review, including a correction to stalled
+restore recovery. Earlier independent reviews covered native controls and lifecycle
+behavior. Runtime claims above come from the actual exercised cases.
 
 This feature supplies
 one fighter's inputs from your chosen Training setup; it does not reconstruct
@@ -244,14 +301,17 @@ the original match's other fighter, RNG, or arbitrary animation/simulation state
 
 ### Can I import the replay file without playing it?
 
-Direct file import is not currently supported. The replay format contains
+Direct file import is not integrated, but **a raw file decoder already exists**.
+It reads the researched human-controller packets. The replay format contains
 controller records rather than a per-frame dump of simulated CPU actions and
 rendered poses. In the researched Lucario-versus-CPU replay, only the human's
 controller slot contains packets even though the CPU performs many actions.
-Those CPU inputs and poses become available when the game runs its simulation.
+Those CPU-generated inputs become observable when the game runs its simulation.
 
-The current file-decoding path also lacks a generally verified mapping from file
-records to gameplay frames and the macro's control stream. Treating absent CPU
+The remaining adapter needs a generally verified mapping from file records to
+gameplay frames, fighter/controller ownership and the macro's control stream.
+Native input preview does not require recorded poses. Human inputs imported from
+a file could still drive a Training CPU. Treating absent original-AI controller
 packets as neutral input or guessing frame timing would produce an incorrect macro.
 For now, play through only the part you need, then use the captured timeline.
 The latest/previous in-memory captures can be cropped repeatedly without replaying
@@ -261,8 +321,9 @@ that same material while the game remains open.
 
 These screenshots come from native acceptance runs on October 10–11, with emulator
 menu/status chrome cropped away. They are not one continuous session. The visual
-editor/loading images are revision 17; the system keyboard is revision 13; the
-replay/library/playback and placement examples are earlier runs. Historical numeric
-editor/custom-keyboard images remain in the provenance archive but are no longer
-the current instructions. Game pixels are unaltered.
+editor/preview images are revision 21; the loading example is revision 17 and the
+system keyboard is revision 13. Replay/library/playback and placement examples are
+earlier runs. Historical numeric-editor, pose-preview and custom-keyboard images
+remain in the provenance archive but are no longer the current instructions.
+Game pixels are unaltered.
 See [screenshot provenance](SCREENSHOTS.md) for sources and crop details.
