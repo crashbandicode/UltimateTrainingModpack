@@ -4,7 +4,7 @@ Turn one fighter's replay inputs into a reusable Training drill, or record a new
 drill by controlling the CPU. Give it a name, load it from the library, and play
 it from your saved Training setup with adjustable position and starting momentum.
 
-**Development preview · Updated October 11, 2026, through revision 17.** These are real captures from native
+**Development preview · Updated October 11, 2026, through revision 20.** These are real captures from native
 game tests of the local implementation. This documentation branch publishes the
 walkthrough; the macro implementation is still undergoing acceptance testing and
 has not been released or deployed to a physical Switch.
@@ -214,14 +214,21 @@ again. This does not restore an arbitrary internal action or the entire replay m
   with the selection preserved and the expected notification.
 - The same CPU reacquired its original anchor 33.8 seconds after a full-preview
   close. Closed-editor Training leave/reentry retained the in-memory capture.
+- Revision 20 fixed the closing-button leak: six 120 ms closes and holds of
+  300 ms, 1.5 seconds and 3 seconds stayed neutral. A fresh B press after release
+  still worked; a 1.5-second loading cancel also finished safely. These checks used
+  King Dedede with Dr. Mario/Lucario on the default single-controller setup.
 - Strict native all-target Clippy and release/no-default builds passed. Test
   profiles were restored and the original profile's fingerprints remained unchanged.
+
+The revision 20 runtime checks used the diagnostic build. The normal build passed
+its build checks and has identical source fingerprints, but is a different binary.
 
 ## Remaining qualification work
 
 | Item | Current evidence / remaining work |
 | --- | --- |
-| Post-close input | Native tests confirmed that closing B can leak into a special move. A short-press fix passed six 120 ms trials, but both 300 ms trials still leaked; the held-button fix is under investigation. |
+| Post-close input | The revision 20 native regression passed short and held closes, fresh-press recovery and loading cancellation. The root fix preserves the physical B level across repeated input-mapping calls while consuming gameplay input. Broader controller mappings and physical hardware remain unverified. |
 | Reload failure / scene changes | The natural non-ready timeout and preserved selection passed. Recovery after timeout and deliberate non-idle CPU cases remain open. Open/busy scene departure was source-audited, but is unreachable through the owned single-controller test controls. |
 | Airborne and visual fidelity | Broader airborne anchors, secondary motion, articles/effects, fighter coverage and exact presentation timing remain qualified. |
 | Exported playback coverage | Longer traces now cover every written input and its native getter values. Repeated observer callbacks and general C-stick/remapping behavior still need qualification. Native source review rejected a proposed “right-stick” field assignment because those bytes are rumble state. Full original-match trajectory reconstruction is outside the design. |
