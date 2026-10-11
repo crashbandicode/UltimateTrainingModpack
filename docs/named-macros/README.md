@@ -48,6 +48,10 @@ End playback using the game's displayed quit combination, then enter Training
 **without restarting the game**. The latest two observed captures stay in memory.
 If Vault starts another loop, the preceding complete capture remains selectable.
 
+**You do not need to watch the whole match.** Play through the end of the section
+you want, then quit playback and enter Training. Only frames the game has actually
+played are available to crop; include enough lead-in for an idle/fall start.
+
 ### 2. Open Input Recording
 
 Open the modpack menu and go to **Input Recording**. **Replay Window** opens the
@@ -194,16 +198,20 @@ again. This does not restore an arbitrary internal action or the entire replay m
   fighter selection, and exact frame seeking.
 - A full 1,862-frame P2 export completing playback, plus an exact **[0, 8)** export
   equal to that full export's first eight inputs.
-- All eight observed button/left-stick samples delivered in order in the short
-  test, including mirrored playback; the full run has first-eight detailed
-  observations and a full-length completion count.
+- Eight-frame button/left-stick delivery, including mirrored playback, and a
+  later 120-frame exact writer/native-getter comparison passed. A full 1,862-frame
+  trace wrote each input exactly once in order, with matching native getter values;
+  the observer repeated one sequence three extra times, so strict one-observation-
+  per-gameplay-tick timing remains unproven.
 - Manual recording, persistent library operations, placement edits/Save As,
   nonaccumulating restores, and Dr. Mario rising/falling/at-rest momentum checks.
 - A 143-frame manual recording with native-keyboard cancellation, invalid-name
   rejection, retry/save and library selection without automatic playback.
 - Revision 17 visual crop **[0, 8)** endpoint/restart and full **0…1861** preview.
-- Y/Plus blocked during native loading; B cancellation without triggering P1's
-  special; grounded fighter acquisition and standard HUD/statistics hiding.
+- Y/Plus blocked during native loading; the revision 17 short B-cancel case,
+  grounded fighter acquisition and standard HUD/statistics hiding passed.
+- A native non-ready CPU reached the 600-tick loading timeout: the editor returned
+  with the selection preserved and the expected notification.
 - The same CPU reacquired its original anchor 33.8 seconds after a full-preview
   close. Closed-editor Training leave/reentry retained the in-memory capture.
 - Strict native all-target Clippy and release/no-default builds passed. Test
@@ -213,20 +221,34 @@ again. This does not restore an arbitrary internal action or the entire replay m
 
 | Item | Current evidence / remaining work |
 | --- | --- |
-| Post-close frame advantage | Two small values, −7/−4, appeared after closing. None occurred inside preview leases; their cause remains under investigation. |
-| Reload failure / scene changes | The 600-tick timeout and departure with an open/busy editor still need targeted coverage. Normal cancellation and closed-editor leave/reentry passed. |
+| Post-close input | Native tests confirmed that closing B can leak into a special move. A short-press fix passed six 120 ms trials, but both 300 ms trials still leaked; the held-button fix is under investigation. |
+| Reload failure / scene changes | The natural non-ready timeout and preserved selection passed. Recovery after timeout and deliberate non-idle CPU cases remain open. Open/busy scene departure was source-audited, but is unreachable through the owned single-controller test controls. |
 | Airborne and visual fidelity | Broader airborne anchors, secondary motion, articles/effects, fighter coverage and exact presentation timing remain qualified. |
-| Exported playback coverage | Full completion and a detailed eight-frame comparison passed; longer-window exact-once, in-order input delivery and nonzero secondary-stick coverage remain open. Full original-match trajectory reconstruction is outside the design. |
+| Exported playback coverage | Longer traces now cover every written input and its native getter values. Repeated observer callbacks and general C-stick/remapping behavior still need qualification. Native source review rejected a proposed “right-stick” field assignment because those bytes are rumble state. Full original-match trajectory reconstruction is outside the design. |
 | Physical Switch | Local emulator acceptance does not establish hardware validation. |
 
-The follow-up assignments are Opus 5.5 **xhigh** for post-close accounting/root-cause
-review; Fable 5.1 **high** for timeout, scene-change and airborne lifecycle checks;
-and Grok 4.7 **xhigh** for fidelity/playback coverage and physical-test feasibility.
-Assignments are work in progress, not additional passing results.
+The follow-up used Opus 5.5 **xhigh** for native source review, Fable 5.1 **high**
+for lifecycle tests, and Grok 4.7 **xhigh** for fidelity and direct-import research.
+The evidence above states the actual results rather than treating assignments as passes.
 
 This feature supplies
 one fighter's inputs from your chosen Training setup; it does not reconstruct
 the original match's other fighter, RNG, or arbitrary animation/simulation state.
+
+### Can I import the replay file without playing it?
+
+Direct file import is not currently supported. The replay format contains
+controller records rather than a per-frame dump of simulated CPU actions and
+rendered poses. In the researched Lucario-versus-CPU replay, only the human's
+controller slot contains packets even though the CPU performs many actions.
+Those CPU inputs and poses become available when the game runs its simulation.
+
+The current file-decoding path also lacks a generally verified mapping from file
+records to gameplay frames and the macro's control stream. Treating absent CPU
+packets as neutral input or guessing frame timing would produce an incorrect macro.
+For now, play through only the part you need, then use the captured timeline.
+The latest/previous in-memory captures can be cropped repeatedly without replaying
+that same material while the game remains open.
 
 ## About the screenshots
 
