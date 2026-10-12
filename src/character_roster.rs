@@ -8,6 +8,7 @@ use skyline::hooks::{getRegionAddress, InlineCtx, Region};
 use training_mod_consts::{OnOff, TrainingModpackMenu, TrioFighter, MENU};
 use training_mod_sync::{lock_write, read as setting};
 
+use crate::character_memory::WaitingSession;
 use crate::common::{
     button_config, game_mode,
     input::{Buttons, MappedInputs},
@@ -23,6 +24,7 @@ static BASE: AtomicUsize = AtomicUsize::new(0);
 static BUSY: AtomicBool = AtomicBool::new(false);
 static OWNED_BUTTONS: AtomicU32 = AtomicU32::new(0);
 static STATES: [Mutex<State>; 2] = [Mutex::new(State::empty()), Mutex::new(State::empty())];
+static WAITING_MEMORY: Mutex<WaitingSession<TrioFighter>> = Mutex::new(WaitingSession::empty());
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Role {
@@ -59,6 +61,12 @@ struct Scope {
     owner: u32,
 }
 
+impl Scope {
+    fn waiting(self) -> bool {
+        self.mode != 0x04040000
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Selection {
     Direct(TrioFighter),
@@ -72,6 +80,7 @@ struct Request {
     entry: usize,
     selection: Selection,
     age: usize,
+    restoring: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -178,6 +187,10 @@ pub fn settings_changed(previous: &TrainingModpackMenu) {
 }
 
 fn queue(role: Role, selection: Selection) {
+    queue_request(role, selection, false);
+}
+
+fn queue_request(role: Role, selection: Selection, restoring: bool) {
     if !role.enabled() {
         return;
     }
@@ -194,11 +207,23 @@ fn queue(role: Role, selection: Selection) {
         || lobby::native_ui_busy()
         || button_config::has_pending_request()
     {
-        trace!("[CharacterRoster] request rejected: another operation owns practice");
-        notify(role, "Finish the current practice action first".into());
+        if !restoring {
+            trace!("[CharacterRoster] request rejected: another operation owns practice");
+            notify(role, "Finish the current practice action first".into());
+        }
         return;
     }
     let mut state = state_for(role).lock().unwrap();
+    // The callback's restore peek may race a manual request. The role lock also
+    // protects manual enqueue/cancellation: never overwrite newer explicit intent.
+    if restoring
+        && (state.pending.is_some()
+            || state.active.is_some()
+            || !matches!(selection, Selection::Direct(target)
+                if WAITING_MEMORY.lock().unwrap().restore_target(role as usize) == Some(target)))
+    {
+        return;
+    }
     let Some((entry, _)) = state.observed else {
         drop(state);
         trace!("[CharacterRoster] request rejected: no current practice entry");
@@ -214,7 +239,11 @@ fn queue(role: Role, selection: Selection) {
         entry,
         selection,
         age: 0,
+        restoring,
     });
+    if scope.waiting() && !restoring {
+        WAITING_MEMORY.lock().unwrap().manual_request(role as usize);
+    }
     trace!(
         "[CharacterRoster] queued owner={} entry=0x{:x} epoch={} selection={:?}",
         scope.owner,
@@ -222,6 +251,37 @@ fn queue(role: Role, selection: Selection) {
         state.epoch,
         selection
     );
+}
+
+/// True when a CPU kind request can be queued without the rejection notice.
+pub fn cpu_reload_ready() -> bool {
+    if busy()
+        || training::recording_or_playback()
+        || unsafe { training::save_states::is_loading() }
+        || lobby::native_ui_busy()
+        || button_config::has_pending_request()
+        || menu::captures_input()
+    {
+        return false;
+    }
+    let state = state_for(Role::Cpu).lock().unwrap();
+    state.pending.is_none() && state.observed.is_some() && scope(Role::Cpu).is_some()
+}
+
+/// Ask the existing loader to change the CPU to `kind`. Values only.
+/// A kind outside the roster notifies once and does not queue.
+pub fn request_cpu_kind(kind: u32) -> bool {
+    let Some(fighter) = TrioFighter::from_kind(kind) else {
+        notify(Role::Cpu, "Named macro fighter is not available".into());
+        return false;
+    };
+    if state_for(Role::Cpu).lock().unwrap().pending.is_some() {
+        return false;
+    }
+    queue(Role::Cpu, Selection::Direct(fighter));
+    state_for(Role::Cpu).lock().unwrap().pending.is_some_and(
+        |request| matches!(request.selection, Selection::Direct(target) if target == fighter),
+    )
 }
 
 /// Runs before the delay queue. Consume only our request, giving conflicting
@@ -257,7 +317,11 @@ pub fn suppress_owned_buttons(out: &mut MappedInputs) {
 
 /// Cancel plugin intent immediately. An already installed native reload belongs
 /// to the native scene teardown; never clear its flags or force its state ahead.
-pub fn scene_changed() {
+pub fn scene_changed(mode: game_mode::Mode) {
+    WAITING_MEMORY
+        .lock()
+        .unwrap()
+        .scene_changed(mode.initialized, mode.melee, mode.mode);
     OWNED_BUTTONS.store(0, Ordering::Relaxed);
     for role in [Role::Player, Role::Cpu] {
         let mut state = state_for(role).lock().unwrap();
@@ -356,6 +420,12 @@ unsafe fn service(ctx: &mut InlineCtx) {
             if state.revision == active.revision {
                 state.cursor = active.slot;
             }
+            if active.scope.waiting() {
+                WAITING_MEMORY
+                    .lock()
+                    .unwrap()
+                    .commit(role as usize, active.target);
+            }
             drop(state);
             role.sync_selection(active.target);
             refresh_hud(entry, owner, active.target.kind());
@@ -392,7 +462,9 @@ unsafe fn service(ctx: &mut InlineCtx) {
     let Some(mut request) = request else {
         // Display the live fighter in the picker, including the initial CSS choice.
         // This permits choosing the same menu fighter again after a cycle.
-        if scope(role).is_some_and(|s| s.owner == owner) && !menu::captures_input() {
+        if let Some(current_scope) =
+            scope(role).filter(|s| s.owner == owner && !menu::captures_input())
+        {
             let kind = read::<u32>(entry, 0x18);
             if let Some(fighter) = TrioFighter::from_kind(kind) {
                 let mut state = state_for(role).lock().unwrap();
@@ -405,8 +477,11 @@ unsafe fn service(ctx: &mut InlineCtx) {
                 {
                     return;
                 }
-                if state.observed != Some((entry as usize, kind)) && active_body(entry, owner, kind)
-                {
+                if !active_body(entry, owner, kind) {
+                    return;
+                }
+                let newly_observed = state.observed != Some((entry as usize, kind));
+                if newly_observed {
                     state.observed = Some((entry as usize, kind));
                     trace!(
                         "[CharacterRoster] observed owner={} entry=0x{:x} kind=0x{:x} epoch={}",
@@ -415,8 +490,29 @@ unsafe fn service(ctx: &mut InlineCtx) {
                         kind,
                         state.epoch
                     );
-                    drop(state);
+                }
+                drop(state);
+                if newly_observed {
+                    if current_scope.waiting()
+                        && WAITING_MEMORY
+                            .lock()
+                            .unwrap()
+                            .observe(role as usize, fighter)
+                    {
+                        trace!("[CharacterRoster] fresh waiting entry lifetime; cleared both practice choices");
+                    }
                     role.sync_selection(fighter);
+                }
+                if current_scope.waiting() && role.enabled() {
+                    let target = WAITING_MEMORY.lock().unwrap().restore_target(role as usize);
+                    if let Some(target) = target {
+                        if target.kind() == kind {
+                            WAITING_MEMORY.lock().unwrap().commit(role as usize, target);
+                            role.sync_selection(target);
+                        } else {
+                            queue_request(role, Selection::Direct(target), true);
+                        }
+                    }
                 }
             }
         }
@@ -449,10 +545,12 @@ unsafe fn service(ctx: &mut InlineCtx) {
         || read::<u8>(entry, 0x591f) != 0
     {
         drop(state);
-        trace!(
-            "[CharacterRoster] rejected at native boundary: fighter not idle or another action owns practice"
-        );
-        notify(role, "Character swap unavailable during this action".into());
+        if !request.restoring {
+            trace!(
+                "[CharacterRoster] rejected at native boundary: fighter not idle or another action owns practice"
+            );
+            notify(role, "Character swap unavailable during this action".into());
+        }
         return;
     }
     let m = setting(&MENU);
@@ -471,7 +569,11 @@ unsafe fn service(ctx: &mut InlineCtx) {
     };
     if target.kind() == current {
         state.cursor = slot;
+        if request.scope.waiting() {
+            WAITING_MEMORY.lock().unwrap().commit(role as usize, target);
+        }
         drop(state);
+        role.sync_selection(target);
         notify(
             role,
             format!(
@@ -536,6 +638,20 @@ pub unsafe fn on_destroy(entry: *const u8) {
     }
     let role = if owner == 0 { Role::Player } else { Role::Cpu };
     let mut state = state_for(role).lock().unwrap();
+    if role == Role::Player
+        && lobby::is_waiting_scene()
+        && (state
+            .observed
+            .is_some_and(|(identity, _)| identity == entry as usize)
+            || state.active.is_some_and(|a| {
+                a.entry == entry as usize
+                    && a.epoch == state.epoch
+                    && !a.departed
+                    && a.scope.waiting()
+            }))
+    {
+        WAITING_MEMORY.lock().unwrap().player_departed();
+    }
     if state.pending.is_some_and(|r| r.entry == entry as usize) {
         trace!(
             "[CharacterRoster] canceled queued request on entry destruction owner={} entry=0x{:x}",

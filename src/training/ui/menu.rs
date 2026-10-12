@@ -83,6 +83,84 @@ static PROCON_BUTTON_MAPPING: LazyLock<HashMap<&'static str, u16>> = LazyLock::n
     ])
 });
 
+unsafe fn render_named_panel(root_pane: &Pane, view: &training_mod_tui::macro_panel::View) {
+    root_pane
+        .find_pane_by_name_recursive_expect("CurrentTab")
+        .find_pane_by_name_recursive_expect("set_txt_help")
+        .as_textbox()
+        .set_text_string(&view.title);
+    for name in [
+        "LeftTab",
+        "RightTab",
+        "SaveDefaults",
+        "ResetDefaults",
+        "ClearToggle",
+    ] {
+        if let Some(help) = root_pane
+            .find_pane_by_name_recursive(name)
+            .and_then(|pane| pane.find_pane_by_name_recursive("set_txt_help"))
+        {
+            help.as_textbox().set_text_string("");
+        }
+    }
+    root_pane
+        .find_pane_by_name_recursive_expect("FooterTxt")
+        .as_textbox()
+        .set_text_string(&view.footer);
+    for row in 0..NX_SUBMENU_ROWS {
+        let menu_button_row = root_pane
+            .find_pane_by_name_recursive_expect(format!("TrModMenuButtonRow{row}").as_str());
+        menu_button_row.set_visible(true);
+        for col in 0..NX_SUBMENU_COLUMNS {
+            let index = row * NX_SUBMENU_COLUMNS + col;
+            let menu_button =
+                menu_button_row.find_pane_by_name_recursive_expect(format!("Button{col}").as_str());
+            let label = view.labels.get(index).map(String::as_str).unwrap_or("");
+            if label.is_empty() {
+                menu_button.set_visible(false);
+                continue;
+            }
+            menu_button.set_visible(true);
+            if let Some(icon) = menu_button.find_pane_by_name_recursive("Icon") {
+                icon.set_visible(false);
+            }
+            if let Some(check) = menu_button.find_pane_by_name_recursive("check") {
+                check.set_visible(false);
+            }
+            for value in 1..=TOGGLE_MAX {
+                if let Some(pane) =
+                    menu_button.find_pane_by_name_recursive(format!("{value}").as_str())
+                {
+                    pane.set_visible(false);
+                } else {
+                    break;
+                }
+            }
+            let title_text = menu_button
+                .find_pane_by_name_recursive_expect("TitleTxt")
+                .as_textbox();
+            let title_bg = menu_button
+                .find_pane_by_name_recursive_expect("TitleBg")
+                .as_picture();
+            let title_bg_material = &mut *title_bg.material;
+            title_text.set_text_string(label);
+            if index == view.selected {
+                title_bg_material.set_white_res_color(BG_LEFT_ON_WHITE_COLOR);
+                title_bg_material.set_black_res_color(BG_LEFT_ON_BLACK_COLOR);
+                title_text.text_shadow_enable(true);
+                title_text.text_outline_enable(true);
+                title_text.set_color(255, 255, 255, 255);
+            } else {
+                title_bg_material.set_white_res_color(BG_LEFT_OFF_WHITE_COLOR);
+                title_bg_material.set_black_res_color(BG_LEFT_OFF_BLACK_COLOR);
+                title_text.text_shadow_enable(false);
+                title_text.text_outline_enable(false);
+                title_text.set_color(178, 199, 211, 255);
+            }
+        }
+    }
+}
+
 unsafe fn render_submenu_page(app: &mut App, root_pane: &Pane) {
     let tabs_clone = app.tabs.clone(); // Need this to avoid double-borrow later on
     let tab = app.selected_tab();
@@ -475,15 +553,31 @@ pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
     }
     assign(&VANILLA_MENU_ACTIVE, vanilla_active);
 
+    let clip_foreground = crate::training::named_macros::clip_foreground() && !vanilla_active;
+    if !clip_foreground { super::clip_editor::restore(root_pane); }
+    let panel_open = crate::training::named_macros::panel_visible() || crate::replay_capture::loading();
+    // Visibility is lifecycle state, not an input-driven menu update. In
+    // particular, neither the clip branch nor a quiet loading frame may skip it.
+    if let Some(status_r_pane) = native_root.find_pane_by_name_recursive("status_R") {
+        status_r_pane.set_visible(!read(&QUICK_MENU_ACTIVE) && !panel_open);
+    }
     let overall_parent_pane = root_pane.find_pane_by_name_recursive_expect("TrModMenu");
-    overall_parent_pane.set_visible(read(&QUICK_MENU_ACTIVE) && !read(&VANILLA_MENU_ACTIVE));
+    overall_parent_pane
+        .set_visible((read(&QUICK_MENU_ACTIVE) || panel_open) && !read(&VANILLA_MENU_ACTIVE));
     let menu_close_wait_frame = frame_counter::get_frame_count(*MENU_CLOSE_FRAME_COUNTER);
-    fade_out(
-        overall_parent_pane,
-        MENU_CLOSE_WAIT_FRAMES - menu_close_wait_frame,
-        MENU_CLOSE_WAIT_FRAMES,
-    );
+    if panel_open {
+        overall_parent_pane.alpha = 255;
+        overall_parent_pane.global_alpha = 255;
+    } else {
+        fade_out(overall_parent_pane, MENU_CLOSE_WAIT_FRAMES.saturating_sub(menu_close_wait_frame), MENU_CLOSE_WAIT_FRAMES);
+    }
 
+    if clip_foreground {
+        if let Some(view) = crate::replay_capture::clip_view() {
+            super::clip_editor::draw(root_pane, &view, crate::replay_preview::status());
+        }
+        return;
+    }
     // Only submit updates if we have received input
     let received_input = read(&MENU_RECEIVED_INPUT);
     if !received_input {
@@ -522,12 +616,6 @@ pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
                 .find_pane_by_name_recursive_expect("ValueTxt")
                 .set_visible(false);
         }
-    }
-
-    // Make normal training panes invisible if we're active
-    // InfluencedAlpha means "Should my children panes' alpha be influenced by mine, as the parent?"
-    if let Some(status_r_pane) = native_root.find_pane_by_name_recursive("status_R") {
-        status_r_pane.set_visible(!read(&QUICK_MENU_ACTIVE));
     }
 
     root_pane
@@ -669,10 +757,14 @@ pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
         AppPage::CONFIRMATION => render_confirmation_page(&mut app, root_pane),
         AppPage::CLOSE => {}
     }
+    if let Some(view) = crate::training::named_macros::panel_view() {
+        render_named_panel(root_pane, &view);
+    }
 
     // Preferences can still be edited for the next ordinary Training session.
     // Explain the current capability instead of silently promising a lobby action.
     if crate::training::lobby::is_waiting_scene()
+        && !crate::training::named_macros::panel_visible()
         && !matches!(app.page, AppPage::CONFIRMATION | AppPage::CLOSE)
     {
         let tab = app.selected_tab().id;

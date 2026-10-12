@@ -171,6 +171,16 @@ fn into_transition_term(starting_status: StartingStatus) -> i32 {
 }
 
 pub unsafe fn handle_recording() {
+    if crate::replay_preview::occupied() {
+        // Preview completion never consults the user's loop/slot/record-on-load
+        // settings. Let the last emitted input run before ending injection.
+        if read(&INPUT_RECORD) == Playback
+            && read(&INPUT_RECORD_FRAME) >= read(&CURRENT_FRAME_LENGTH) {
+            stop_playback();
+            crate::replay_preview::complete();
+        }
+        return;
+    }
     if let Some(player_module_accessor) = try_get_module_accessor(FighterId::Player) {
         if let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) {
             handle_recording_for_fighter(&mut *player_module_accessor);
@@ -212,9 +222,21 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
                 "[PracticeRecording] playback_shortcut player_kind=0x{:x}",
                 fighter_kind
             ));
-            playback(read(&MENU).playback_button_slots.get_random().into_idx());
+            if crate::training::named_macros::source_is_named() {
+                crate::training::named_macros::request_playback();
+            } else {
+                playback(read(&MENU).playback_button_slots.get_random().into_idx());
+            }
         } else if read(&MENU).record_trigger.contains(&RecordTrigger::COMMAND) && record_requested {
-            lockout_record();
+            if crate::training::named_macros::source_is_named() {
+                if is_recording() || is_standby() {
+                    finish_named_capture();
+                } else if read(&INPUT_RECORD) == None {
+                    start_named_lockout();
+                }
+            } else {
+                lockout_record();
+            }
         }
         let input_record = read(&INPUT_RECORD);
         if input_record == None {
@@ -222,45 +244,71 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
         }
         // Handle recording end
         let input_record_frame = read(&INPUT_RECORD_FRAME);
-        let last_frame = read(&CURRENT_FRAME_LENGTH) - 1;
+        let last_frame = read(&CURRENT_FRAME_LENGTH)
+            - usize::from(!crate::training::named_macros::using_frames());
         if (input_record == Record || input_record == Playback) && input_record_frame >= last_frame
         {
-            if input_record == Record {
+            let named_capture =
+                input_record == Record && crate::training::named_macros::capture_active();
+            let named_playback =
+                input_record == Playback && crate::training::named_macros::playback_active();
+            if named_capture {
+                finish_named_capture();
+            } else if named_playback {
                 crate::logging::diagnostic(format_args!(
-                    "[PracticeRecording] recording_complete slot={} frames={}",
-                    read(&CURRENT_RECORD_SLOT),
-                    input_record_frame + 1
+                    "[PracticeRecording] named_playback_complete emitted_frames={} length={}",
+                    input_record_frame, read(&CURRENT_FRAME_LENGTH)
                 ));
-            }
-            assign(&POSSESSION, Player);
-            if mash::is_playback_queued() {
-                mash::reset();
-            }
-
-            // If we need to crop the recording for neutral input
-            // INPUT_RECORD_FRAME must be > 0 to prevent bounding errors
-            if input_record == Record
-                && read(&MENU).recording_crop == OnOff::ON
-                && input_record_frame > 0
-            {
-                let mut input_record_len = input_record_frame;
-                while input_record_len > 0 && is_input_neutral(input_record_len - 1) {
-                    // Discard frames at the end of the recording until the last frame with input
-                    input_record_len -= 1;
+                assign(&POSSESSION, Player);
+                if mash::is_playback_queued() {
+                    mash::reset();
                 }
-                assign(&CURRENT_FRAME_LENGTH, input_record_len);
-                let mut p1_frame_length_mapping = lock_write(&P1_FRAME_LENGTH_MAPPING);
-                (*p1_frame_length_mapping)[read(&CURRENT_RECORD_SLOT)] = input_record_len;
-                drop(p1_frame_length_mapping);
-            }
-
-            assign(&INPUT_RECORD_FRAME, 0);
-
-            if read(&MENU).playback_loop == OnOff::ON && input_record == Playback {
-                let playback_slot = read(&CURRENT_PLAYBACK_SLOT);
-                playback(Some(playback_slot));
+                assign(&INPUT_RECORD_FRAME, 0);
+                if read(&MENU).playback_loop == OnOff::ON {
+                    playback_named();
+                } else {
+                    crate::training::named_macros::end_playback();
+                    restore_named_legacy();
+                    assign(&INPUT_RECORD, None);
+                }
             } else {
-                assign(&INPUT_RECORD, None);
+                if input_record == Record {
+                    crate::logging::diagnostic(format_args!(
+                        "[PracticeRecording] recording_complete slot={} frames={}",
+                        read(&CURRENT_RECORD_SLOT),
+                        input_record_frame + 1
+                    ));
+                }
+                assign(&POSSESSION, Player);
+                if mash::is_playback_queued() {
+                    mash::reset();
+                }
+
+                // If we need to crop the recording for neutral input
+                // INPUT_RECORD_FRAME must be > 0 to prevent bounding errors
+                if input_record == Record
+                    && read(&MENU).recording_crop == OnOff::ON
+                    && input_record_frame > 0
+                {
+                    let mut input_record_len = input_record_frame;
+                    while input_record_len > 0 && is_input_neutral(input_record_len - 1) {
+                        // Discard frames at the end of the recording until the last frame with input
+                        input_record_len -= 1;
+                    }
+                    assign(&CURRENT_FRAME_LENGTH, input_record_len);
+                    let mut p1_frame_length_mapping = lock_write(&P1_FRAME_LENGTH_MAPPING);
+                    (*p1_frame_length_mapping)[read(&CURRENT_RECORD_SLOT)] = input_record_len;
+                    drop(p1_frame_length_mapping);
+                }
+
+                assign(&INPUT_RECORD_FRAME, 0);
+
+                if read(&MENU).playback_loop == OnOff::ON && input_record == Playback {
+                    let playback_slot = read(&CURRENT_PLAYBACK_SLOT);
+                    playback(Some(playback_slot));
+                } else {
+                    assign(&INPUT_RECORD, None);
+                }
             }
         }
     }
@@ -349,8 +397,59 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
     }
 }
 
+pub unsafe fn start_named_lockout() {
+    if !is_training_mode() || crate::replay_preview::occupied() {
+        return;
+    }
+    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
+        .expect("Could not get CPU module accessor in start_named_lockout");
+    let start = crate::training::named_macros::snapshot_start(&mut *cpu_module_accessor);
+    crate::training::named_macros::remember_legacy(read(&RECORDED_LR), read(&STARTING_STATUS));
+    crate::training::named_macros::begin_capture(start);
+    let recording_duration = training_mod_macros::MAX_FRAMES;
+    crate::logging::diagnostic(format_args!(
+        "[PracticeRecording] named_record_lockout cpu_kind=0x{:x} frames={}",
+        start.fighter_kind, recording_duration
+    ));
+    assign(&CURRENT_FRAME_LENGTH, recording_duration);
+    assign(&INPUT_RECORD, Pause);
+    assign(&INPUT_RECORD_FRAME, 0);
+    assign(&POSSESSION, Lockout);
+    assign(&LOCKOUT_FRAME, 30);
+    assign(&BUFFER_FRAME, 0);
+    assign(&RECORDED_LR, start.facing);
+    assign(&CURRENT_LR, start.facing);
+}
+
+unsafe fn finish_named_capture() {
+    let crop = read(&MENU).recording_crop == OnOff::ON;
+    assign(&POSSESSION, Player);
+    assign(&INPUT_RECORD, None);
+    assign(&INPUT_RECORD_FRAME, 0);
+    crate::training::named_macros::finish_capture(crop);
+    restore_named_legacy();
+}
+
+/// Finish before input delay, storage and CPU injection can consume the stop chord.
+pub unsafe fn handle_named_stop_request(player_idx: i32) -> bool {
+    if player_idx != 0 || !crate::training::named_macros::capture_active()
+        || !button_config::combo_passes(button_config::ButtonCombo::InputRecord)
+    {
+        return false;
+    }
+    finish_named_capture();
+    true
+}
+
+fn restore_named_legacy() {
+    if let Some((facing, status)) = crate::training::named_macros::take_legacy() {
+        assign(&RECORDED_LR, facing);
+        assign(&STARTING_STATUS, status);
+    }
+}
+
 pub unsafe fn lockout_record() {
-    if !is_training_mode() {
+    if !is_training_mode() || crate::replay_preview::occupied() {
         return;
     }
     let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
@@ -379,9 +478,55 @@ pub unsafe fn lockout_record() {
     assign(&CURRENT_LR, PostureModule::lr(cpu_module_accessor));
 }
 
+pub unsafe fn playback_named() -> bool {
+    if !is_training_mode() || crate::replay_preview::occupied() {
+        return false;
+    }
+    if read(&INPUT_RECORD) == Pause {
+        warn!("Tried to playback during lockout!");
+        return false;
+    }
+    let Some(info) = crate::training::named_macros::begin_playback() else {
+        crate::training::ui::notifications::notification(
+            "Named Macro".to_owned(),
+            "Load a named macro and wait for its fighter".to_owned(),
+            120,
+        );
+        return false;
+    };
+    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
+        .expect("Could not get CPU module accessor in playback_named");
+    crate::training::named_macros::remember_legacy(read(&RECORDED_LR), read(&STARTING_STATUS));
+    assign(&RECORDED_LR, info.facing);
+    assign(&STARTING_STATUS, info.status);
+    assign(&CURRENT_FRAME_LENGTH, info.len);
+    assign(&INPUT_RECORD, Playback);
+    assign(&POSSESSION, Player);
+    assign(&INPUT_RECORD_FRAME, 0);
+    assign(&BUFFER_FRAME, 0);
+    assign(&CURRENT_LR, PostureModule::lr(cpu_module_accessor));
+    true
+}
+
+pub unsafe fn playback_preview(recording: training_mod_macros::MacroRecording) -> bool {
+    if !is_training_mode() || recording.validate().is_err() { return false; }
+    let Some(cpu) = try_get_module_accessor(FighterId::CPU) else { return false; };
+    let info = crate::training::named_macros::begin_preview(recording);
+    crate::training::named_macros::remember_legacy(read(&RECORDED_LR), read(&STARTING_STATUS));
+    assign(&RECORDED_LR, info.facing);
+    assign(&STARTING_STATUS, info.status);
+    assign(&CURRENT_FRAME_LENGTH, info.len);
+    assign(&INPUT_RECORD, Playback);
+    assign(&POSSESSION, Player);
+    assign(&INPUT_RECORD_FRAME, 0);
+    assign(&BUFFER_FRAME, 0);
+    assign(&CURRENT_LR, PostureModule::lr(cpu));
+    true
+}
+
 // Returns whether we did playback
 pub unsafe fn playback(slot: Option<usize>) -> bool {
-    if !is_training_mode() {
+    if !is_training_mode() || crate::replay_preview::occupied() {
         return false;
     }
     if read(&INPUT_RECORD) == Pause {
@@ -434,15 +579,32 @@ pub unsafe fn stop_playback() {
             read(&INPUT_RECORD_FRAME)
         ));
     }
+    crate::training::named_macros::cancel_motion();
+    restore_named_legacy();
     assign(&INPUT_RECORD, None);
     assign(&INPUT_RECORD_FRAME, 0);
     assign(&POSSESSION, Player);
+    assign(&BUFFER_FRAME, 0);
+    assign(&LOCKOUT_FRAME, 0);
+}
+
+/// Only verified native control fields; trailing "rstick" fields are rumble.
+fn neutral_controls(controls: &mut ControlModuleInternal) {
+    controls.buttons = Buttons::empty();
+    controls.stick_x = 0.0;
+    controls.stick_y = 0.0;
+    controls.clamped_lstick_x = 0.0;
+    controls.clamped_lstick_y = 0.0;
 }
 
 pub unsafe fn is_input_neutral(input_frame: usize) -> bool {
     // Returns whether we should be done with standby this frame (if any significant controller input has been made)
-    let current_record_slot = read(&CURRENT_RECORD_SLOT);
-    let frame_input = read(&P1_FINAL_MAPPING)[current_record_slot][input_frame];
+    let frame_input = if crate::training::named_macros::capture_active() {
+        crate::training::named_macros::frame_at(input_frame)
+    } else {
+        let current_record_slot = read(&CURRENT_RECORD_SLOT);
+        read(&P1_FINAL_MAPPING)[current_record_slot][input_frame]
+    };
 
     let clamped_lstick_x =
         ((frame_input.lstick_x as f32) * STICK_CLAMP_MULTIPLIER).clamp(-1.0, 1.0);
@@ -468,6 +630,18 @@ pub unsafe fn handle_final_input_mapping(player_idx: i32, out: *mut MappedInputs
         // if player 1
         if read(&INPUT_RECORD) == Record {
             let mut input_record_frame = lock_write(&INPUT_RECORD_FRAME);
+            if crate::training::named_macros::capture_active() {
+                if *input_record_frame == 0 {
+                    if let Some(cpu) = try_get_module_accessor(FighterId::CPU) {
+                        let start = crate::training::named_macros::capture_start(&mut *cpu);
+                        assign(&RECORDED_LR, start.facing);
+                        assign(&CURRENT_LR, start.facing);
+                    }
+                }
+                crate::training::named_macros::store_frame(*input_record_frame, &*out);
+                *out = MappedInputs::empty();
+                return;
+            }
             // check for standby before starting action:
             if read(&POSSESSION) == Standby && !is_input_neutral(0) {
                 // last input made us start an action, so start recording and end standby.
@@ -480,20 +654,22 @@ pub unsafe fn handle_final_input_mapping(player_idx: i32, out: *mut MappedInputs
                 // We'll want to save this status so that we use the correct TRANSITION TERM for hitstun cancelling out of damage fly
                 let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
                     .expect("Could not get CPU module accessor in handle_final_input_mapping");
-                assign(
-                    &STARTING_STATUS,
-                    StatusModule::status_kind(cpu_module_accessor),
-                );
+                let status = StatusModule::status_kind(cpu_module_accessor);
+                assign(&STARTING_STATUS, status);
                 // TODO: Handle this based on slot later instead
                 // let p1_starting_statuses = lock_write_rwlock(&P1_STARTING_STATUSES);
                 // (*p1_starting_statuses)[read(&CURRENT_PLAYBACK_SLOT)] =
                 //     into_starting_status(StatusModule::status_kind(cpu_module_accessor));
                 // drop(p1_starting_statuses);
             }
-            let mut p1_final_mapping = lock_write(&P1_FINAL_MAPPING);
-            let current_record_slot = read(&CURRENT_RECORD_SLOT);
-            (*p1_final_mapping)[current_record_slot][*input_record_frame] = *out;
-            drop(p1_final_mapping);
+            if crate::training::named_macros::capture_active() {
+                crate::training::named_macros::store_frame(*input_record_frame, &*out);
+            } else {
+                let mut p1_final_mapping = lock_write(&P1_FINAL_MAPPING);
+                let current_record_slot = read(&CURRENT_RECORD_SLOT);
+                (*p1_final_mapping)[current_record_slot][*input_record_frame] = *out;
+                drop(p1_final_mapping);
+            }
             *out = MappedInputs::empty(); // don't control player while recording
         }
         // Don't allow for player input during Lockout
@@ -517,7 +693,7 @@ unsafe fn set_cpu_controls(p_data: *mut *mut u8) {
     // TODO: Setup STARTING_STATUS based on current playback slot here
 
     // This check prevents out of shield if mash exiting is on
-    if read(&INPUT_RECORD) == None {
+    if read(&INPUT_RECORD) == None && !crate::replay_preview::occupied() {
         should_mash_playback();
     }
 
@@ -526,19 +702,31 @@ unsafe fn set_cpu_controls(p_data: *mut *mut u8) {
         return;
     };
 
+    if crate::replay_preview::occupied()
+        && !crate::replay_preview::can_emit(&mut *cpu_module_accessor) {
+        neutral_controls(&mut *controller_data);
+        return;
+    }
+
     if read(&INPUT_RECORD) == Pause {
         let lockout_frame = read(&LOCKOUT_FRAME);
         match lockout_frame.cmp(&0) {
             Ordering::Greater => assign(&LOCKOUT_FRAME, lockout_frame - 1),
             Ordering::Equal => {
                 assign(&INPUT_RECORD, Record);
-                assign(&POSSESSION, Standby);
+                assign(&POSSESSION, if crate::training::named_macros::capture_active() { Cpu } else { Standby });
             }
             Ordering::Less => error!("LOCKOUT_FRAME OUT OF BOUNDS"),
         }
     }
 
     let input_record = read(&INPUT_RECORD);
+    if input_record == Playback && crate::training::named_macros::playback_active()
+        && !crate::training::named_macros::prepare_playback_start(&mut *cpu_module_accessor)
+    {
+        neutral_controls(&mut *controller_data);
+        return;
+    }
     if input_record == Record || input_record == Playback {
         // if we aren't facing the way we were when we initially recorded, we reverse horizontal inputs
         let mut x_input_multiplier = read(&RECORDED_LR) * read(&CURRENT_LR);
@@ -572,13 +760,27 @@ unsafe fn set_cpu_controls(p_data: *mut *mut u8) {
         }
 
         let mut input_record_frame = lock_write(&INPUT_RECORD_FRAME);
-        let slot = if input_record == Record {
-            read(&CURRENT_RECORD_SLOT)
+        if crate::training::named_macros::capture_active()
+            && !crate::training::named_macros::has_captured_frame(*input_record_frame)
+        {
+            // The first FIM after lockout supplies frame0. Do not skip it by
+            // advancing the CPU clock before that input actually exists.
+            (*controller_data)._clear();
+            return;
+        }
+        // Named capture and playback read their own buffer. The frame counter
+        // below is the only advance; the panel clock is not fed from here.
+        let mut saved_mapped_inputs = if crate::training::named_macros::using_frames() {
+            crate::training::named_macros::frame_at(*input_record_frame)
         } else {
-            read(&CURRENT_PLAYBACK_SLOT)
+            let slot = if input_record == Record {
+                read(&CURRENT_RECORD_SLOT)
+            } else {
+                read(&CURRENT_PLAYBACK_SLOT)
+            };
+            let p1_final_mapping = lock_write(&P1_FINAL_MAPPING);
+            p1_final_mapping[slot][*input_record_frame]
         };
-        let p1_final_mapping = lock_write(&P1_FINAL_MAPPING);
-        let mut saved_mapped_inputs = p1_final_mapping[slot][*input_record_frame];
         let mut buffer_frame = lock_write(&BUFFER_FRAME);
         if (0 < *buffer_frame) && (*buffer_frame <= 3) {
             // Our option is already buffered, now we need to 0 out inputs to make sure our future controls act like flicks/presses instead of holding the button
@@ -586,9 +788,14 @@ unsafe fn set_cpu_controls(p_data: *mut *mut u8) {
         }
 
         (*controller_data).buttons = saved_mapped_inputs.buttons;
+        // Native FIM/getter calibration uses 120 controller units per raw unit.
+        // Keep the historical numbered-slot conversion outside named recordings.
+        let raw_scale = if crate::training::named_macros::using_frames() {
+            STICK_CLAMP_MULTIPLIER
+        } else { 1.0 / i8::MAX as f32 };
         (*controller_data).stick_x =
-            x_input_multiplier * ((saved_mapped_inputs.lstick_x as f32) / (i8::MAX as f32));
-        (*controller_data).stick_y = (saved_mapped_inputs.lstick_y as f32) / (i8::MAX as f32);
+            x_input_multiplier * saved_mapped_inputs.lstick_x as f32 * raw_scale;
+        (*controller_data).stick_y = saved_mapped_inputs.lstick_y as f32 * raw_scale;
         // Clamp stick inputs for separate part of structure
         let mut clamped_lstick_x = x_input_multiplier
             * ((saved_mapped_inputs.lstick_x as f32) * STICK_CLAMP_MULTIPLIER).clamp(-1.0, 1.0);
@@ -607,15 +814,30 @@ unsafe fn set_cpu_controls(p_data: *mut *mut u8) {
         (*controller_data).clamped_lstick_x = clamped_lstick_x;
         (*controller_data).clamped_lstick_y = clamped_lstick_y;
 
+        // Native 13.0.5 does not consume MappedInputs' trailing two bytes as a
+        // second stick. The upstream "clamped_rstick" fields are rumble state;
+        // assigning the portable right-stick samples there would corrupt it.
+        #[cfg(feature = "named-input-trace")]
+        if input_record == Playback && crate::training::named_macros::using_frames() {
+            crate::training::named_macros::trace_write(
+                *input_record_frame, &saved_mapped_inputs, *buffer_frame > 0, x_input_multiplier,
+            );
+        }
+
         // Keep counting frames, unless we're in standby waiting for an input, or are buffering an option
         // When buffering an option, we keep inputting the first frame of input during the buffer window
         if *buffer_frame > 0 {
             *buffer_frame -= 1;
-        } else if *input_record_frame < read(&CURRENT_FRAME_LENGTH) - 1
+        } else if *input_record_frame < read(&CURRENT_FRAME_LENGTH)
+            - usize::from(!crate::training::named_macros::using_frames())
             && read(&POSSESSION) != Standby
         {
             *input_record_frame += 1;
         }
+        let consumed = *input_record_frame;
+        drop(buffer_frame);
+        drop(input_record_frame);
+        crate::replay_preview::progress(consumed);
     }
 }
 

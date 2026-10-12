@@ -22,9 +22,15 @@ mod hazard_manager;
 mod hitbox_visualizer;
 mod training;
 
+mod character_lifecycle;
+mod character_memory;
 mod character_roster;
 mod logging;
-mod character_lifecycle;
+mod live_replay;
+mod replay_capture;
+mod replay_preview;
+mod replay_store;
+mod native_keyboard;
 
 fn nro_main(nro: &NroInfo<'_>) {
     if nro.module.isLoaded {
@@ -109,6 +115,9 @@ fn initialize_training_modpack() {
             error!("Could not delete legacy Training Modpack folder with error {e}")
         });
     }
+
+    replay_store::init();
+    live_replay::init();
 
     info!("Performing saved data check...");
     let data_loader = std::thread::Builder::new()

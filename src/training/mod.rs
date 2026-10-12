@@ -44,7 +44,8 @@ mod fast_fall;
 mod full_hop;
 pub mod input_delay;
 mod input_log;
-mod input_record;
+pub(crate) mod input_record;
+pub mod named_macros;
 
 pub(crate) fn recording_or_playback() -> bool {
     input_record::is_recording()
@@ -75,6 +76,8 @@ pub fn clear_session_state() {
     frame_counter::reset_all();
     save_states::cancel_pending();
     ui::notifications::clear_all_notifications();
+    named_macros::clear_session();
+    crate::replay_preview::clear_session();
     unsafe {
         input_record::stop_playback();
     }
@@ -134,11 +137,8 @@ pub unsafe fn handle_get_command_flag_cat(
 
     lobby::update();
 
-    if !is_training_mode() {
-        return flag;
-    }
+    if !is_training_mode() || crate::replay_preview::occupied() { return flag; }
     lobby::observe_fighter(module_accessor);
-
 
     if lobby::is_waiting_scene()
         && (!crate::common::is_fighter(module_accessor)
@@ -161,8 +161,14 @@ pub unsafe fn handle_get_command_flag_cat(
 unsafe extern "C" fn fighter_vtable_on_frame_inner(fighter: &mut smash::app::Fighter);
 
 unsafe extern "C" fn fighter_vtable_on_frame(fighter: &mut smash::app::Fighter) {
+    named_macros::observe_playback_before(&mut *fighter.battle_object.module_accessor);
+    crate::replay_capture::before_frame(fighter);
+    crate::replay_preview::before_frame(&mut *fighter.battle_object.module_accessor);
+    named_macros::hold_panel_fighter(&mut *fighter.battle_object.module_accessor);
     fighter_vtable_on_frame_inner(fighter);
+    crate::replay_capture::after_frame(fighter);
     once_per_frame_per_fighter(&mut *fighter.battle_object.module_accessor);
+    crate::replay_preview::after_frame(&mut *fighter.battle_object.module_accessor);
 }
 
 fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) {
@@ -182,6 +188,20 @@ fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) 
             return;
         }
 
+        if crate::replay_preview::occupied() {
+            // Keep native simulation and saved-state cleanup live, but suppress
+            // Training mash/DI/ledge/shield automations during the clip preview.
+            combo::once_per_frame(module_accessor);
+            save_states::save_states(module_accessor);
+            if is_operation_cpu(module_accessor) {
+                named_macros::service_restore(module_accessor);
+                named_macros::observe_playback_start(module_accessor);
+                input_record::handle_recording();
+                frame_counter::tick_ingame();
+            }
+            return;
+        }
+
         if menu::menu_condition() {
             menu::spawn_menu();
         }
@@ -195,6 +215,7 @@ fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) 
                 *FIGHTER_INSTANCE_WORK_ID_FLAG_DISABLE_ESCAPE_PENALTY,
             );
             if crate::common::is_native_training_mode() {
+                named_macros::observe_playback_start(module_accessor);
                 input_record::handle_recording();
             }
             frame_counter::tick_ingame();
@@ -205,8 +226,13 @@ fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) 
 
         combo::once_per_frame(module_accessor);
         if crate::common::is_native_training_mode() {
+            named_macros::service_character();
             hitbox_visualizer::once_per_frame(module_accessor);
             save_states::save_states(module_accessor);
+            if is_operation_cpu(module_accessor) {
+                named_macros::service_restore(module_accessor);
+                named_macros::preview(module_accessor);
+            }
         }
         tech::once_per_frame(module_accessor);
         clatter::handle_clatter(module_accessor);
@@ -893,8 +919,71 @@ unsafe fn handle_final_input_mapping(
     // Order of hooks here REALLY matters. Tread lightly
 
     // Go through the original mapping function first
+    #[cfg(feature = "named-input-trace")]
+    let close_raw_before = controller_struct.controller.current_buttons.b();
     original!()(mappings, player_idx, out, controller_struct, arg);
     lobby::update();
+    // is_training_mode deliberately excludes a busy character loader. The parked
+    // clip editor still owns P1 input then, including B cancellation and raw Plus
+    // edges used by the native pause menu. This path must not access fighter objects.
+    // After cancel, keep the existing close grace active while that loader finishes;
+    // include count zero because input can run again before the next UI draw tick.
+    let close_counter = *menu::MENU_CLOSE_FRAME_COUNTER;
+    let closing_during_reload = crate::character_roster::busy()
+        && frame_counter::_is_counting(close_counter)
+        && frame_counter::get_frame_count(close_counter) < menu::MENU_CLOSE_WAIT_FRAMES;
+    // Cover ordinary closes before the first draw tick and a closing B held beyond
+    // the draw-clock grace. Preserve this physical B level in the owned path below:
+    // FIM can run again before the next pad refresh, so clearing our release signal
+    // would make that repeated call mistake our own neutralization for a release.
+    let editor_close_owned = player_idx == 0
+        && crate::replay_capture::owns_close_input(
+            crate::common::is_native_training_mode(),
+            controller_struct.controller.current_buttons.b(),
+        );
+    #[cfg(feature = "named-input-trace")]
+    if player_idx == 0 {
+        crate::replay_capture::trace_close_input(
+            controller_struct.controller as *const _ as usize,
+            frame_counter::get_frame_count(close_counter), close_raw_before,
+            controller_struct.controller.current_buttons.b(), (*out).buttons.bits(), editor_close_owned);
+    }
+    let editor_was_loading = crate::replay_capture::loading();
+    let editor_was_open = crate::replay_capture::panel_visible();
+    if player_idx == 0
+        && crate::common::is_native_training_mode()
+        && (editor_was_loading || closing_during_reload || editor_close_owned
+            || (crate::replay_preview::occupied() && !named_macros::panel_visible()
+                && !crate::replay_preview::recovery_available()))
+    {
+        let current_b = controller_struct.controller.current_buttons.b();
+        let previous_b = controller_struct.controller.previous_buttons.b();
+        menu::handle_final_input_mapping(player_idx, controller_struct, out);
+        // Loading cancellation arms the close guard inside menu handling, after
+        // this poll's ownership check. Preserve its closing sample on this call too.
+        let preserve_close_b = editor_close_owned
+            || (editor_was_loading && !crate::replay_capture::loading())
+            || (editor_was_open && !crate::replay_capture::panel_visible());
+        input_delay::clear_session_state();
+        *out = MappedInputs::empty();
+        let controller = &mut *controller_struct.controller;
+        controller.current_buttons = Default::default();
+        controller.previous_buttons = Default::default();
+        controller.just_down = Default::default();
+        controller.just_release = Default::default();
+        if preserve_close_b {
+            controller.current_buttons.set_b(current_b);
+            controller.previous_buttons.set_b(previous_b);
+        }
+        return;
+    }
+    if player_idx == 0 && crate::common::is_native_training_mode()
+        && crate::replay_preview::recovery_available() && !named_macros::panel_visible() {
+        // After the closing B has been consumed, leave native Plus/menu input
+        // intact. Pending cleanup still owns the CPU and suppresses autoplay.
+        input_delay::clear_session_state();
+        return;
+    }
     if !is_training_mode() {
         if player_idx == 0 {
             crate::character_roster::suppress_owned_buttons(&mut *out);
@@ -913,19 +1002,24 @@ unsafe fn handle_final_input_mapping(
 
     // Grab menu inputs from player
     // MUTATES controller state to kill inputs when in or closing menu
-    let menu_was_capturing = player_idx == 0 && menu::captures_input();
+    // Loading captures gameplay input, but must not enter menu::captures_input:
+    // the CPU loader uses that predicate to decide whether it may start.
+    let menu_was_capturing = player_idx == 0
+        && (menu::captures_input() || crate::replay_capture::loading());
     menu::handle_final_input_mapping(player_idx, controller_struct, out);
 
     // Grab button input requests from player
     // MUTATES controller state to kill start presses for menu
     button_config::handle_final_input_mapping(player_idx, controller_struct);
+    let named_stopped = crate::common::is_native_training_mode()
+        && input_record::handle_named_stop_request(player_idx);
     if player_idx == 0 {
         crate::character_roster::handle_input(&mut *out);
     }
 
     // Potentially apply input delay
     // MUTATES controller state to delay inputs
-    if player_idx == 0 && (menu_was_capturing || menu::captures_input()) {
+    if player_idx == 0 && (named_stopped || menu_was_capturing || menu::captures_input()) {
         input_delay::clear_session_state();
         *out = MappedInputs::empty();
     } else {
@@ -1059,6 +1153,8 @@ pub fn training_mods() {
 
     items::init();
     input_record::init();
+    named_macros::init();
+    crate::replay_capture::init();
     ui::init();
     pikmin::init();
     ptrainer::init();

@@ -117,6 +117,12 @@ pub struct TrainingModpackMenu {
     // retired fixed-slot keys of older files.
     pub player_roster: OrderedFighterRoster,
     pub cpu_roster: OrderedFighterRoster,
+    #[serde(default = "macro_source_default")]
+    pub macro_source: MacroSource,
+}
+
+fn macro_source_default() -> MacroSource {
+    MacroSource::NUMBERED
 }
 
 fn lobby_practice_default() -> OnOff {
@@ -267,6 +273,7 @@ pub static BASE_MENU: TrainingModpackMenu = TrainingModpackMenu {
     player_cycle: DEFAULT_PLAYER_CYCLE,
     player_roster: DEFAULT_PLAYER_ROSTER,
     cpu_roster: DEFAULT_CPU_ROSTER,
+    macro_source: MacroSource::NUMBERED,
 };
 
 pub static DEFAULTS_MENU: RwLock<TrainingModpackMenu> = RwLock::new(BASE_MENU);
@@ -647,6 +654,36 @@ pub unsafe fn create_app<'a>() -> App<'a> {
         "Playback Loop",
         "playback_loop",
         "Repeat triggered input playbacks indefinitely",
+        ToggleSingle,
+        false,
+    ));
+    input_recording_tab_submenus.push(MacroSource::to_submenu(
+        "Macro Source",
+        "macro_source",
+        "Numbered slots keep the five recordings. Named Library records, saves, and plays a named file instead.",
+        ToggleSingle,
+        false,
+    ));
+    // These ids are actions, not stored menu fields. A is intercepted
+    // before the toggle page opens. Unknown keys are ignored on load.
+    input_recording_tab_submenus.push(OnOff::to_submenu(
+        "Named Library",
+        "named_macro_library",
+        "Open the named macro list. A loads the highlighted recording.",
+        ToggleSingle,
+        false,
+    ));
+    input_recording_tab_submenus.push(OnOff::to_submenu(
+        "Edit Placement",
+        "named_macro_placement",
+        "Nudge the loaded macro relative to the restored CPU position.",
+        ToggleSingle,
+        false,
+    ));
+    input_recording_tab_submenus.push(OnOff::to_submenu(
+        "Replay Window",
+        "named_macro_replay",
+        "Play a saved replay in Vault, then return here to select a fighter and exact input window.",
         ToggleSingle,
         false,
     ));

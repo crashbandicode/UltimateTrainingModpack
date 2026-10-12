@@ -1000,6 +1000,15 @@ impl RecordSlot {
 }
 
 byteflags! {
+    pub struct MacroSource {
+        pub NUMBERED = "Numbered Slots",
+        pub NAMED = "Named Library",
+    }
+}
+
+impl_submenutrait!(MacroSource);
+
+byteflags! {
     pub struct PlaybackSlot {
         pub S1 = "Slot 1",
         pub S2 = "Slot 2",

@@ -14,6 +14,7 @@ use crate::training::ui::menu::VANILLA_MENU_ACTIVE;
 
 use training_mod_consts::{create_app, InputControl, MenuJsonStruct, MENU_OPTIONS_PATH};
 use training_mod_sync::*;
+use training_mod_tui::macro_panel::Pad;
 use training_mod_tui::AppPage;
 
 use DirectionButton::*;
@@ -23,7 +24,9 @@ pub static QUICK_MENU_ACTIVE: RwLock<bool> = RwLock::new(false);
 
 pub fn captures_input() -> bool {
     let frames = frame_counter::get_frame_count(*MENU_CLOSE_FRAME_COUNTER);
-    read(&QUICK_MENU_ACTIVE) || (frames > 0 && frames < MENU_CLOSE_WAIT_FRAMES)
+    read(&QUICK_MENU_ACTIVE)
+        || crate::training::named_macros::panel_visible()
+        || (frames > 0 && frames < MENU_CLOSE_WAIT_FRAMES)
 }
 
 pub fn clear_session_state() {
@@ -146,6 +149,44 @@ pub unsafe fn handle_final_input_mapping(
     if player_idx == 0 {
         let p1_controller = &mut *controller_struct.controller;
         assign(&P1_CONTROLLER_STYLE, p1_controller.style);
+        if crate::replay_capture::loading() {
+            *out = MappedInputs::empty();
+            if p1_controller.just_down.b() { crate::replay_capture::cancel_reload(); }
+            return;
+        }
+        if crate::training::named_macros::panel_visible() {
+            *out = MappedInputs::empty();
+            let closing = frame_counter::get_frame_count(*MENU_CLOSE_FRAME_COUNTER);
+            if closing > 0 && closing < MENU_CLOSE_WAIT_FRAMES { return; }
+            if closing >= MENU_CLOSE_WAIT_FRAMES { frame_counter::full_reset(*MENU_CLOSE_FRAME_COUNTER); }
+            if crate::training::named_macros::clip_foreground() {
+                crate::replay_capture::on_input(p1_controller);
+                return;
+            }
+            let style = p1_controller.style;
+            let presses = p1_controller.just_down;
+            let pad = if button_config::button_mapping(ButtonConfig::A, style, presses) {
+                Some(Pad::Confirm)
+            } else if button_config::button_mapping(ButtonConfig::B, style, presses) {
+                Some(Pad::Back)
+            } else if button_config::button_mapping(ButtonConfig::Y, style, presses) {
+                Some(Pad::Extra)
+            } else if presses.dpad_left() || presses.l_left() || presses.r_left() {
+                Some(Pad::Left)
+            } else if presses.dpad_right() || presses.l_right() || presses.r_right() {
+                Some(Pad::Right)
+            } else if presses.dpad_up() || presses.l_up() || presses.r_up() {
+                Some(Pad::Up)
+            } else if presses.dpad_down() || presses.l_down() || presses.r_down() {
+                Some(Pad::Down)
+            } else {
+                None
+            };
+            if let Some(pad) = pad {
+                crate::training::named_macros::on_pad(pad);
+            }
+            return;
+        }
         let visual_frame_count = frame_counter::get_frame_count(*MENU_CLOSE_FRAME_COUNTER);
         if visual_frame_count > 0 && visual_frame_count < MENU_CLOSE_WAIT_FRAMES {
             // If we just closed the menu, kill all inputs to avoid accidental presses
@@ -206,6 +247,26 @@ pub unsafe fn handle_final_input_mapping(
 
             let mut app = lock_write(&QUICK_MENU_APP);
             button_config::button_mapping(ButtonConfig::A, style, button_presses).then(|| {
+                if app.page == AppPage::SUBMENU {
+                    match app.selected_submenu().id {
+                        "named_macro_library" => {
+                            received_input = true;
+                            crate::training::named_macros::open_library();
+                            return;
+                        }
+                        "named_macro_placement" => {
+                            received_input = true;
+                            crate::training::named_macros::open_editor();
+                            return;
+                        }
+                        "named_macro_replay" => {
+                            received_input = true;
+                            crate::replay_capture::open_editor();
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
                 app.on_a();
                 received_input = true;
             });
