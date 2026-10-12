@@ -2,9 +2,11 @@
 
 This development source is published on the Forgejo
 [`named-macros-capture` branch](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-capture).
-The illustrated [walkthrough](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-walkthrough/docs/named-macros/README.md)
-and [source/evidence archive](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-research/PUBLICATION.md)
-are separate branches of the same repository.
+The illustrated walkthrough is included in this tree at
+[named-macros/README.md](named-macros/README.md) and is also published on the
+[`named-macros-walkthrough` branch](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-walkthrough/docs/named-macros/README.md);
+the [source/evidence archive](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-research/PUBLICATION.md)
+is on a separate branch of the same repository.
 
 ## Qualification
 

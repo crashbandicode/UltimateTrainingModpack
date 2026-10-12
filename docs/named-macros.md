@@ -2,6 +2,8 @@
 
 This local implementation has passed scoped native acceptance testing.
 
+For a screenshot walkthrough, see the [illustrated guide](named-macros/README.md).
+
 ## Implemented scope and current verification
 
 Implemented: named CPU recording/library, native keyboard naming, latest/previous

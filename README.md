@@ -1,3 +1,9 @@
+> **Named CPU macros — screenshot walkthrough**
+>
+> [Open the illustrated guide](docs/named-macros/README.md) for saved-replay
+> extraction, exact frame windows, the named library, and relative placement.
+> The guide shows the local development build through revision 27 (October 12, 2026).
+> This branch contains both the documentation and the development implementation; performance qualification is still in progress.
 
 <img align="right" src="./photos/character_item.gif">
 <img align="right" width="620" src="./photos/mash_trigger_tumble.gif">
