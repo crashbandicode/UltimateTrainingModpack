@@ -2,6 +2,7 @@
 // TODO!(Find a way to search for the offsets for the stale menu text (on_text_ptr) and camera manager address (on_cam_mgr_ptr))
 #![cfg_attr(rustfmt, rustfmt_skip)] // We want the assembly needles to stay in lines of four bytes each
 use crate::logging::*;
+use training_mod_macros::ui_anchor::{LOCATOR_DELTA, UI_MANAGER_PROLOGUE, UI_PASS_CALCULATE, UI_REGISTER_CALCULATE};
 use training_mod_sync::LazyLock;
 
 // Stolen from HDR who stole it from Arcropolis
@@ -145,18 +146,26 @@ static NEEDLE_SET_TRAINING_FIXED_CAMERA_VALUES: &[u8] = &[
 ];
 impl_offset!(SET_TRAINING_FIXED_CAMERA_VALUES);
 
-// OFFSET_DRAW = 0x4b620
-static NEEDLE_DRAW: &[u8] = &[
-    0x08, 0x0c, 0x40, 0xf9,
-    0xc8, 0x03, 0x00, 0xb4,
-    0xff, 0x83, 0x01, 0xd1,
-    0xf5, 0x1b, 0x00, 0xf9,
-    0xf4, 0x4f, 0x04, 0xa9,
-    0xfd, 0x7b, 0x05, 0xa9,
-    0xfd, 0x43, 0x01, 0x91,
-    0xf4, 0x03, 0x00, 0xaa,
-];
-impl_offset!(DRAW);
+// Revision 29: no hook on nn::ui2d::Layout's +0x98 entry (formerly OFFSET_DRAW = 0x4b620).
+// The UI runs from two inline anchors in Smash's UI manager instead. Their needles, five-word
+// pins and the manager prologue live in training_mod_macros::ui_anchor (host-tested); each
+// locator starts one word after its site. See docs/REVISION29_DRAW_DECOUPLING.md.
+
+// OFFSET_UI_PASS_CALCULATE_LOCATOR = 0x375efac (site 0x375efa8)
+static NEEDLE_UI_PASS_CALCULATE_LOCATOR: &[u8] = UI_PASS_CALCULATE.locator;
+impl_offset!(UI_PASS_CALCULATE_LOCATOR);
+pub static OFFSET_UI_PASS_CALCULATE: LazyLock<usize> =
+    LazyLock::new(|| *OFFSET_UI_PASS_CALCULATE_LOCATOR - LOCATOR_DELTA);
+
+// OFFSET_UI_REGISTER_CALCULATE_LOCATOR = 0x3784ad8 (site 0x3784ad4)
+static NEEDLE_UI_REGISTER_CALCULATE_LOCATOR: &[u8] = UI_REGISTER_CALCULATE.locator;
+impl_offset!(UI_REGISTER_CALCULATE_LOCATOR);
+pub static OFFSET_UI_REGISTER_CALCULATE: LazyLock<usize> =
+    LazyLock::new(|| *OFFSET_UI_REGISTER_CALCULATE_LOCATOR - LOCATOR_DELTA);
+
+// OFFSET_UI_MANAGER_PROLOGUE = 0x375e260 (its adrp/ldr at +0x20 name the manager global)
+static NEEDLE_UI_MANAGER_PROLOGUE: &[u8] = UI_MANAGER_PROLOGUE;
+impl_offset!(UI_MANAGER_PROLOGUE);
 
 // OFFSET_CLOUD_ADD_LIMIT = 0x8dc160
 static NEEDLE_CLOUD_ADD_LIMIT: &[u8] = &[

@@ -7,17 +7,19 @@ use smash::ui2d::{SmashPane, SmashTextBox};
 use training_mod_consts::{OnOff, MENU};
 
 use crate::common::menu::QUICK_MENU_ACTIVE;
-use crate::common::offsets::{OFFSET_DRAW, OFFSET_LAYOUT_ARC_MALLOC};
+use crate::common::offsets::OFFSET_LAYOUT_ARC_MALLOC;
 use crate::common::{is_native_training_mode, is_ready_go, is_training_mode};
 #[cfg(feature = "layout_arc_from_file")]
 use crate::consts::LAYOUT_ARC_PATH;
 use crate::training::{frame_counter, lobby};
 use training_mod_sync::*;
 
+mod anchors;
 mod damage;
 mod clip_editor;
 mod display;
 mod input_log;
+mod layout_registry;
 pub mod menu;
 pub(crate) mod native_menu;
 pub mod notifications;
@@ -60,8 +62,12 @@ pub fn fade_out(pane: &mut Pane, current_frame: u32, total_frames: u32) {
     }
 }
 
-#[skyline::hook(offset = *OFFSET_DRAW)]
-pub unsafe fn handle_draw(layout: *mut Layout, draw_info: u64, cmd_buffer: u64) {
+/// The modpack's UI work for one layout, run by `anchors` immediately before Smash calculates
+/// that layout. Each layout is calculated once per frame in the UI manager's pass and once when
+/// it is registered. Revision 29 has no `Layout::draw` hook: this is the former `handle_draw`
+/// body at the same position (after the layout's animate, before its calculate) and with the
+/// same cadence, minus the call to the original.
+pub unsafe fn tick(layout: *mut Layout) {
     lobby::update();
     crate::training::named_macros::service_keyboard();
     let layout_name = skyline::from_c_str((*layout).layout_name);
@@ -128,7 +134,8 @@ pub unsafe fn handle_draw(layout: *mut Layout, draw_info: u64, cmd_buffer: u64) 
         menu::draw(custom_root, root_pane);
     }
 
-    original!()(layout, draw_info, cmd_buffer);
+    // Formerly right after info_training's calculate. Only that game calculate separated the
+    // two points, and it reads no modpack state, so the held range-edit repeat keeps its cadence.
     if layout_name == "info_training" && is_native_training_mode() {
         crate::replay_capture::after_draw();
     }
@@ -159,7 +166,7 @@ static mut LAYOUT_ARC: &mut [u8; LAYOUT_ARC_SIZE] = &mut [0u8; LAYOUT_ARC_SIZE];
 /// i.e. material colours, and we won't be able to control them properly.
 ///
 /// Once we have the file edited and saved to the correct location we can access the pane
-/// from the layout as we normally would in our Draw function
+/// from the layout as we normally would in `tick`
 /// `(root_pane.find_pane_by_name_recursive("name_of_parts_pane")`.
 ///
 /// # Usage
@@ -297,5 +304,7 @@ impl PaneExt for Pane {
 
 pub fn init() {
     native_menu::init();
-    skyline::install_hooks!(handle_draw, handle_layout_arc_malloc);
+    // Revision 29: verify and install the UI manager anchors (panics on any site mismatch).
+    anchors::install();
+    skyline::install_hooks!(handle_layout_arc_malloc);
 }
