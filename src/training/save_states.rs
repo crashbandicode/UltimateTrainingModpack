@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use log::{info, warn};
 use parking_lot::Mutex;
@@ -178,6 +179,54 @@ pub fn cancel_pending() {
     }
 }
 
+// A preview always uses the explicitly selected saved slot, original facing and
+// saved damage. Random/alternate Training options are left untouched.
+static PREVIEW_SLOT: AtomicUsize = AtomicUsize::new(usize::MAX);
+
+pub fn end_preview_restore() { PREVIEW_SLOT.store(usize::MAX, Ordering::Relaxed); }
+
+pub unsafe fn request_preview_restore() -> Result<(), &'static str> {
+    if !crate::common::is_native_training_mode() || read(&MENU).save_state_enable == OnOff::OFF {
+        return Err("Enable save states and save a Training setup first");
+    }
+    let pinned = PREVIEW_SLOT.load(Ordering::Relaxed);
+    let slot = if pinned == usize::MAX { read(&MENU).save_state_slot.into_idx().unwrap_or(0) } else { pinned };
+    for (id, saved) in [(FighterId::Player, *save_state_player(slot)), (FighterId::CPU, *save_state_cpu(slot))] {
+        let Some(live) = try_get_module_accessor(id) else { return Err("Wait for both Training fighters"); };
+        if saved.fighter_kind < 0 { return Err("Save a Training setup first"); }
+        if app::utility::get_kind(&mut *live) != saved.fighter_kind {
+            return Err("Save a new setup for these fighters before previewing");
+        }
+        if saved.situation_kind != SITUATION_KIND_GROUND && saved.situation_kind != SITUATION_KIND_AIR {
+            return Err("Preview needs a grounded or airborne saved setup");
+        }
+    }
+    PREVIEW_SLOT.store(slot, Ordering::Relaxed);
+    save_state_player(slot).state = KillPlayer;
+    save_state_cpu(slot).state = KillPlayer;
+    Ok(())
+}
+
+pub unsafe fn request_macro_restore() -> Result<(), &'static str> {
+    if !crate::common::is_native_training_mode() || read(&MENU).save_state_enable == OnOff::OFF {
+        return Err("Enable save states and save a Training setup first");
+    }
+    let slot = get_slot();
+    if save_state_player(slot).fighter_kind < 0 || save_state_cpu(slot).fighter_kind < 0 {
+        return Err("Save a Training setup first");
+    }
+    let situation = save_state_cpu(slot).situation_kind;
+    if situation != SITUATION_KIND_GROUND && situation != SITUATION_KIND_AIR
+        && !crate::training::named_macros::restore_in_air()
+    {
+        return Err("Use an idle/fall saved setup for named playback");
+    }
+    save_state_player(slot).state = KillPlayer;
+    save_state_cpu(slot).state = KillPlayer;
+    MIRROR_STATE = should_mirror();
+    Ok(())
+}
+
 unsafe fn save_state_player(slot: usize) -> &'static mut SavedState {
     &mut (*SAVE_STATE_SLOTS.data_ptr()).player[slot]
 }
@@ -235,6 +284,8 @@ static mut MIRROR_STATE: f32 = 1.0;
 static mut RANDOM_SLOT: usize = 0;
 
 unsafe fn get_slot() -> usize {
+    let preview = PREVIEW_SLOT.load(Ordering::Relaxed);
+    if preview != usize::MAX { return preview; }
     let random_slot = read(&MENU).randomize_slots.get_random();
     if random_slot != SaveStateSlot::empty() {
         RANDOM_SLOT
@@ -467,7 +518,11 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
     if !is_operation_cpu(module_accessor) && !fighter_is_nana {
         triggered_reset = button_config::combo_passes(button_config::ButtonCombo::LoadState);
     }
-    if (autoload_reset || triggered_reset) && !fighter_is_nana {
+    if (autoload_reset || triggered_reset)
+        && !fighter_is_nana
+        && !crate::training::named_macros::panel_visible()
+        && !crate::replay_preview::occupied()
+    {
         if save_state.state == NoAction {
             let random_slot = read(&MENU).randomize_slots.get_random();
             let slot = if random_slot != SaveStateSlot::empty() {
@@ -502,6 +557,9 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         }
 
         save_state.state = WaitForAlive;
+        if is_cpu {
+            crate::training::named_macros::begin_restore();
+        }
 
         return;
     }
@@ -528,9 +586,10 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         ControlModule::stop_rumble(module_accessor, false);
         KineticModule::clear_speed_all(module_accessor);
 
-        let mut pos = if MIRROR_STATE == -1.0 {
+        let mirror = if crate::replay_preview::occupied() { 1.0 } else { MIRROR_STATE };
+        let mut pos = if mirror == -1.0 {
             Vector3f {
-                x: MIRROR_STATE * (save_state.x - get_stage_offset(stage_id())),
+                x: mirror * (save_state.x - get_stage_offset(stage_id())),
                 y: save_state.y,
                 z: 0.0,
             }
@@ -544,12 +603,29 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
 
         // Adjust fighter y position if they won't grab ledge when they should
         adjust_ledge_pos(&mut pos, save_state.fighter_kind, save_state.situation_kind);
-        let lr = MIRROR_STATE * save_state.lr;
+        if is_cpu {
+            if let Some((x, y)) = crate::training::named_macros::restored_target(pos.x, pos.y) {
+                pos.x = x;
+                pos.y = y;
+            }
+        }
+        let lr = mirror * save_state.lr;
         PostureModule::set_pos(module_accessor, &pos);
         PostureModule::set_lr(module_accessor, lr);
         reset::on_reset();
 
-        if save_state.situation_kind == SITUATION_KIND_GROUND {
+        let placed_in_air = is_cpu && crate::training::named_macros::restore_in_air();
+        if is_cpu && !fighter_is_nana {
+            crate::training::named_macros::remember_restore_pose(
+                module_accessor, pos.x, pos.y, lr,
+                if placed_in_air || save_state.situation_kind == SITUATION_KIND_AIR {
+                    Some(true)
+                } else if save_state.situation_kind == SITUATION_KIND_GROUND {
+                    Some(false)
+                } else { None },
+            );
+        }
+        if save_state.situation_kind == SITUATION_KIND_GROUND && !placed_in_air {
             if status != FIGHTER_STATUS_KIND_WAIT {
                 StatusModule::change_status_request(
                     module_accessor,
@@ -559,13 +635,22 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
             } else {
                 save_state.state = NoAction;
             }
-        } else if save_state.situation_kind == SITUATION_KIND_AIR {
+        } else if save_state.situation_kind == SITUATION_KIND_AIR || placed_in_air {
             if status != FIGHTER_STATUS_KIND_FALL {
-                StatusModule::change_status_request(
-                    module_accessor,
-                    *FIGHTER_STATUS_KIND_FALL,
-                    false,
-                );
+                if is_cpu && !fighter_is_nana
+                    && crate::training::named_macros::position_wait_timed_out(status, *FIGHTER_STATUS_KIND_FALL)
+                {
+                    // The macro action is cancelled, not successfully ready. Finish
+                    // ordinary restore cleanup below (including trainer/partner work)
+                    // rather than abandoning a sleeping/buffing fighter mid-phase.
+                    save_state.state = NoAction;
+                } else {
+                    StatusModule::change_status_request(
+                        module_accessor,
+                        *FIGHTER_STATUS_KIND_FALL,
+                        false,
+                    );
+                }
             } else {
                 save_state.state = NoAction;
             }
@@ -590,7 +675,9 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         if save_state.state == NoAction {
             // Set damage of the save state
             crate::logging::diagnostic(format_args!("[PracticeSave] position_restored cpu={} active_kind=0x{:x} saved_kind=0x{:x} x={} y={}", is_cpu, fighter_kind, save_state.fighter_kind, pos.x, pos.y));
-            if !is_cpu {
+            if crate::replay_preview::occupied() {
+                set_damage(module_accessor, save_state.percent);
+            } else if !is_cpu {
                 match read(&MENU).save_damage_player {
                     SaveDamage::SAVED => {
                         set_damage(module_accessor, save_state.percent);
@@ -680,6 +767,11 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         }
 
         // if we're recording on state load, record
+        // Named work is queued once and starts after BOTH fighters finish all
+        // restoration phases, rather than once per PosMove callback.
+        if crate::training::named_macros::source_is_named() || crate::replay_preview::occupied() {
+            return;
+        }
         if read(&MENU)
             .record_trigger
             .contains(&RecordTrigger::SAVESTATE)
@@ -725,7 +817,8 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
     }
 
     // Save state
-    if button_config::combo_passes(button_config::ButtonCombo::SaveState) {
+    if button_config::combo_passes(button_config::ButtonCombo::SaveState)
+        && !crate::replay_preview::occupied() {
         // Don't begin saving state if Nana's delayed input is captured
         MIRROR_STATE = 1.0;
         save_state_player(read(&MENU).save_state_slot.into_idx().unwrap_or(0)).state = Save;

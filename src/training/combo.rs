@@ -85,7 +85,18 @@ pub unsafe fn once_per_frame(module_accessor: &mut BattleObjectModuleAccessor) {
     // Skip the CPU so we don't run twice per frame
     // Also skip if the CPU is set to mash since that interferes with the frame calculation
     let entry_id_int = WorkModule::get_int(module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID);
-    if entry_id_int != (FighterId::Player as i32) || read(&MENU).mash_state != Action::empty() {
+    if entry_id_int != (FighterId::Player as i32) {
+        return;
+    }
+    // Recorded poses and their clean-state restoration are not gameplay. Drop
+    // pending accounting rather than carrying a preview-length frame advantage
+    // into the next real exchange.
+    if crate::replay_capture::panel_visible() || crate::replay_capture::loading()
+        || crate::replay_preview::occupied() {
+        clear_session_state();
+        return;
+    }
+    if read(&MENU).mash_state != Action::empty() {
         return;
     }
     let Some(player_module_accessor) = try_get_module_accessor(FighterId::Player) else {

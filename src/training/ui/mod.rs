@@ -15,6 +15,7 @@ use crate::training::{frame_counter, lobby};
 use training_mod_sync::*;
 
 mod damage;
+mod clip_editor;
 mod display;
 mod input_log;
 pub mod menu;
@@ -62,8 +63,12 @@ pub fn fade_out(pane: &mut Pane, current_frame: u32, total_frames: u32) {
 #[skyline::hook(offset = *OFFSET_DRAW)]
 pub unsafe fn handle_draw(layout: *mut Layout, draw_info: u64, cmd_buffer: u64) {
     lobby::update();
+    crate::training::named_macros::service_keyboard();
     let layout_name = skyline::from_c_str((*layout).layout_name);
     let root_pane = &mut *(*layout).root_pane;
+    if layout_name == "info_training" || !is_native_training_mode() {
+        crate::replay_capture::service_reload();
+    }
     let waiting_host = layout_name == "info_waiting" && lobby::requested();
     if waiting_host {
         lobby::set_ui_ready(
@@ -88,7 +93,8 @@ pub unsafe fn handle_draw(layout: *mut Layout, draw_info: u64, cmd_buffer: u64) 
     }
 
     // Set HUD to invisible if HUD is toggled off
-    if is_training_mode()
+    if (is_training_mode()
+        || (is_native_training_mode() && crate::replay_capture::loading()))
         && is_ready_go()
         && [
             "info_playercursor",
@@ -101,7 +107,9 @@ pub unsafe fn handle_draw(layout: *mut Layout, draw_info: u64, cmd_buffer: u64) 
     {
         // InfluencedAlpha means "Should my children panes' alpha be influenced by mine, as the parent?"
         root_pane.flags |= 1 << PaneFlag::InfluencedAlpha as u8;
-        root_pane.set_visible(read(&MENU).hud == OnOff::ON && !read(&QUICK_MENU_ACTIVE));
+        root_pane.set_visible(read(&MENU).hud == OnOff::ON
+            && !read(&QUICK_MENU_ACTIVE) && !crate::replay_capture::panel_visible()
+            && !crate::replay_capture::loading());
     }
 
     damage::draw(root_pane, &layout_name);
@@ -121,6 +129,9 @@ pub unsafe fn handle_draw(layout: *mut Layout, draw_info: u64, cmd_buffer: u64) 
     }
 
     original!()(layout, draw_info, cmd_buffer);
+    if layout_name == "info_training" && is_native_training_mode() {
+        crate::replay_capture::after_draw();
+    }
 }
 
 // Allocate a static amount of memory that Smash isn't allowed to deallocate,
@@ -211,6 +222,7 @@ unsafe fn handle_layout_arc_malloc(ctx: &mut skyline::hooks::InlineCtx) {
     if training_layout.is_none() {
         return;
     }
+    clip_editor::discard();
 
     let inject_arc;
     let inject_arc_size: u64;

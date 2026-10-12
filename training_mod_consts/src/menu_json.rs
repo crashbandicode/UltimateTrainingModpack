@@ -376,6 +376,19 @@ mod tests {
     }
 
     #[test]
+    fn missing_macro_source_stays_on_numbered_slots() {
+        let mut file = modern();
+        file.as_object_mut().unwrap().remove("macro_source");
+        let text = format!("{{\"menu\":{file},\"defaults_menu\":{file}}}");
+        let parsed = serde_json::from_str::<MenuJsonStruct>(&text).unwrap();
+        assert_eq!(parsed.menu.macro_source, crate::MacroSource::NUMBERED);
+        assert_eq!(
+            parsed.defaults_menu.macro_source,
+            crate::MacroSource::NUMBERED
+        );
+    }
+
+    #[test]
     fn every_stored_key_has_a_submenu_and_slot_keys_are_not_written() {
         let mut app = unsafe { crate::create_app() };
         let ids: Vec<&str> = app

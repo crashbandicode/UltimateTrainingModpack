@@ -237,7 +237,11 @@ pub fn has_pending_request() -> bool {
 fn _combo_passes(p1_controller: Controller, combo: ButtonCombo) -> bool {
     unsafe {
         // Prevent button combos from passing if either the vanilla or mod menu is open
-        if read(&VANILLA_MENU_ACTIVE) || read(&QUICK_MENU_ACTIVE) {
+        if read(&VANILLA_MENU_ACTIVE)
+            || read(&QUICK_MENU_ACTIVE)
+            || crate::training::named_macros::panel_visible()
+            || crate::replay_capture::loading()
+        {
             return false;
         }
 
@@ -296,6 +300,14 @@ pub fn consume_player_cycle_request() -> bool {
 }
 
 fn handle_menu_open_start_press(controller: &mut Controller) -> bool {
+    if crate::training::named_macros::panel_visible() || crate::replay_capture::loading() {
+        assign(&START_HOLD_FRAMES, 0);
+        controller.previous_buttons.set_plus(false);
+        controller.current_buttons.set_plus(false);
+        controller.just_down.set_plus(false);
+        controller.just_release.set_plus(false);
+        return false;
+    }
     // If we press (-), open the modpack menu.
     // Exception: If the vanilla menu is open, don't open the modpack menu.
     if controller.current_buttons.minus() && !read(&VANILLA_MENU_ACTIVE) {

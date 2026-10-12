@@ -24,6 +24,16 @@ Enable **Misc Settings → Lobby Practice → On**, close the editor, and enter 
 
 Actual matches use the original character-select choice, regardless of P1's practice replacement. The lower waiting roster card intentionally shows that match selection. CPU replacements affect the local practice dummy. Practice shortcuts and hooks are disabled in an actual match.
 
+The current development build remembers each role's last successfully loaded practice
+character for the lobby. After a match, it restores those choices when fresh waiting
+entries are ready. Native dialogs, another load and pending practice actions defer
+restoration; a new explicit character request takes priority. P1 restoration requires
+Player Swapping to remain enabled. An interrupted load does not replace the last
+completed choice. Creating a fresh lobby clears both choices; ordinary Training has
+its own live selections. This is in-memory session state, not a saved CSS override.
+The development candidate passed a two-peer local-wireless match/return and fresh-room
+reset test. Online-arena and physical Switch runtime remain unverified for this change.
+
 The waiting CPU's small character icon is refreshed after replacement. Waiting HUD resource callbacks preload the supported stock icons before the game's normal load barrier. The refresh obtains the current generation-checked UI, maps its presentation ID to the visible partner, and calls the native texture setter. It retains no pane pointers and changes no partner or matchmaking descriptor. The icon uses the character's default-costume image.
 
 Ordinary Training portrait and name update immediately. Native **L + R + A** reset retains the current fighter there. Save/load, recording/playback, native Training reset and some stage options remain ordinary-Training features; the waiting menu labels their scope. Native lobby dialogs take input priority.

@@ -114,7 +114,15 @@ pub fn update() {
             | (u64::from(mode.melee) << 32)
             | (u64::from(mode.initialized) << 40);
         if LAST_MODE.swap(key, Ordering::Relaxed) != key {
-            crate::character_roster::scene_changed();
+            // A native Training departure need not change lobby::active(). Drop
+            // preview values and pending injection at the actual scene boundary.
+            if crate::replay_preview::occupied() {
+                super::named_macros::clear_session();
+                crate::replay_preview::clear_session();
+                super::save_states::cancel_pending();
+                unsafe { super::input_record::stop_playback(); }
+            }
+            crate::character_roster::scene_changed(mode);
             // A scene switch invalidates the previous layout even if the next
             // waiting room happens to use the same allocation address.
             UI_READY.store(false, Ordering::Release);

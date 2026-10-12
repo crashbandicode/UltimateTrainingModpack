@@ -1,5 +1,8 @@
 mod containers;
 pub use containers::*;
+pub mod macro_panel;
+pub mod replay_panel;
+pub mod clip_panel;
 mod structures;
 pub use structures::*;
 
