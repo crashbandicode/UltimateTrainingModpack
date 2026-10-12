@@ -205,7 +205,63 @@ the held range-edit repeat keeps its cadence of once per `info_training` calcula
 5. **Registry use.** The registry is read only from the two anchors, on the threads that own the
    vector at those moments (the pass loop does not lock it either). A holder freed while still
    listed would be the game's own bug as well.
+6. **Stack.** An inline trampoline puts a full `InlineCtx` on the stack, about 0x310 bytes, before
+   `tick`. `tick` therefore runs roughly 0.8 KiB deeper on worker 1 and on the main thread than
+   it did as a replace hook. This has not been measured live.
+7. **Text patches seen by other plugins.** The anchors patch the word at main+0x375efa8 and at
+   main+0x3784ad4. A plugin that loads after the modpack and byte-searches a needle covering one
+   of those words would fail its own search. None of the known plugins searches those
+   functions. The old hook patched main+0x4b620 the same way.
+8. **Boot cost.** Three more needle searches over the text segment, each `memmem` first and
+   last (about 57 MiB), replace the old single draw-needle search: net two more.
 
 ## 7. Build record and helper lines
 
-Filled in after the build (see the commit that adds the results).
+Source: branch `r29-draw-decoupled`, commit `31c112e` (on top of revision 28 `a4ee5d5`). The
+pinned isolated toolchain is the one `check_nro.py` uses: `RUSTUP_HOME`/`CARGO_HOME` under
+`/home/intpa/eden-gnw/tools`, nightly-2026-02-14, and `cargo-skyline` from
+`tools/skyline-install/bin`. `CARGO_NET_OFFLINE=true`. Every command ran in its own bounded
+unit: `systemd-run --user --wait --pipe --collect -p MemoryMax=3G -p MemorySwapMax=0
+-p CPUQuota=200% -p RuntimeMaxSec=900 -p WorkingDirectory=<dir>`.
+
+| Directory | Command | Result (last lines) |
+| --- | --- | --- |
+| `training_mod_macros` | `cargo test --offline -- --test-threads=1` | `test result: ok. 103 passed; 0 failed; 1 ignored`; doc-test `1 passed` |
+| `training_mod_macros` | `TRAINING_MOD_MAIN_ELF=…/main-13.0.5.elf cargo test --offline --lib ui_anchor -- --ignored` | `test ui_anchor::tests::elf_pins_match_owned_13_0_5_dump ... ok` |
+| `training_mod_macros` | `cargo clippy --offline --all-targets -- -D warnings` | `Finished dev profile`, no warnings |
+| `training_mod_macros` | `cargo build --offline --no-default-features` | `Finished dev profile` |
+| `training_mod_tui` | `cargo test --offline -- --test-threads=1` | 27 + 12 + 10 + 31 + 17 + 3 passed, 0 failed (unchanged crate) |
+| `training_mod_consts` | `cargo test --offline -- --test-threads=1` | 16 passed, 0 failed (unchanged crate) |
+| product | `cargo-skyline skyline clippy --no-default-features --features waiting-roster-reload,deluxe-sdk -- --all-targets -- -D warnings` | `Finished dev profile`, no warnings (the first attempt failed only on `non_fmt_panics` in `anchors.rs`, which the root crate's edition 2018 enforces; fixed before the commit) |
+| product | same with `--features waiting-roster-reload` | `Finished dev profile`, no warnings |
+| product | same with `--features waiting-roster-reload,deluxe-sdk,named-input-trace` | `Finished dev profile`, no warnings |
+| product | `cargo-skyline skyline build --no-default-features` | `Finished dev profile` |
+| product | `cargo-skyline skyline build --release --no-default-features --features waiting-roster-reload,deluxe-sdk` | `Finished release profile [optimized]` in 48.65 s |
+
+The normal (deluxe-sdk) NRO is
+`target/aarch64-skyline-switch/release/libtraining_modpack.nro`: **3,424,256 bytes**, SHA-256
+`5561e630e8d527b525b29574ff490fa1c2a44d5a4764e5ba18b08a3beb938636`. Until the primary freezes
+it, a copy with the same hash is kept outside the shared target directory, in the worker's
+session scratchpad: `/tmp/claude-1000/-home-intpa-smash-training-lobby-UltimateTrainingModpack-single-file/73f855d7-8259-41ec-a053-77d7aadeb202/scratchpad/r29-builds/normal-deluxe.nro`.
+The matching `.so` exports
+`training_modpack_ui_pass_calculate`, `training_modpack_ui_register_calculate` and
+`handle_layout_arc_malloc`, and no `handle_draw`. No trace build was made; freezing
+normal/trace is left to the primary.
+
+Lines for the research helper (`check_nro.py` was not modified). They follow `OPERATIONS28`
+exactly, with the revision number changed:
+
+```python
+OPERATIONS29 = {'clippy29': 'clippy --no-default-features --features {features} -- --all-targets -- -D warnings',
+                'build29': 'build --release --no-default-features --features {features}'}
+# features29(trace, extra) == features28(trace, extra): waiting-roster-reload[,deluxe-sdk][,named-input-trace]
+# unit: f'named-macros-nro-{operation}-' + ('trace-' if trace else '') + ('' if 'deluxe-sdk' in features else 'nodeluxe-') + str(epoch)
+# frozen guard: ROOT / 'revision29-builds' / f'{mode}.nro'; receipt 'revision': 29
+```
+
+The cargo arguments those produce for the normal build and gate are:
+
+```
+build --release --no-default-features --features waiting-roster-reload,deluxe-sdk
+clippy --no-default-features --features waiting-roster-reload,deluxe-sdk -- --all-targets -- -D warnings
+```
