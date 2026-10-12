@@ -37,6 +37,7 @@ mod live_frame;
 mod recording;
 mod replay;
 mod shared_capture;
+pub mod ui_anchor;
 mod window;
 
 pub use capture_archive::{CaptureArchive, CaptureEntry, CaptureListing, CaptureSaveOutcome, SavedCapture};
