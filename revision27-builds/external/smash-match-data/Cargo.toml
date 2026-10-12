@@ -1,0 +1,25 @@
+[package]
+name = "smash-match-data"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+publish = false
+description = "Shared match recording format and library for Training, Export and AI consumers"
+
+[lib]
+name = "smash_match_data"
+path = "src/lib.rs"
+
+[features]
+default = ["replay"]
+# Saved-replay import through the existing decoder crate. Disabling it must still
+# build the library, adapters and CLI (`cargo build --no-default-features`).
+replay = ["dep:smash-replay-core"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+# float_roundtrip makes f32 fields parse with single precision directly, which is
+# what keeps native stick/position values bit-exact across a JSON round trip.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
+sha2 = "0.10"
+smash-replay-core = { path = "../smash-replay-export/replay-core", optional = true }

@@ -1,0 +1,10 @@
+[package]
+name = "smash-replay-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+publish = false
+description = "Source-backed deterministic primitives for offline replay research"
+
+[features]
+default = []

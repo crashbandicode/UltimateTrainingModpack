@@ -1,0 +1,6 @@
+{
+  "unit": "named-macros-nro-clippy-1791784116",
+  "command": "systemd-run --user --wait --pipe --collect --unit=named-macros-nro-clippy-1791784116 -p MemoryMax=3G -p MemorySwapMax=0 -p CPUQuota=100% -p RuntimeMaxSec=600 --working-directory='/home/intpa/smash-training-lobby/UltimateTrainingModpack-single-file' '--setenv=RUSTUP_HOME=/home/intpa/eden-gnw/tools/rustup' '--setenv=CARGO_HOME=/home/intpa/eden-gnw/tools/cargo' '--setenv=CARGO_BUILD_JOBS=1' '--setenv=PATH=/home/intpa/eden-gnw/tools/skyline-install/bin:/home/intpa/eden-gnw/tools/rustup/toolchains/nightly-2026-02-14-x86_64-unknown-linux-gnu/bin:/opt/microsoft/powershell/7:/home/intpa/.local/bin:/opt/microsoft/powershell/7:/home/intpa/.local/bin:/opt/microsoft/powershell/7:/home/intpa/.local/bin:/home/intpa/.cargo/bin:/opt/microsoft/powershell/7:/home/intpa/.local/bin:/home/intpa/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin' /home/intpa/eden-gnw/tools/skyline-install/bin/cargo-skyline skyline clippy --no-default-features --features waiting-roster-reload -- --all-targets -- -D warnings",
+  "exit_code": 0,
+  "at": 1791784121.7559283
+}

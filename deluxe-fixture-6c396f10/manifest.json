@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "build_id": "0.1.0-2db70f90aaae-dirty-1791663838",
+  "nro": "libssbu_online_deluxe_rewrite.nro",
+  "nro_sha256": "6c396f10e8c4c3bb5bce41de7922f63f77500de37c39c7e477ab54f2f527f8a9",
+  "nro_size": 2428928,
+  "module_id": "23577eeceffc2e5c7223928f414d54761a7ec9d126b96c89a09be34ddf8e1ec6",
+  "elf": "libssbu_online_deluxe_rewrite.elf",
+  "elf_sha256": "1f053431cebe908e1c8007ef47f8bd137ab9524ff50d1d05086ba9d93cdf0a87",
+  "cargo_lock_sha256": "a0a229de0abd95e843541662a43113bb62fbcb2e7296e336d02db948accd6508",
+  "source_archive": "source.tar.gz",
+  "source_archive_sha256": "4c10e3efc302e1ec0b2b3a9ca9e812fdaff8129e1d2d8e8e59c4c51e50e599ca",
+  "native_dependencies": [
+    {
+      "origin": "local-source",
+      "sha256": "6c9591cc9f140ca6ce2efee2cdcaa0d8278b43319ea497b3f2434ce19d09ccca",
+      "size": 17181302,
+      "imgui_smash_commit": "bb47b205ed0be2fb864269ee2d37fc886b81221e",
+      "submodule_commit": "2b415e642b002f4312ac02f6bfa955960f8bd3b6",
+      "patch_sha256": "4e138e351334732670ca250c859e44b53e1fa54eb59e447f2385281063b2871d",
+      "image": "devkitpro/devkita64@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282",
+      "docker_user": "1000:1000",
+      "deterministic_archive": {
+        "cmake": "3.31.6",
+        "observed_link_rule": "aarch64-none-elf-gcc-ar qcD <archive> <objects>; aarch64-none-elf-gcc-ranlib -D <archive>",
+        "cmake_cxx_archive_create": "<CMAKE_AR> qcD <TARGET> <LINK_FLAGS> <OBJECTS>",
+        "cmake_cxx_archive_append": "<CMAKE_AR> qD <TARGET> <LINK_FLAGS> <OBJECTS>",
+        "cmake_cxx_archive_finish": "<CMAKE_RANLIB> -D <TARGET>",
+        "preload": "patches/imgui-smash/deterministic-archive.cmake"
+      }
+    }
+  ],
+  "compiler": "rustc 1.95.0-nightly (a423f68a0 2026-02-13)\nbinary: rustc\ncommit-hash: a423f68a0d75656eabab4982a06bed9f316f7109\ncommit-date: 2026-02-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.95.0-nightly\nLLVM version: 22.1.0\n",
+  "game_version": "13.0.5",
+  "text_verified": true,
+  "runtime_tested": false
+}
