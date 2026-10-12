@@ -1,21 +1,27 @@
 //! Optional 13.0.5 native-record capture and committed replay-save association.
 //! Native pointers are read only on their owning callbacks. Stored addresses are
 //! equality tokens, never dereferenced later; only owned values reach the writer.
+//!
+//! Revision 28: the hooks are resident whenever the INI says on or a Deluxe
+//! host registered the capture row. Each accepted native record is owned here
+//! (`RecordOwnership`) whether or not it is captured; the packed `CaptureToggle`
+//! latches the arm state at segment-0 start and is released only by an event
+//! matching that owner. A preference edited mid-record applies at that release.
 
 use std::collections::VecDeque;
 use std::sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex};
 
 use skyline::hooks::{getRegionAddress, InlineCtx, Region};
 use smash::{app::{self, lua_bind::WorkModule, Fighter}, lib::lua_const::*};
-use training_mod_macros::{LiveCapturePool, LiveFrame, LiveSession, NativeRecordKey,
-    MAX_RETAINED_CAPTURES};
+use training_mod_macros::{CaptureToggle, LiveCapturePool, LiveFrame, LiveSession, NativeRecordKey,
+    RecordOwner, RecordOwnership, MAX_RETAINED_CAPTURES};
 
 static BASE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "named-input-trace")]
 static CLOCK_TRACE_LEFT: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE: Mutex<Capture> = Mutex::new(Capture {
-    native_state: 0, epoch: 0, clock: None, pool: LiveCapturePool::new(), pending: [None; 8],
-    saves: VecDeque::new(),
+    native_state: 0, epoch: 0, clock: None, pool: LiveCapturePool::new(), owner: RecordOwnership::new(),
+    pending: [None; 8], saves: VecDeque::new(),
 });
 
 struct Capture {
@@ -23,9 +29,15 @@ struct Capture {
     epoch: u64,
     clock: Option<u32>,
     pool: LiveCapturePool,
+    /// Accepted native record, armed or not, independent of the pool (R1).
+    owner: RecordOwnership,
     pending: [Option<Pending>; 8],
     saves: VecDeque<BoundSave>,
 }
+
+fn toggle() -> &'static CaptureToggle { crate::replay_store::toggle() }
+
+fn on_off(on: bool) -> &'static str { if on { "on" } else { "off" } }
 
 #[derive(Clone, Copy)]
 struct Pending {
@@ -87,6 +99,17 @@ unsafe fn borrowed_state(interface: usize) -> Option<usize> {
 }
 
 impl Capture {
+    /// Every owner release ends the toggle's latched record. A request latched
+    /// during the record is reported here, on the game thread, never from the
+    /// draw-thread callback (operator decision Q2).
+    fn release(&self, released: Option<RecordOwner>, reason: &str) {
+        let Some(owner) = released else { return };
+        if let Some(ended) = toggle().end_record().filter(|ended| ended.pending_applied()) {
+            println!("[ReplayCapture] toggle applied capture={} source=pending index={} epoch={} reason={}",
+                on_off(ended.desired), owner.index, owner.epoch, reason);
+        }
+    }
+
     fn reset_pool(&mut self, state: usize) {
         self.epoch += 1;
         self.clock = None;
@@ -95,6 +118,8 @@ impl Capture {
         self.pending = [None; 8];
         // A save already copied by the native actor owns its immutable snapshot.
         // Clearing/reusing native records must not invalidate that pending save.
+        let released = self.owner.release_all();
+        self.release(released, "reset");
     }
 
     fn invalidate(&mut self, native: Native) {
@@ -103,6 +128,8 @@ impl Capture {
         self.clock = None;
         self.pending = [None; 8];
         self.pool.invalidate_record(native.index);
+        let released = self.owner.release_record(native.state, native.index);
+        self.release(released, "replace");
     }
 
     fn stop(&mut self, state: usize, partial: bool) {
@@ -118,6 +145,8 @@ impl Capture {
             self.pool.finish_record();
         }
         self.pending = [None; 8];
+        let released = self.owner.release_state(state);
+        self.release(released, if partial { "reset_recording" } else { "stop" });
     }
 
     fn forget_actor(&mut self, actor: usize) {
@@ -178,16 +207,32 @@ unsafe fn start_recording(state: usize, segment: u32) -> u32 {
     capture.epoch += 1;
     capture.clock = None;
     capture.pending = [None; 8];
+    let epoch = capture.epoch;
     if segment as u8 == 0 {
-        let key = capture.pool.start_record(native.index);
-        capture.clock = Some(native.tick);
-        #[cfg(feature = "named-input-trace")]
-        CLOCK_TRACE_LEFT.store(10_000, Ordering::Relaxed);
-        println!("[ReplayCapture] record_start generation={} index={} tick={}",
-            key.generation, key.index, native.tick);
+        // Ownership is tracked for armed and unarmed records alike (R1). A record
+        // still owned here never saw its end; report it before latching the new one.
+        let displaced = capture.owner.begin(RecordOwner { state, index: native.index, epoch });
+        capture.release(displaced, "restart");
+        if toggle().begin_record() {
+            let key = capture.pool.start_record(native.index);
+            capture.clock = Some(native.tick);
+            #[cfg(feature = "named-input-trace")]
+            CLOCK_TRACE_LEFT.store(10_000, Ordering::Relaxed);
+            println!("[ReplayCapture] record_start generation={} index={} tick={}",
+                key.generation, key.index, native.tick);
+            println!("[ReplayCapture] record_armed generation={} index={} capture=on",
+                key.generation, key.index);
+        } else {
+            // Slot invalidation continues while off: an unarmed record must not
+            // inherit an older armed key, so no later save can bind one (Q1/R1).
+            capture.pool.invalidate_record(native.index);
+            println!("[ReplayCapture] record_armed generation=0 index={} capture=off", native.index);
+        }
     } else {
-        // The native segment clock restarts. Do not concatenate separate timelines.
+        // The native segment clock restarts. Do not concatenate separate timelines;
+        // the owned record continues under its new native index.
         capture.pool.finish_partial();
+        capture.owner.continue_segment(state, native.index, epoch);
     }
     result
 }
@@ -235,12 +280,12 @@ unsafe fn publish_record_frames(ctx: &mut InlineCtx) {
     let Some(native) = native(ctx.registers[22].x() as usize) else { return };
     let mut capture = CAPTURE.lock().unwrap();
     if capture.native_state != native.state || !native.recording { return; }
-    let Some(key) = capture.pool.active_key().filter(|key| key.index == native.index) else { return };
+    // Armed or not, only the owned record's own publication ends it (R1); a pool
+    // key is absent for unarmed records and for armed ones already copied.
+    if !capture.owner.owns_record(native.state, native.index) { return; }
     #[cfg(feature = "named-input-trace")]
     println!("[LiveCaptureClock] fram_publish generation={} index={} native_counter={}",
-        key.generation, key.index, native.tick);
-    #[cfg(not(feature = "named-input-trace"))]
-    let _ = key;
+        capture.pool.active_key().map_or(0, |key| key.generation), native.index, native.tick);
     // Existing sealed tracks and an in-flight fighter pair still remain partial.
     // This only finalizes ownership; disk publication still requires native save success.
     capture.stop(native.state, false);
@@ -264,12 +309,20 @@ unsafe fn serialize_frame(interface: usize) -> u32 {
         let mut capture = CAPTURE.lock().unwrap();
         if capture.epoch == epoch && capture.native_state == state {
             match observed {
-                Some(native) if native.recording && capture.pool.active_key()
-                    .is_some_and(|key| key.index == native.index) => capture.clock = Some(native.tick),
+                Some(native) if native.recording && capture.owner.owns_record(state, native.index) => {
+                    // The clock advances only while the pool still samples this record;
+                    // an unarmed owner, or an armed one already copied, just stays owned.
+                    if capture.pool.active_key().is_some_and(|key| key.index == native.index) {
+                        capture.clock = Some(native.tick);
+                    }
+                }
                 _ => {
-                    // The serializer clears state2 on native buffer exhaustion.
+                    // The serializer clears state2 on native buffer exhaustion. A record
+                    // this adapter never saw start is ended the same way (R1).
                     capture.pool.finish_partial();
                     capture.pending = [None; 8];
+                    let released = capture.owner.release_state(state);
+                    capture.release(released, "exhausted");
                 }
             }
             #[cfg(feature = "named-input-trace")]
@@ -398,6 +451,8 @@ fn live_scene() -> bool {
 
 pub unsafe fn before_frame(fighter: &mut Fighter) {
     if BASE.load(Ordering::Acquire) == 0 { return; }
+    // Sampling early-out (R1): an idle or unarmed record takes no mutex here.
+    if !toggle().is_armed() { return; }
     let Some(module) = fighter.battle_object.module_accessor.as_mut() else { return };
     if app::utility::get_kind(module) == *FIGHTER_KIND_NANA { return; }
     let entry = WorkModule::get_int(module, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID);
@@ -422,6 +477,9 @@ pub unsafe fn before_frame(fighter: &mut Fighter) {
 
 pub unsafe fn after_frame(fighter: &mut Fighter) {
     if BASE.load(Ordering::Acquire) == 0 { return; }
+    // Every owner release clears `pending` under the mutex, so a record that ended
+    // between the two callbacks leaves nothing behind for this early-out to miss.
+    if !toggle().is_armed() { return; }
     let Some(module) = fighter.battle_object.module_accessor.as_mut() else { return };
     if app::utility::get_kind(module) == *FIGHTER_KIND_NANA { return; }
     let entry = WorkModule::get_int(module, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID);
@@ -449,7 +507,15 @@ pub unsafe fn after_frame(fighter: &mut Fighter) {
 }
 
 pub fn init() {
-    if !crate::replay_store::enabled() { return; }
+    #[cfg(feature = "deluxe-sdk")]
+    let registered = crate::capture_plugin::host_registered();
+    #[cfg(not(feature = "deluxe-sdk"))]
+    let registered = false;
+    let seed = crate::replay_store::seed_enabled();
+    // Revision 27 semantics without a registered host: hooks only when the INI
+    // says on. With a registered host the guarded adapter is resident from
+    // startup even when off, because a later ON choice cannot install hooks.
+    if !seed && !registered { return; }
     if !crate::common::game_mode::init() { return; }
     // Owned main13.0.5 SHA0789f0a4...536c2. Guard every optional replacement before
     // installing any, including constructor/reset, record-start, copy and success.
@@ -512,5 +578,9 @@ pub fn init() {
             stop_recording, stop_recording_alternate, reset_recording, publish_record_frames,
             copy_record, create_save_actor, destroy_save_actor, update_save_actor, write_record);
     }
-    println!("[ReplayCapture] guarded live adapter ready");
+    // Ready only after guards, writer and hooks all succeeded (R2); until then the
+    // Deluxe row answers UNAVAILABLE and the host writes nothing.
+    toggle().set_ready();
+    println!("[ReplayCapture] guarded live adapter ready capture={} host_registered={}",
+        on_off(seed), registered);
 }

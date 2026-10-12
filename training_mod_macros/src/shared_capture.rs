@@ -1,3 +1,21 @@
+//! Training ↔ smash-match-data adapter, built against the shared crate's HEAD
+//! `faac04e1a49bebd33cb2fd8f0967e120eabca899`. The shared crate supplies the
+//! model, archive I/O, validation and clip resolution; it ships no consumer
+//! adapters. Everything Training-specific is owned here, in `live_frame.rs`
+//! (`LiveInput::project`) and in `replay.rs` (`ReplayTrack::export`):
+//! * header and provenance: the `training_native_f32` layout, the opaque
+//!   serializer-counter raw unit, partial channel declarations, `Clocks::NONE`;
+//! * actor lifecycle derived from native object ids (spawn, form change, despawn);
+//! * canonical native f32 inputs and kinematics, bit-exact in the timeline;
+//! * the one-pass `Projector` into Training's compact cache, which quantises
+//!   analog values only at this consumer boundary (B7–B9 bounds on actors,
+//!   manifest/timeline/line sizes and event count);
+//! * Switch-compatible staging: the absent-destination manifest rewrite and a
+//!   same-parent publish rename, instead of the shared `Recorder::finish`.
+//!
+//! Host tests include a HEAD `Recorder` parity oracle and selected-boundary
+//! checks against known source frames.
+//!
 //! Canonical native observations, published together with a compact editor cache.
 //! All JSONL work belongs on a serialized worker, never on a menu/frame callback.
 //! `Before` is the proposed pre-fighter-callback phase, pending runtime qualification;
@@ -439,6 +457,7 @@ impl Projector {
 mod tests {
     use super::*;
     use crate::live_frame::LiveTrack;
+    use smash_match_data::{clip::{clip_context_for, ActorStatus, Resolved, SelectAt}, Recorder, RecorderOptions};
     use std::io::{Seek, SeekFrom, Write};
 
     struct Fixture(PathBuf);
@@ -639,6 +658,110 @@ mod tests {
                 if mode == 1 { i.left_stick = Channel::Missing; } else { i.entry = Some(2); }
             }
             assert!(projector.consume(&input).is_err());
+        }
+    }
+
+    /// T3: the same event list through the shared HEAD `Recorder` yields the same
+    /// manifest (completion, actors, boundaries) and the same timeline bytes as
+    /// this adapter's streaming writer and absent-destination manifest rewrite.
+    #[test]
+    fn head_recorder_oracle_reproduces_the_adapter_manifest_and_timeline() {
+        for truncated in [false, true] {
+            let f = Fixture::new();
+            let mut s = session();
+            s.truncated = truncated;
+            if truncated {
+                let mut replacement = s.tracks[0].frames[1]; replacement.body = 92;
+                s.tracks[0].frames.push(replacement);
+                s.tracks.insert(0, LiveTrack { entry: 7, frames: vec![frame([0.0; 4])] });
+            }
+            let dir = f.publish(&s);
+            let capture = Capture::load(&dir).unwrap();
+            let oracle = Fixture::new();
+            let oracle_dir = oracle.0.join("oracle.smd");
+            let mut recorder = Recorder::create(&oracle_dir, capture.manifest.capture.clone(),
+                RecorderOptions { write: WriteOptions { flush_each_event: false, overwrite: false }, keep_events: false }).unwrap();
+            let (end, body) = capture.events.split_last().unwrap();
+            assert!(matches!(end.body, EventBody::End { .. }));
+            for event in body {
+                assert_eq!(recorder.push(event.clocks, event.body.clone()).unwrap(), event.seq);
+            }
+            let completion = if truncated { Completion::truncated("Training native capture was truncated") } else { Completion::complete() };
+            let finished = recorder.finish(Clocks::NONE, completion).unwrap();
+            assert_eq!(finished.manifest, capture.manifest, "truncated={truncated}");
+            assert_eq!(finished.completeness, capture.completeness);
+            assert!(finished.warnings.iter().all(|issue| !issue.is_error()));
+            assert_eq!(fs::read(oracle_dir.join(TIMELINE_FILE)).unwrap(), fs::read(dir.join(TIMELINE_FILE)).unwrap());
+            assert_eq!(archive::read_manifest(&oracle_dir).unwrap(), archive::read_manifest(&dir).unwrap());
+        }
+    }
+
+    /// T5: at every selectable boundary the shared clip resolution, keyed by the
+    /// actor's own before-state event seq, returns the known source frame, and
+    /// Training's export from that boundary carries the same start context.
+    #[test]
+    fn selected_boundary_state_matches_source_frames_and_export_start() {
+        for truncated in [false, true] {
+            let f = Fixture::new();
+            let mut s = session();
+            s.truncated = truncated;
+            // A third sample with different status, situation and momentum.
+            let mut third = frame([0.25, -0.75, 0.0, 1.0]);
+            third.start.status = 0; third.start.situation = 0; third.start.speed_y = -1.5; third.y = 42.0;
+            s.tracks[0].frames.push(third);
+            let dir = f.publish(&s);
+            let capture = Capture::load(&dir).unwrap();
+            assert_eq!(matches!(capture.completeness, Completeness::DeclaredTruncated { .. }), truncated);
+            let loaded = f.load().unwrap();
+            let track = &loaded.session.tracks[0];
+            let source = &s.tracks[0].frames;
+            let actor = capture.events.iter().find_map(|e| match &e.body {
+                EventBody::Lifecycle { actor, event: LifecycleEvent::Spawn { identity, .. } } if identity.entry == Some(1) => Some(*actor),
+                _ => None,
+            }).unwrap();
+            let state_seqs: Vec<u64> = capture.events.iter()
+                .filter(|e| matches!(&e.body, EventBody::State { actor: a, phase: Phase::Before, .. } if *a == actor))
+                .map(|e| e.seq).collect();
+            assert_eq!(state_seqs.len(), source.len());
+            for (k, seq) in state_seqs.iter().enumerate() {
+                let expected = source[k];
+                let context = clip_context_for(&capture.events, SelectAt::Seq(*seq), actor).unwrap();
+                assert_eq!(context.boundaries, [BoundaryKind::RecordingStart]);
+                assert_eq!(context.seq, Some(*seq));
+                // The prefix holds this actor's inputs for frames 0..k only: the selected
+                // before-state is included, the input it precedes is not.
+                let inputs = capture.events[..context.included].iter()
+                    .filter(|e| matches!(&e.body, EventBody::Input(i) if i.actor == Some(actor))).count();
+                assert_eq!(inputs, k);
+                let resolved = context.actor(actor).unwrap();
+                assert_eq!(resolved.status, ActorStatus::Alive);
+                assert_eq!(resolved.identity.fighter_kind, Some(expected.start.fighter_kind));
+                assert_eq!(resolved.identity.costume, Some(expected.start.costume as u8));
+                let Resolved::Observed { value: kinematics, value_seq, latest_seq, phase } = &resolved.sample.kinematics
+                    else { panic!("kinematics unresolved at frame {k}") };
+                assert_eq!((*value_seq, *latest_seq, *phase), (*seq, *seq, Some(Phase::Before)));
+                assert_eq!([kinematics.position.x, kinematics.position.y, kinematics.position.z, kinematics.facing].map(f32::to_bits),
+                    [expected.x, expected.y, expected.position_z, expected.start.facing].map(f32::to_bits));
+                let velocity = kinematics.velocity.unwrap();
+                assert_eq!([velocity.x, velocity.y, velocity.z].map(f32::to_bits),
+                    [expected.start.speed_x, expected.start.speed_y, expected.speed_z].map(f32::to_bits));
+                let Resolved::Observed { value: situation, .. } = &resolved.sample.situation
+                    else { panic!("situation unresolved at frame {k}") };
+                assert_eq!((situation.situation_kind, situation.status_kind), (expected.start.situation, expected.start.status));
+                // Training's export from the same boundary carries the same start context
+                // and the exact selected inputs.
+                let mut window = track.window().unwrap();
+                window.set_in(k as u32);
+                let exported = track.export(&window, "boundary", "13.0.5", &[expected.start.status]).unwrap();
+                assert_eq!(exported.frames.len(), source.len() - k);
+                assert_eq!(exported.frames[0], expected.input.project().0);
+                let start = exported.start;
+                assert_eq!((start.fighter_kind, start.costume, start.situation, start.status),
+                    (expected.start.fighter_kind, expected.start.costume, expected.start.situation, expected.start.status));
+                assert_eq!([start.facing, start.speed_x, start.speed_y].map(f32::to_bits),
+                    [kinematics.facing, velocity.x, velocity.y].map(f32::to_bits));
+                assert!(track.export(&window, "boundary", "13.0.5", &[expected.start.status + 1]).is_err());
+            }
         }
     }
 }

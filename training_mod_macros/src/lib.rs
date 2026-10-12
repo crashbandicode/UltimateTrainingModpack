@@ -30,6 +30,7 @@
 
 mod capture_archive;
 mod capture_settings;
+mod capture_toggle;
 mod library;
 mod live_capture;
 mod live_frame;
@@ -39,7 +40,10 @@ mod shared_capture;
 mod window;
 
 pub use capture_archive::{CaptureArchive, CaptureEntry, CaptureListing, CaptureSaveOutcome, SavedCapture};
-pub use capture_settings::{CaptureSettings, DEFAULT_CAPTURE_INI};
+pub use capture_settings::{host_persistence_key, recover_previous_ini, CaptureSettings, IniRecovery,
+    CAPTURE_CONFIG_KEY, DEFAULT_CAPTURE_INI};
+pub use capture_toggle::{CaptureToggle, RecordEnded, RecordOwner, RecordOwnership, RecordPhase,
+    ToggleRequest, ToggleSnapshot, CAPTURE_OFF, CAPTURE_ON};
 pub use library::{Library, Listing, MacroEntry, SkippedFile, MAX_FILE_BYTES, MAX_ID_CHARS};
 pub use live_capture::{LiveCapturePool, NativeRecordKey, MAX_RETAINED_CAPTURES};
 pub use live_frame::{LiveFrame, LiveInput, LiveSession, LiveTrack};

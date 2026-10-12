@@ -22,6 +22,8 @@ mod hazard_manager;
 mod hitbox_visualizer;
 mod training;
 
+#[cfg(feature = "deluxe-sdk")]
+mod capture_plugin;
 mod character_lifecycle;
 mod character_memory;
 mod character_roster;
@@ -116,7 +118,12 @@ fn initialize_training_modpack() {
         });
     }
 
+    // INI seed first, then the optional Deluxe row (it reads the seed and the
+    // persistence verdict), then the native adapter, which installs its hooks
+    // whenever the INI says on or a host registered the row.
     replay_store::init();
+    #[cfg(feature = "deluxe-sdk")]
+    capture_plugin::register_toggle();
     live_replay::init();
 
     info!("Performing saved data check...");

@@ -43,6 +43,10 @@ log = "0.4.17"
 byte-unit = "4.0.18"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 anyhow = "1.0.72"
+# Revision 28: optional Deluxe Plugins-page registration. The path is the pinned
+# read-only SDK snapshot v0.2.0 (deluxe-plugin-sdk 2.0.0 / deluxe-plugin-abi 2.0.0);
+# its `skyline = "=0.6.0"` switch-target dependency resolves through the patch below.
+deluxe-plugin-sdk = { path = "../research/named-macros/revision28-external/deluxe-sdk-v0.2.0/sdk", optional = true }
 
 [patch.crates-io]
 native-tls = { git = "https://github.com/skyline-rs/rust-native-tls", branch = "switch" }
@@ -72,3 +76,6 @@ layout_arc_from_file = []
 waiting-roster-reload = []
 # Bounded console-only writer/native-getter observations for qualification.
 named-input-trace = []
+# Runtime capture toggle on the Deluxe Plugins page. Without a Deluxe host the
+# registration reports HostMissing and revision 27 behaviour is unchanged.
+deluxe-sdk = ["dep:deluxe-plugin-sdk"]
