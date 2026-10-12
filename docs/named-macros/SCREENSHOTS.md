@@ -1,7 +1,7 @@
 # Screenshot provenance
 
-All fifteen images are real native game captures from the October 10–11, 2026
-acceptance tests. Ten are used in the current walkthrough; five superseded
+All sixteen images are real native game captures from the October 10–12, 2026
+acceptance tests. Eleven are used in the current walkthrough; five superseded
 numeric-editor, pose-preview and naming captures remain archived. They are assembled
 from multiple test moments, rather than frames from one continuous recording.
 
@@ -39,6 +39,7 @@ Source names below are relative to the local native-test runs archive.
 | [13-native-preview.png](images/13-native-preview.png) | `acceptance-fable/runs/parent-21/native-restart.png` | Revision 21 native preview after Restart, input marker 93; Dr. Mario's capsule is visible. Steve is Training P1. |
 | [14-native-selection.png](images/14-native-selection.png) | `acceptance-fable/runs/parent-21/g2-selection-restart.png` | Revision 21 [0, 8) selection completed at marker 7; native effects/animation remain free to finish. |
 | [15-native-stop-restored.png](images/15-native-stop-restored.png) | `acceptance-fable/runs/parent-21/native-stop-restored.png` | Revision 21 after explicit Stop: both saved anchors restored and marker reset to the selection start. |
+| [16-persistent-capture.png](images/16-persistent-capture.png) | `acceptance-fable/runs/live-r27-reopen/reopen-saved-capture-picker.png` | Revision27 cold process restart with capture off: saved native-name Replay,3,232inputs. Pac-Man/Dr.Mario are the current Training fighters before selecting captured Pikachu. |
 
 The first seven images use revision 6 of the local test build. The eighth shows
 the earlier placement UI; later momentum/restore verification is described in the
@@ -48,5 +49,9 @@ For 09/10/12 and 13–15, source paths are under the isolated `eden-replay/accep
 archive rather than the older `eden-replay/runs` archive. The revision 21 crops use the
 same viewport box and pixel equality check. All twelve earlier images are preserved
 byte-for-byte. Updating this local guide does not itself publish a new build.
+
+Image16 uses the same viewport crop and pixel equality check. All fifteen previous
+images are preserved byte-for-byte. Its capture predates CPU selection and is not
+a screenshot of the subsequent eight-input preview or successful export.
 
 [Back to the walkthrough](README.md)

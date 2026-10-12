@@ -4,11 +4,16 @@ Turn one fighter's replay inputs into a reusable Training drill, or record a new
 drill by controlling the CPU. Give it a name, load it from the library, and play
 it from your saved Training setup with adjustable position and starting momentum.
 
-**Development preview · Updated October 11, 2026, through revision 21.** These are
+**Development preview · Updated October 12, 2026, through revision 27.** These are
 real captures from native game tests of the local implementation. Native input
 preview has passed the scoped emulator checks below. This documentation branch
 publishes the walkthrough; the implementation has not been released or deployed
 to a physical Switch.
+
+[Revision27 implementation source](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-capture)
+and [qualification reports / benchmark source](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-research/PUBLICATION.md)
+are available on separate branches of this repository. Performance qualification
+is still in progress.
 
 ## Implemented features
 
@@ -20,6 +25,9 @@ to a physical Switch.
   validation keeps the draft available for another attempt.
 - **Replay capture:** retain the latest and previous observed captures in memory,
   select one fighter, and export an exact input window.
+- **Optional persistent live capture:** enable an INI switch, save the corresponding
+  native replay, then select its companion under the replay name in Training—even
+  after restarting the game. Capture defaults off; Vault remains the fallback.
 - **Native input preview:** run the selected inputs through the Training CPU so
   movement, attacks, projectiles and effects happen normally. Play, Stop and Restart
   use a saved Training setup; progress follows emitted inputs.
@@ -33,7 +41,57 @@ to a physical Switch.
   isolation, standard HUD/statistics hiding, and restoration of both saved fighters
   after Stop, range edits or close.
 
-## Saved replay → named macro
+## Capture a new match and keep it across restarts
+
+This optional route avoids replaying the match in Vault before making a macro.
+
+1. Run the mod once to create
+   `sd:/ultimate/TrainingModpack/replay_capture.ini`. With the game closed, change
+   the default `off` to `on`, then restart:
+
+   ```ini
+   [capture]
+   enabled=on
+   ```
+
+2. Play the match and confirm the game's **Save Replay** action on the results
+   screen. The companion capture is published only after that exact native replay
+   save succeeds. Cancelling creates no companion; unsaved RAM data is not persistent.
+3. Enter Training, including after closing and restarting the game. Open **Input
+   Recording → Replay Captures**, select the native replay name, and press **A**.
+   Saved choices remain available with capture switched off on a later restart.
+
+![Saved Replay capture with 3,232 inputs available in Training after a cold restart.](images/16-persistent-capture.png)
+
+*Revision27: the saved Shulk/Pikachu match appears as “Replay · 3232f” after a
+complete process restart with capture disabled. Pac-Man and Dr. Mario are the
+current Training fighters at this picker screen; choosing the captured Pikachu
+track subsequently requests the CPU change.*
+
+4. Choose the captured fighter with **Up/Down**. After any CPU reload finishes,
+   save a matching Training setup. Then follow the crop/preview/name controls below.
+
+The native27 test selected Pikachu, previewed **[0,8)**, and saved **“R27 Pikachu
+eight”**. All eight exported inputs matched the persisted capture's projection;
+existing macro files were unchanged. A capture contains input/state observations,
+not a complete simulation save state.
+
+Companions are stored beneath `sd:/ultimate/TrainingModpack/replay_captures/` as
+shared `.smd` bundles containing `manifest.json`, `timeline.jsonl` and a Training
+`.tmrc` cache. Keep each bundle together. Canonical native floating-point values
+are retained; Training's compact input rounding occurs in its cache/export.
+
+Normal revision27 also passed a scoped emulator check with Deluxe `6c396f10` in
+active manual LessLag mode: a saved 3,600-input capture reopened with capture off,
+reloaded Pikachu, previewed **[0,8)**, and saved **“Deluxe Pikachu eight”** with exact
+capture/export equality and the existing library preserved.
+
+**Current limits:** capture is bounded and can be partial. Native-buffer completion
+does not establish first/last simulation ticks or all sampling phases. Controlled
+overhead and deliberate frame-drop tests are still pending, as are physical-Switch
+and online checks. Capture is opt-in; no zero-cost claim is made.
+
+## Existing saved replay → named macro (Vault fallback)
 
 **Play the replay → return to Training → choose a fighter and frame window →
 name and save → load the macro → restore your setup and play.**
@@ -137,8 +195,9 @@ retains the crop/draft so you can retry. Check the fighter and frame count first
 It is a separate test moment from the revision 21 crop above. Follow the keyboard's
 own cancel/confirm labels; they differ from the editor's B-to-close control.*
 
-Exported macros persist in `sd:/ultimate/TrainingModpack/macros/`. Unsaved capture
-timelines disappear when the game exits. The library is not limited to five slots;
+Exported macros persist in `sd:/ultimate/TrainingModpack/macros/`. Unsaved Vault
+capture timelines disappear when the game exits; live companions saved through the
+optional route above persist separately. The library is not limited to five slots;
 named recording/capture has a ten-minute gameplay-frame safety bound.
 
 ### 6. Load the macro and play it
