@@ -82,6 +82,31 @@ pub const UI_MANAGER_ADRP_DELTA: usize = 0x20;
 /// The manager-global slot that the pair decodes to on 13.0.5 (documentation and tests only).
 pub const UI_MANAGER_SLOT_OFFSET: usize = 0x593ba90;
 
+/// Bytes from the prologue start to [`UI_MANAGER_LOCATOR`]: past the 16 bytes a Skyline function hook
+/// rewrites at a function entry (`ldr x17, #8; br x17; .quad target`).
+pub const UI_MANAGER_LOCATOR_DELTA: usize = 0x14;
+const _: () = assert!(UI_MANAGER_LOCATOR_DELTA >= 16, "the locator must clear a 16-byte function-hook stub");
+/// Revision 30 locator for the UI pass: prologue words 5–9 plus the first body word. It has exactly one
+/// hit in the 13.0.5 text and survives another plugin's function hook on the entry `0x375e260` (Deluxe
+/// 0.3.1 hooks that entry for its dispatcher idle backoff and runs its `main` before ours). It contains
+/// the `adrp`/`ldr` pair at [`UI_MANAGER_ADRP_DELTA`] from the prologue start.
+#[rustfmt::skip]
+pub const UI_MANAGER_LOCATOR: &[u8] = &[
+    0xf4, 0x4f, 0x08, 0xa9, // stp x20, x19, [sp, #0x80]
+    0xfd, 0x7b, 0x09, 0xa9, // stp x29, x30, [sp, #0x90]
+    0xfd, 0x43, 0x02, 0x91, // add x29, sp, #0x90
+    0xfc, 0x0e, 0x01, 0xb0, // adrp x28, 0x593b000
+    0x88, 0x4b, 0x45, 0xf9, // ldr x8, [x28, #0xa90]
+    0x09, 0x01, 0x40, 0xf9, // ldr x9, [x8]
+];
+
+/// The first five prologue words, for the informational `ui_manager_prologue` report (the runtime reads
+/// only the adrp/ldr pair, so a patched entry is reported with [`verify_site`]'s vocabulary, never fatal).
+pub fn ui_manager_prologue_pin() -> [u32; 5] {
+    let prologue = words(UI_MANAGER_PROLOGUE);
+    [prologue[0], prologue[1], prologue[2], prologue[3], prologue[4]]
+}
+
 /// `Holder*` -> `nn::ui2d::Layout*`.
 pub const HOLDER_LAYOUT: usize = 0x458;
 /// Manager -> `std::vector<Holder*>` begin; the end pointer follows it.
@@ -213,6 +238,30 @@ mod tests {
     }
 
     #[test]
+    fn manager_locator_is_the_prologue_tail_past_a_function_hook_stub() {
+        let prologue = words(UI_MANAGER_PROLOGUE);
+        let locator = words(UI_MANAGER_LOCATOR);
+        assert_eq!(UI_MANAGER_LOCATOR_DELTA, 0x14); // >= 16 is a compile-time assertion beside the constant
+        assert_eq!(UI_MANAGER_LOCATOR.len(), 24);
+        let skip = UI_MANAGER_LOCATOR_DELTA / 4;
+        assert_eq!(&locator[..prologue.len() - skip], &prologue[skip..]);
+        assert_eq!(locator[prologue.len() - skip], 0xf940_0109); // ldr x9, [x8]
+        // The adrp/ldr pair sits inside the locator at the documented delta and still names the slot.
+        let index = (UI_MANAGER_ADRP_DELTA - UI_MANAGER_LOCATOR_DELTA) / 4;
+        let pc = (UI_MANAGER_PROLOGUE_OFFSET + UI_MANAGER_ADRP_DELTA) as u64;
+        assert_eq!(decode_adrp_ldr(pc, locator[index], locator[index + 1]), Some(UI_MANAGER_SLOT_OFFSET as u64));
+        assert_eq!(ui_manager_prologue_pin(), [0xd102_83ff, 0xa904_6ffc, 0xa905_67fa, 0xa906_5ff8, 0xa907_57f6]);
+        // Another plugin's entry hook: a near `b` reads as owned, a far 16-byte stub as differing words;
+        // both are reports only.
+        let mut near = ui_manager_prologue_pin();
+        near[0] = 0x1400_0000 | 0x1234;
+        assert_eq!(verify_site(near, ui_manager_prologue_pin()), SiteVerdict::OwnedByAnotherPlugin);
+        let mut far = ui_manager_prologue_pin();
+        far[..4].copy_from_slice(&[0x5800_0051, 0xd61f_0220, 0x0000_1000, 0x0000_0020]);
+        assert_eq!(verify_site(far, ui_manager_prologue_pin()), SiteVerdict::WordsDiffer);
+    }
+
+    #[test]
     fn decode_rejects_other_forms() {
         let (adrp, ldr) = (0xb0010efc, 0xf9454b88);
         assert_eq!(decode_adrp_ldr(0x1000, 0x90000000 | 0x1c, 0xf9400388), Some(0x1000));
@@ -263,6 +312,7 @@ mod tests {
             assert_eq!(verify_site(found.try_into().unwrap(), site.pin), SiteVerdict::Installed, "{}", site.name);
         }
         assert_eq!(hits(UI_MANAGER_PROLOGUE), vec![UI_MANAGER_PROLOGUE_OFFSET]);
+        assert_eq!(hits(UI_MANAGER_LOCATOR), vec![UI_MANAGER_PROLOGUE_OFFSET + UI_MANAGER_LOCATOR_DELTA]);
         // The removed hook's needle still identifies main+0x4b620 on this dump (documentation).
         let draw: &[u8] = &[0x08, 0x0c, 0x40, 0xf9, 0xc8, 0x03, 0x00, 0xb4, 0xff, 0x83, 0x01, 0xd1, 0xf5, 0x1b, 0x00, 0xf9,
             0xf4, 0x4f, 0x04, 0xa9, 0xfd, 0x7b, 0x05, 0xa9, 0xfd, 0x43, 0x01, 0x91, 0xf4, 0x03, 0x00, 0xaa];

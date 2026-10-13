@@ -122,7 +122,10 @@ PC-independent `ldr`. No caller-saved general or SIMD register is live there, an
 call the vtable slot, so a different game version cannot pass them silently.
 
 **Uncontested sites.** No other known plugin touches anything in `0x375e260`–`0x375f01f` or
-`0x37849c0`–`0x3784b2c`:
+`0x37849c0`–`0x3784b2c` (as surveyed for revision 29; **superseded 2026-10-13**: Deluxe 0.3.1 function-hooks
+the pass entry `0x375e260` for its dispatcher idle backoff, which broke the ten-word prologue needle on the
+Switch — revision 30 locates the pass past that stub, see `docs/REVISION30_HOOKPROOF_PROLOGUE.md`; the two
+anchor sites themselves remain untouched):
 
 - Deluxe (`/tmp/deluxe-pin-…/repo`): sequence hooks `0x374bb04`, `0x374c600`, `0x374cd64`;
   model update `0x3ab590`; renderer `0x386b0fc`, `0x387029c`, `0x384fa10`, `0x38701e0`,

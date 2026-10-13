@@ -18,8 +18,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use skyline::hooks::{getRegionAddress, InlineCtx, Region};
 use training_mod_macros::ui_anchor::{
-    decode_adrp_ldr, verify_site, AnchorSite, SiteVerdict, UI_MANAGER_ADRP_DELTA, UI_PASS_CALCULATE,
-    UI_REGISTER_CALCULATE,
+    decode_adrp_ldr, ui_manager_prologue_pin, verify_site, AnchorSite, SiteVerdict, UI_MANAGER_ADRP_DELTA,
+    UI_PASS_CALCULATE, UI_REGISTER_CALCULATE,
 };
 
 use super::layout_registry;
@@ -66,7 +66,23 @@ pub fn install() {
     verify(&UI_PASS_CALCULATE, *OFFSET_UI_PASS_CALCULATE);
     verify(&UI_REGISTER_CALCULATE, *OFFSET_UI_REGISTER_CALCULATE);
 
-    let pc = text() + *OFFSET_UI_MANAGER_PROLOGUE + UI_MANAGER_ADRP_DELTA;
+    // Revision 30: the pass prologue is reported, not required. Another plugin may own the function entry
+    // (Deluxe 0.3.1's dispatcher idle backoff hooks main+0x375e260 and installs before us); the locator
+    // that found the pass starts past that stub and the modpack reads only the adrp/ldr pair below.
+    let prologue = text() + *OFFSET_UI_MANAGER_PROLOGUE;
+    let entry: [u32; 5] = std::array::from_fn(|index| unsafe { word(prologue + index * 4) });
+    crate::logging::diagnostic(format_args!(
+        "[UiAnchor] ui_manager_prologue site=main+{:#x} words={:08x} {:08x} {:08x} {:08x} {:08x} result={}",
+        prologue - text(),
+        entry[0],
+        entry[1],
+        entry[2],
+        entry[3],
+        entry[4],
+        verify_site(entry, ui_manager_prologue_pin()).as_str()
+    ));
+
+    let pc = prologue + UI_MANAGER_ADRP_DELTA;
     let (adrp, ldr) = unsafe { (word(pc), word(pc + 4)) };
     let slot = decode_adrp_ldr(pc as u64, adrp, ldr).unwrap_or_else(|| {
         panic!("Revision 29 UI manager global did not decode at main+{:#x}: {adrp:08x} {ldr:08x}", pc - text())

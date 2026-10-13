@@ -2,7 +2,7 @@
 // TODO!(Find a way to search for the offsets for the stale menu text (on_text_ptr) and camera manager address (on_cam_mgr_ptr))
 #![cfg_attr(rustfmt, rustfmt_skip)] // We want the assembly needles to stay in lines of four bytes each
 use crate::logging::*;
-use training_mod_macros::ui_anchor::{LOCATOR_DELTA, UI_MANAGER_PROLOGUE, UI_PASS_CALCULATE, UI_REGISTER_CALCULATE};
+use training_mod_macros::ui_anchor::{LOCATOR_DELTA, UI_MANAGER_LOCATOR, UI_MANAGER_LOCATOR_DELTA, UI_PASS_CALCULATE, UI_REGISTER_CALCULATE};
 use training_mod_sync::LazyLock;
 
 // Stolen from HDR who stole it from Arcropolis
@@ -163,9 +163,15 @@ impl_offset!(UI_REGISTER_CALCULATE_LOCATOR);
 pub static OFFSET_UI_REGISTER_CALCULATE: LazyLock<usize> =
     LazyLock::new(|| *OFFSET_UI_REGISTER_CALCULATE_LOCATOR - LOCATOR_DELTA);
 
-// OFFSET_UI_MANAGER_PROLOGUE = 0x375e260 (its adrp/ldr at +0x20 name the manager global)
-static NEEDLE_UI_MANAGER_PROLOGUE: &[u8] = UI_MANAGER_PROLOGUE;
-impl_offset!(UI_MANAGER_PROLOGUE);
+// Revision 30: the pass prologue 0x375e260 (its adrp/ldr at +0x20 name the manager global) is located
+// by a needle that starts 0x14 bytes in, past the 16 bytes another plugin's function hook rewrites at
+// the entry (Deluxe 0.3.1 hooks main+0x375e260 for its dispatcher idle backoff and runs first). The
+// entry words are reported, not required. See docs/REVISION30_HOOKPROOF_PROLOGUE.md.
+// OFFSET_UI_MANAGER_LOCATOR = 0x375e274 (prologue 0x375e260)
+static NEEDLE_UI_MANAGER_LOCATOR: &[u8] = UI_MANAGER_LOCATOR;
+impl_offset!(UI_MANAGER_LOCATOR);
+pub static OFFSET_UI_MANAGER_PROLOGUE: LazyLock<usize> =
+    LazyLock::new(|| *OFFSET_UI_MANAGER_LOCATOR - UI_MANAGER_LOCATOR_DELTA);
 
 // OFFSET_CLOUD_ADD_LIMIT = 0x8dc160
 static NEEDLE_CLOUD_ADD_LIMIT: &[u8] = &[
