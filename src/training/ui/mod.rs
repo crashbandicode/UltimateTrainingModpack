@@ -185,6 +185,7 @@ static mut LAYOUT_ARC: &mut [u8; LAYOUT_ARC_SIZE] = &mut [0u8; LAYOUT_ARC_SIZE];
 /// ```
 #[skyline::hook(offset = *OFFSET_LAYOUT_ARC_MALLOC, inline)]
 unsafe fn handle_layout_arc_malloc(ctx: &mut skyline::hooks::InlineCtx) {
+    let _probe = crate::hang_trace::LAYOUT_ARC.enter(ctx.registers[1].x());
     if !is_native_training_mode() && !lobby::requested() {
         return;
     }

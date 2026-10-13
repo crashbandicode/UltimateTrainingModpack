@@ -89,6 +89,7 @@ unsafe fn descriptor(raw: *const u8) -> (u32, [u32; 3], u32, u8) {
 
 #[skyline::hook(offset = 0x678150, inline)]
 unsafe fn allocation_trace(ctx: &mut InlineCtx) {
+    crate::hang_trace::ALLOCATION.hit();
     let desc = ctx.registers[2].x() as *const u8;
     if aligned(desc) && bounded_log(&BOUNDARY_LOGS, 384) {
         trace!(
@@ -105,6 +106,7 @@ unsafe fn allocation_trace(ctx: &mut InlineCtx) {
 
 #[skyline::hook(offset = 0x653240, inline)]
 unsafe fn reload_trace(ctx: &mut InlineCtx) {
+    crate::hang_trace::RELOAD.hit();
     let entry = ctx.registers[0].x() as *const u8;
     let desc = ctx.registers[1].x() as *const u8;
     if aligned(entry) && aligned(desc) && bounded_log(&BOUNDARY_LOGS, 384) {
@@ -114,6 +116,7 @@ unsafe fn reload_trace(ctx: &mut InlineCtx) {
 
 #[skyline::hook(offset = 0x652160, inline)]
 unsafe fn destruction_trace(ctx: &mut InlineCtx) {
+    crate::hang_trace::DESTROY.hit();
     let entry = ctx.registers[0].x() as *const u8;
     crate::character_roster::on_destroy(entry);
     if aligned(entry) && bounded_log(&BOUNDARY_LOGS, 384) {

@@ -27,6 +27,7 @@ mod capture_plugin;
 mod character_lifecycle;
 mod character_memory;
 mod character_roster;
+mod hang_trace;
 mod logging;
 mod live_replay;
 mod replay_capture;
@@ -35,8 +36,12 @@ mod replay_store;
 mod native_keyboard;
 
 fn nro_main(nro: &NroInfo<'_>) {
+    let _probe = hang_trace::NRO_LOAD.enter(nro.name.len() as u64);
     if nro.module.isLoaded {
         return;
+    }
+    if hang_trace::within_budget(&hang_trace::NRO_LINES, 200) {
+        logging::diagnostic(format_args!("[HangTrace] nro_load name={}", nro.name));
     }
 
     if nro.name == "common" {
@@ -51,6 +56,7 @@ fn nro_main(nro: &NroInfo<'_>) {
 #[skyline::main(name = "training_modpack")]
 pub fn main() {
     logging::init_diagnostics();
+    hang_trace::start();
     character_roster::init();
     initialize_training_modpack();
 }

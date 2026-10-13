@@ -376,6 +376,7 @@ unsafe fn active_body(entry: *const u8, owner: u32, kind: u32) -> bool {
 // below are compared only; no saved fighter/entry/module pointer is dereferenced.
 #[skyline::hook(offset = 0x650010, inline)]
 unsafe fn service(ctx: &mut InlineCtx) {
+    crate::hang_trace::ROSTER_SERVICE.hit();
     let entry = ctx.registers[0].x() as *mut u8;
     if !aligned(entry) {
         return;

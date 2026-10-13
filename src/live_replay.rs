@@ -564,12 +564,14 @@ pub fn init() {
         let base = getRegionAddress(Region::Text) as usize;
         for (offset, code) in GUARDS {
             if std::slice::from_raw_parts((base + offset) as *const u32, code.len()) != code {
-                println!("[ReplayCapture] live adapter disabled: native guard {:#x}", offset);
+                crate::logging::diagnostic(format_args!(
+                    "[ReplayCapture] live adapter disabled: native guard {:#x}", offset));
                 return;
             }
         }
         if let Err(error) = crate::replay_store::start_writer() {
-            println!("[ReplayCapture] live adapter disabled: writer {}", error);
+            crate::logging::diagnostic(format_args!(
+                "[ReplayCapture] live adapter disabled: writer {}", error));
             return;
         }
         BASE.store(base, Ordering::Release);
@@ -581,6 +583,7 @@ pub fn init() {
     // Ready only after guards, writer and hooks all succeeded (R2); until then the
     // Deluxe row answers UNAVAILABLE and the host writes nothing.
     toggle().set_ready();
-    println!("[ReplayCapture] guarded live adapter ready capture={} host_registered={}",
-        on_off(seed), registered);
+    crate::logging::diagnostic(format_args!(
+        "[ReplayCapture] guarded live adapter ready capture={} host_registered={}",
+        on_off(seed), registered));
 }

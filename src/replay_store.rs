@@ -151,12 +151,12 @@ pub fn init() {
                 }
                 Err(reason) => println!("[ReplayCapture] deluxe_persistence disabled: {reason}"),
             }
-            println!("[ReplayCapture] live_enabled={}", settings.enabled);
+            crate::logging::diagnostic(format_args!("[ReplayCapture] live_enabled={}", settings.enabled));
         }
         Err(error) => {
             SEED_ENABLED.store(false, Ordering::Release);
             TOGGLE.seed(false);
-            println!("[ReplayCapture] live capture disabled: {error}");
+            crate::logging::diagnostic(format_args!("[ReplayCapture] live capture disabled: {error}"));
         }
     }
 }

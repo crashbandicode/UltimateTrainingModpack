@@ -103,6 +103,7 @@ pub fn install() {
 /// Per-frame pass, before `blr` to the holder layout's `+0x98` (x23 = holder).
 #[skyline::hook(offset = *OFFSET_UI_PASS_CALCULATE, inline)]
 unsafe fn training_modpack_ui_pass_calculate(ctx: &mut InlineCtx) {
+    crate::hang_trace::UI_PASS.hit();
     let Some(layout) = layout_registry::layout_of(ctx.registers[23].x() as *const u8) else {
         return;
     };
@@ -112,16 +113,31 @@ unsafe fn training_modpack_ui_pass_calculate(ctx: &mut InlineCtx) {
             layout_registry::holders().len()
         ));
     }
+    let _probe = crate::hang_trace::TICK_PASS.enter(layout as u64);
     super::tick(layout);
 }
 
 /// Manager insert, before the initial calculate of a newly registered holder (x21 = holder).
 #[skyline::hook(offset = *OFFSET_UI_REGISTER_CALCULATE, inline)]
 unsafe fn training_modpack_ui_register_calculate(ctx: &mut InlineCtx) {
+    crate::hang_trace::UI_REGISTER.hit();
     let Some(layout) = layout_registry::layout_of(ctx.registers[21].x() as *const u8) else {
         return;
     };
+    // Revision 31: every registration during a scene load is a progress marker on the console.
+    if crate::hang_trace::within_budget(&crate::hang_trace::REGISTER_LINES, 400) {
+        let name = layout_registry::layout_name(layout)
+            .map(|name| String::from_utf8_lossy(name).into_owned())
+            .unwrap_or_default();
+        crate::logging::diagnostic(format_args!(
+            "[HangTrace] register layout={} holders={}",
+            name,
+            layout_registry::holders().len()
+        ));
+    }
+    let probe = crate::hang_trace::TICK_REGISTER.enter(layout as u64);
     super::tick(layout);
+    drop(probe);
     // Live evidence that the registry resolves the modpack's own layouts by name.
     if let Some(name @ (b"info_training" | b"info_waiting")) = layout_registry::layout_name(layout) {
         let name = std::str::from_utf8(name).unwrap_or_default();
