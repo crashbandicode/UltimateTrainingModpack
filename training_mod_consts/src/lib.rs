@@ -99,7 +99,6 @@ pub struct TrainingModpackMenu {
     pub recording_crop: OnOff,
     pub stale_dodges: OnOff,
     pub tech_hide: OnOff,
-    pub update_policy: UpdatePolicy,
     pub lra_reset: OnOff,
     #[serde(default = "lobby_practice_default")]
     pub lobby_practice: OnOff,
@@ -263,7 +262,6 @@ pub static BASE_MENU: TrainingModpackMenu = TrainingModpackMenu {
     recording_crop: OnOff::ON,
     stale_dodges: OnOff::ON,
     tech_hide: OnOff::OFF,
-    update_policy: UpdatePolicy::default(),
     lra_reset: OnOff::ON,
     lobby_practice: OnOff::OFF,
     trio_practice: OnOff::OFF,
@@ -886,13 +884,6 @@ pub unsafe fn create_app<'a>() -> App<'a> {
         "HUD",
         "hud",
         "Show/hide elements of the UI",
-        ToggleSingle,
-        false,
-    ));
-    misc_tab_submenus.push(UpdatePolicy::to_submenu(
-        "Auto-Update",
-        "update_policy",
-        "What type of Training Modpack updates to automatically apply. (Console Only!)",
         ToggleSingle,
         false,
     ));

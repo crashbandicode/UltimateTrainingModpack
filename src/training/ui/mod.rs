@@ -1,6 +1,4 @@
 #![allow(clippy::mut_from_ref)]
-#[cfg(feature = "layout_arc_from_file")]
-use byte_unit::MEBIBYTE;
 use sarc::SarcFile;
 use skyline::nn::ui2d::*;
 use smash::ui2d::{SmashPane, SmashTextBox};
@@ -25,8 +23,67 @@ pub(crate) mod native_menu;
 pub mod notifications;
 mod waiting_archive;
 
-include_flate::flate!(static TRAINING_ARCHIVE: [u8] from "src/static/layout.arc");
-include_flate::flate!(static WAITING_UI_PATCH: [u8] from "src/static/waiting_ui.patch");
+// Revision 33: the two embedded archives stay DEFLATE-compressed in the image (about 195 KB together)
+// and are inflated per use. The game's hook point allocates a buffer of the size we report and copies
+// from the pointer we report, so an inflated archive is only read during that copy. It is parked in
+// `ARCHIVES` and released by `release_stale_archives` (heartbeat thread) after a grace period, after
+// being overwritten so that any later reader fails loudly instead of silently depending on it. Before
+// this revision the inflated Training archive (4,213,268 B) stayed resident for the whole session and
+// the waiting-room archive added a second copy.
+static TRAINING_ARCHIVE_DEFLATED: &[u8] =
+    include_flate::codegen::deflate_file!("src/static/layout.arc");
+static WAITING_UI_PATCH_DEFLATED: &[u8] =
+    include_flate::codegen::deflate_file!("src/static/waiting_ui.patch");
+
+struct InflatedArchive {
+    label: &'static str,
+    handed_out_ms: u64,
+    bytes: Vec<u8>,
+}
+
+static ARCHIVES: std::sync::Mutex<Vec<InflatedArchive>> = std::sync::Mutex::new(Vec::new());
+const ARCHIVE_GRACE_MS: u64 = 5_000;
+
+fn inflate_training_archive() -> Vec<u8> {
+    include_flate::decode(TRAINING_ARCHIVE_DEFLATED)
+}
+
+/// Park an inflated archive for the game to copy from; the pointer stays valid until the release.
+fn hand_out(label: &'static str, bytes: Vec<u8>) -> (*const u8, usize) {
+    let (pointer, len) = (bytes.as_ptr(), bytes.len());
+    crate::logging::diagnostic(format_args!("[LayoutArchive] handed out {label} bytes={len}"));
+    ARCHIVES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(InflatedArchive {
+            label,
+            handed_out_ms: crate::hang_trace::now_ms(),
+            bytes,
+        });
+    (pointer, len)
+}
+
+/// Release archives handed out more than the grace period ago. Runs on the heartbeat thread and
+/// never blocks a game thread: it only tries the lock, and the hook holds it for one push.
+pub fn release_stale_archives(now_ms: u64) {
+    let Ok(mut archives) = ARCHIVES.try_lock() else {
+        return;
+    };
+    archives.retain_mut(|archive| {
+        let age = now_ms.saturating_sub(archive.handed_out_ms);
+        if age < ARCHIVE_GRACE_MS {
+            return true;
+        }
+        archive.bytes.fill(0xA5);
+        crate::logging::diagnostic(format_args!(
+            "[LayoutArchive] released {} bytes={} after {}ms",
+            archive.label,
+            archive.bytes.len(),
+            age
+        ));
+        false
+    });
+}
 
 pub unsafe fn set_icon_text(pane: &mut TextBox, icons: &[u16]) {
     pane.set_text_string("");
@@ -145,7 +202,7 @@ pub unsafe fn tick(layout: *mut Layout) {
 // in order for us to be able to swap the 'layout.arc' with the current
 // version of the file in between loads of training mode.
 #[cfg(feature = "layout_arc_from_file")]
-const LAYOUT_ARC_SIZE: usize = (5 * MEBIBYTE) as usize;
+const LAYOUT_ARC_SIZE: usize = 5 * 1024 * 1024;
 #[cfg(feature = "layout_arc_from_file")]
 static mut LAYOUT_ARC: &mut [u8; LAYOUT_ARC_SIZE] = &mut [0u8; LAYOUT_ARC_SIZE];
 
@@ -205,14 +262,13 @@ unsafe fn handle_layout_arc_malloc(ctx: &mut skyline::hooks::InlineCtx) {
             // Also covers reconstruction without a change to the mode tuple.
             lobby::set_ui_ready(false);
             lobby::update();
-            if let Some(inject) = waiting_archive(bytes) {
-                ctx.registers[21].set_x(inject.as_ptr() as u64);
+            if let Some((pointer, len)) = waiting_archive(bytes) {
+                ctx.registers[21].set_x(pointer as u64);
                 for register in [1, 23, 24] {
-                    ctx.registers[register].set_x(inject.len() as u64);
+                    ctx.registers[register].set_x(len as u64);
                 }
                 crate::logging::diagnostic(format_args!(
-                    "[LobbyPractice] injected embedded waiting UI bytes={}",
-                    inject.len()
+                    "[LobbyPractice] injected embedded waiting UI bytes={len}"
                 ));
             }
         }
@@ -252,8 +308,9 @@ unsafe fn handle_layout_arc_malloc(ctx: &mut skyline::hooks::InlineCtx) {
 
     #[cfg(not(feature = "layout_arc_from_file"))]
     {
-        inject_arc = TRAINING_ARCHIVE.as_ptr();
-        inject_arc_size = TRAINING_ARCHIVE.len() as u64;
+        let (pointer, len) = hand_out("info_training", inflate_training_archive());
+        inject_arc = pointer;
+        inject_arc_size = len as u64;
     }
 
     // Decompressed file pointer
@@ -265,31 +322,28 @@ unsafe fn handle_layout_arc_malloc(ctx: &mut skyline::hooks::InlineCtx) {
     ctx.registers[24].set_x(inject_arc_size);
 }
 
-fn waiting_archive(stock: &[u8]) -> Option<&'static [u8]> {
-    // Native resources retain this allocation after the hook returns. Build once
-    // from version-checked input; never cache a pointer into the game's input.
-    static ARCHIVE: std::sync::OnceLock<Option<Vec<u8>>> = std::sync::OnceLock::new();
-    ARCHIVE
-        .get_or_init(|| {
-            let result = waiting_archive::build(stock, &TRAINING_ARCHIVE, &WAITING_UI_PATCH);
-            match result {
-                Ok(bytes) => {
-                    crate::logging::diagnostic(format_args!(
-                        "[LobbyPractice] embedded waiting UI ready bytes={}",
-                        bytes.len()
-                    ));
-                    Some(bytes)
-                }
-                Err(error) => {
-                    crate::logging::diagnostic(format_args!(
-                        "[LobbyPractice] embedded waiting UI disabled: {error}; stock_bytes={}",
-                        stock.len()
-                    ));
-                    None
-                }
-            }
-        })
-        .as_deref()
+fn waiting_archive(stock: &[u8]) -> Option<(*const u8, usize)> {
+    // Built per waiting-room load from version-checked input: the Training archive and the patch
+    // are inflated only for the build and dropped here; the result is parked until the game has
+    // copied it (see `hand_out`). Never cache a pointer into the game's input.
+    let training = inflate_training_archive();
+    let patch = include_flate::decode(WAITING_UI_PATCH_DEFLATED);
+    match waiting_archive::build(stock, &training, &patch) {
+        Ok(bytes) => {
+            crate::logging::diagnostic(format_args!(
+                "[LobbyPractice] embedded waiting UI ready bytes={}",
+                bytes.len()
+            ));
+            Some(hand_out("info_waiting", bytes))
+        }
+        Err(error) => {
+            crate::logging::diagnostic(format_args!(
+                "[LobbyPractice] embedded waiting UI disabled: {error}; stock_bytes={}",
+                stock.len()
+            ));
+            None
+        }
+    }
 }
 
 pub trait PaneExt {

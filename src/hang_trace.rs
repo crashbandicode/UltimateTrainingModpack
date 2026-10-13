@@ -125,7 +125,7 @@ pub fn within_budget(counter: &AtomicU32, limit: u32) -> bool {
     counter.fetch_add(1, Ordering::Relaxed) < limit
 }
 
-fn now_ms() -> u64 {
+pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis() as u64)
@@ -144,6 +144,9 @@ pub fn start() {
                 std::thread::sleep(HEARTBEAT_INTERVAL);
                 beat += 1;
                 let now = now_ms();
+                // Revision 33: housekeeping off the game threads — release inflated layout archives
+                // the game finished copying (training::ui).
+                crate::training::ui::release_stale_archives(now);
                 let probes: Vec<String> = PROBES.iter().map(|probe| probe.summary(now)).collect();
                 crate::logging::diagnostic(format_args!(
                     "[Heartbeat] n={} up={}s mode={:?} {}",

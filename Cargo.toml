@@ -10,7 +10,6 @@ crate-type = ["cdylib"]
 [dependencies]
 skyline = { git = "https://github.com/ultimate-research/skyline-rs.git" }
 skyline_smash = { git = "https://github.com/ultimate-research/skyline-smash.git" }
-skyline-web = { git = "https://github.com/skyline-rs/skyline-web.git" }
 bitflags = "1.2.1"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 convert_case = "0.6.0"
@@ -28,7 +27,6 @@ wsl = "0.1.0"
 strum = "0.21.0"
 strum_macros = "0.21.0"
 memchr = "2.7.4"
-minreq = { version = "2", features = ["https-native", "json-using-serde"] }
 sarc = { version = "1.2.0", features = [], default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -38,10 +36,7 @@ training_mod_consts = { path = "training_mod_consts" }
 training_mod_macros = { path = "training_mod_macros" }
 training_mod_sync = { path = "training_mod_sync" }
 training_mod_tui = { path = "training_mod_tui" }
-native-tls = { version = "0.2.11", features = ["vendored"] }
 log = "0.4.17"
-byte-unit = "4.0.18"
-zip = { version = "0.6", default-features = false, features = ["deflate"] }
 anyhow = "1.0.72"
 # Revision 28: optional Deluxe Plugins-page registration. The path is the pinned
 # read-only SDK snapshot v0.2.0 (deluxe-plugin-sdk 2.0.0 / deluxe-plugin-abi 2.0.0);
@@ -49,7 +44,6 @@ anyhow = "1.0.72"
 deluxe-plugin-sdk = { path = "../research/named-macros/revision28-external/deluxe-sdk-v0.2.0/sdk", optional = true }
 
 [patch.crates-io]
-native-tls = { git = "https://github.com/skyline-rs/rust-native-tls", branch = "switch" }
 nnsdk = { git = "https://github.com/ultimate-research/nnsdk-rs" }
 rand = { git = "https://github.com/skyline-rs/rand" }
 getrandom = { git = "https://github.com/Raytwo/getrandom" }

@@ -1130,22 +1130,6 @@ byteflags! {
 impl_submenutrait!(ButtonConfig);
 
 byteflags! {
-    pub struct UpdatePolicy {
-        pub STABLE = "Stable",
-        pub BETA = "Beta",
-        pub DISABLED = "Disabled",
-    }
-}
-
-impl_submenutrait!(UpdatePolicy);
-
-impl UpdatePolicy {
-    pub const fn default() -> UpdatePolicy {
-        UpdatePolicy::STABLE
-    }
-}
-
-byteflags! {
     pub struct InputDisplay {
         pub NONE = "None",
         pub SMASH = "Smash Inputs",

@@ -5,7 +5,6 @@ use skyline::nn::hid::GetNpadStyleSet;
 
 use crate::common::{button_config, ButtonConfig};
 use crate::common::{DEFAULTS_MENU, MENU};
-use crate::events::{Event, EVENT_QUEUE};
 use crate::filesystem;
 use crate::input::{ButtonBitfield, ControllerStyle, MappedInputs, SomeControllerStruct};
 use crate::logging::*;
@@ -279,10 +278,6 @@ pub unsafe fn handle_final_input_mapping(
                     assign(&QUICK_MENU_ACTIVE, false);
                     let menu_json = app.get_serialized_settings_with_defaults();
                     set_menu_from_json(&menu_json);
-
-                    let mut event_queue_lock = lock_write(&EVENT_QUEUE);
-                    (*event_queue_lock).push(Event::menu_open(menu_json));
-                    drop(event_queue_lock);
                 }
             });
             button_config::button_mapping(ButtonConfig::X, style, button_presses).then(|| {

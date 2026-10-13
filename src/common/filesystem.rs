@@ -9,14 +9,20 @@ use log::{error, info};
 
 static WRITER: LazyLock<Sender<WriteMessage>> = LazyLock::new(|| {
     let (tx, rx) = mpsc::channel::<WriteMessage>();
-    std::thread::spawn(move || {
-        for job in rx {
-            match std::fs::write(job.path, job.contents) {
-                Ok(()) => info!("Saved data to {}", job.path),
-                Err(e) => error!("Could not write data to {}: {e}", job.path),
+    // Revision 33: an explicit 64 KiB stack. The Switch std default is 2 MiB, taken from the game
+    // heap for the whole session; this thread only writes strings that were serialized by the caller.
+    std::thread::Builder::new()
+        .name("config-writer".into())
+        .stack_size(0x10000)
+        .spawn(move || {
+            for job in rx {
+                match std::fs::write(job.path, job.contents) {
+                    Ok(()) => info!("Saved data to {}", job.path),
+                    Err(e) => error!("Could not write data to {}: {e}", job.path),
+                }
             }
-        }
-    });
+        })
+        .expect("Couldn't create the config writer thread");
     tx
 });
 

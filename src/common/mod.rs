@@ -12,15 +12,12 @@ use training_mod_sync::*;
 pub mod button_config;
 pub mod consts;
 pub mod dev_config;
-pub mod dialog;
-pub mod events;
 pub mod filesystem;
 pub mod game_mode;
 pub mod input;
 pub mod menu;
 pub mod offsets;
 pub mod raygun_printer;
-pub mod release;
 
 pub static FIGHTER_MANAGER_ADDR: RwLock<usize> = RwLock::new(0);
 pub static ITEM_MANAGER_ADDR: RwLock<usize> = RwLock::new(0);
@@ -45,9 +42,16 @@ pub fn get_category(module_accessor: &app::BattleObjectModuleAccessor) -> i32 {
     (module_accessor.battle_object_id >> 28) as u8 as i32
 }
 
-pub fn is_emulator() -> bool {
-    unsafe { skyline::hooks::getRegionAddress(skyline::hooks::Region::Text) as u64 == 0x8004000 }
-}
+/// The game's display version string, read once (panic report and macro metadata).
+pub static SMASH_VERSION: LazyLock<String> = LazyLock::new(|| {
+    let mut smash_version = skyline::nn::oe::DisplayVersion { name: [0; 16] };
+    unsafe {
+        skyline::nn::oe::GetDisplayVersion(&mut smash_version);
+        std::ffi::CStr::from_ptr(smash_version.name.as_ptr() as *const std::ffi::c_char)
+            .to_string_lossy()
+            .into_owned()
+    }
+});
 
 pub unsafe fn try_get_battle_object(battle_object_id: u32) -> Option<&'static app::BattleObject> {
     let battle_object_ptr = get_battle_object_from_id(battle_object_id);

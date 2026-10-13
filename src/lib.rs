@@ -9,11 +9,8 @@ use training_mod_consts::{OnOff, LEGACY_TRAINING_MODPACK_ROOT};
 use training_mod_sync::*;
 
 use crate::common::button_config::DEFAULT_OPEN_MENU_CONFIG;
-use crate::common::events::events_loop;
 use crate::common::*;
 use crate::consts::TRAINING_MODPACK_ROOT;
-use crate::events;
-use crate::events::{Event, EVENT_QUEUE};
 use crate::logging::*;
 use crate::training::ui::notifications::notification;
 
@@ -73,7 +70,7 @@ fn initialize_training_modpack() {
             },
         };
 
-        let game_version = events::SMASH_VERSION.to_string();
+        let game_version = SMASH_VERSION.to_string();
         let atmosphere_version = oe::get_display_version().to_owned();
         let version_report =
             format!("Smash version: {game_version}.\nAtmosphere version: {atmosphere_version}");
@@ -94,9 +91,6 @@ fn initialize_training_modpack() {
 
     info!("Initialized.");
 
-    let mut event_queue = lock_write(&EVENT_QUEUE);
-    (*event_queue).push(Event::smash_open());
-    drop(event_queue);
     notification("Training Modpack".to_string(), "Welcome!".to_string(), 60);
 
     hitbox_visualizer::hitbox_visualization();
@@ -141,18 +135,10 @@ fn initialize_training_modpack() {
         .expect("Couldn't create data loader thread");
     let _result = data_loader.join();
 
-    if !is_emulator() {
-        info!("Performing version check...");
-        let _updater = std::thread::Builder::new()
-            .stack_size(0x80000)
-            .spawn(move || {
-                release::perform_version_check();
-            })
-            .expect("Couldn't create version check thread");
-        let _result = _updater.join();
-    } else {
-        info!("Skipping version check because we are using an emulator");
-    }
+    // Revision 33: no upstream version check and no analytics thread. The check contacted the
+    // upstream GitHub releases on every console boot and could offer to install upstream over this
+    // fork; the analytics loop posted device identifiers to the upstream author's database from a
+    // permanent thread with the 2 MiB default stack. Both are gone for good.
 
     notification("Training Modpack".to_string(), "Welcome!".to_string(), 60);
     notification(
@@ -184,6 +170,4 @@ fn initialize_training_modpack() {
         read(&MENU).input_playback.to_string(),
         120,
     );
-
-    std::thread::spawn(events_loop);
 }

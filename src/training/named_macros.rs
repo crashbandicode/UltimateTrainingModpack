@@ -121,7 +121,7 @@ fn remember(id: &str) {
 }
 
 fn game_version() -> String {
-    crate::common::events::SMASH_VERSION.clone()
+    crate::common::SMASH_VERSION.clone()
 }
 
 pub fn source_is_named() -> bool {
