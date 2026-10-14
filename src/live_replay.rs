@@ -407,9 +407,31 @@ unsafe fn replay_title(payload: usize) -> Option<String> {
     (!title.is_empty() && !title.chars().any(char::is_control)).then_some(title)
 }
 
-#[skyline::hook(offset = 0x143e2a0)]
-unsafe fn write_record(actor: usize) {
-    let mut committed = None;
+/// 13.0.5 replay-save entry. The first four words are the prologue Skyline
+/// overwrites when any plugin replace-hooks this function.
+const SAVE_ENTRY: usize = 0x143e2a0;
+const SAVE_ENTRY_WORDS: [u32; 8] = [
+    0xa9be4ffc, 0xa9017bfd, 0x910043fd, 0xd10b03ff,
+    0xb940fc08, 0xaa0003f3, 0x34000448, 0xb9411e68,
+];
+/// Fifth instruction, `ldr w8, [x0, #0xfc]`. It is the first instruction that
+/// still runs in the original function after a 16-byte Skyline entry hook, and
+/// x0 is still the save actor because the prologue does not write it.
+const SAVE_BODY: usize = 0x143e2b0;
+const SAVE_BODY_WORDS: [u32; 4] = [
+    0xb940fc08, 0xaa0003f3, 0x34000448, 0xb9411e68,
+];
+
+const _: () = assert!(SAVE_BODY == SAVE_ENTRY + 0x10);
+const _: () = assert!(
+    SAVE_ENTRY_WORDS[4] == SAVE_BODY_WORDS[0]
+        && SAVE_ENTRY_WORDS[5] == SAVE_BODY_WORDS[1]
+        && SAVE_ENTRY_WORDS[6] == SAVE_BODY_WORDS[2]
+        && SAVE_ENTRY_WORDS[7] == SAVE_BODY_WORDS[3]
+);
+
+/// Read the save actor before the native function consumes status 1.
+unsafe fn observe_save(actor: usize) -> Option<(String, String, Arc<LiveSession>)> {
     if read::<u32>(actor + 0xfc) == 0 {
         // Entry queues operation8 and resets its status; an older operation's
         // status1 must never be accepted without seeing this exact queue boundary.
@@ -418,27 +440,43 @@ unsafe fn write_record(actor: usize) {
             save.queued = save.payload == read::<usize>(actor + 0x110)
                 && save.index == read::<u64>(actor + 0x190);
         }
-    } else {
-        let status: u32 = read(actor + 0x11c);
-        if status != 0 {
-            let saved = {
-                let mut capture = CAPTURE.lock().unwrap();
-                capture.saves.iter().position(|save| save.actor == actor)
-                    .and_then(|index| capture.saves.remove(index))
-            };
-            if let Some(saved) = saved {
-                if status == 1 && saved.queued && saved.payload == read::<usize>(actor + 0x110)
-                    && saved.index == read::<u64>(actor + 0x190)
-                    && read::<u32>(actor + 0x118) >= 944 {
-                    if let (Some(id), Some(title)) = (replay_id(actor), replay_title(saved.payload)) {
-                        committed = Some((id, title, saved.session));
-                    } else { println!("[ReplayCapture] committed identity/title unavailable"); }
-                } else { println!("[ReplayCapture] save not committed or association changed status={}", status); }
-            }
-        }
+        return None;
     }
+    let status: u32 = read(actor + 0x11c);
+    if status == 0 { return None; }
+    let saved = {
+        let mut capture = CAPTURE.lock().unwrap();
+        capture.saves.iter().position(|save| save.actor == actor)
+            .and_then(|index| capture.saves.remove(index))
+    };
+    let Some(saved) = saved else { return None };
+    if status == 1 && saved.queued && saved.payload == read::<usize>(actor + 0x110)
+        && saved.index == read::<u64>(actor + 0x190)
+        && read::<u32>(actor + 0x118) >= 944 {
+        if let (Some(id), Some(title)) = (replay_id(actor), replay_title(saved.payload)) {
+            return Some((id, title, saved.session));
+        }
+        println!("[ReplayCapture] committed identity/title unavailable");
+    } else {
+        println!("[ReplayCapture] save not committed or association changed status={}", status);
+    }
+    None
+}
+
+#[skyline::hook(offset = 0x143e2a0)]
+unsafe fn write_record(actor: usize) {
+    const _: () = assert!(SAVE_ENTRY == 0x143e2a0);
+    let committed = observe_save(actor);
     original!()(actor);
     if let Some((id, title, session)) = committed {
+        crate::replay_store::persist_committed(id, title, session);
+    }
+}
+
+#[skyline::hook(offset = 0x143e2b0, inline)]
+unsafe fn write_record_shared(ctx: &mut InlineCtx) {
+    const _: () = assert!(SAVE_BODY == 0x143e2b0);
+    if let Some((id, title, session)) = observe_save(ctx.registers[0].x() as usize) {
         crate::replay_store::persist_committed(id, title, session);
     }
 }
@@ -548,8 +586,6 @@ pub fn init() {
             0x00000000, 0xf81c0ff7, 0xa90157f6, 0xa9024ff4]),
         (0x143cd40, [0xd101c3ff, 0xa90267fa, 0xa9035ff8, 0xa90457f6,
             0xa9054ff4, 0xa9067bfd, 0x910183fd, 0xa9592001]),
-        (0x143e2a0, [0xa9be4ffc, 0xa9017bfd, 0x910043fd, 0xd10b03ff,
-            0xb940fc08, 0xaa0003f3, 0x34000448, 0xb9411e68]),
         (0x143e984, [0xf9000260, 0xa9427bfd, 0xa9414ff4, 0x9100c3ff,
             0xd65f03c0, 0x00000000, 0x00000000, 0xf81e0ff3]),
         (0x143e9a0, [0xf81e0ff3, 0xa9017bfd, 0x910043fd, 0xf9400013,
@@ -560,7 +596,7 @@ pub fn init() {
         (0x2043a30, [0xf9403400, 0xf9400008, 0xf9407102, 0xd61f0040,
             0xf9403400, 0xf9400008, 0xf9407502, 0xd61f0040]),
     ];
-    unsafe {
+    let save_site = unsafe {
         let base = getRegionAddress(Region::Text) as usize;
         for (offset, code) in GUARDS {
             if std::slice::from_raw_parts((base + offset) as *const u32, code.len()) != code {
@@ -569,6 +605,19 @@ pub fn init() {
                 return;
             }
         }
+        let entry_open = std::slice::from_raw_parts(
+            (base + SAVE_ENTRY) as *const u32, SAVE_ENTRY_WORDS.len()) == SAVE_ENTRY_WORDS;
+        let body_open = std::slice::from_raw_parts(
+            (base + SAVE_BODY) as *const u32, SAVE_BODY_WORDS.len()) == SAVE_BODY_WORDS;
+        // The replay-to-MP4 plugin replace-hooks this same entry. Its branch covers
+        // the first four instructions only; the body words still identify 13.0.5.
+        // Installing our own entry hook would replace theirs, so observe from the
+        // first instruction their call to the original still executes.
+        let save_site = if entry_open { "entry" } else if body_open { "shared" } else {
+            crate::logging::diagnostic(format_args!(
+                "[ReplayCapture] live adapter disabled: native guard {:#x}", SAVE_ENTRY));
+            return;
+        };
         if let Err(error) = crate::replay_store::start_writer() {
             crate::logging::diagnostic(format_args!(
                 "[ReplayCapture] live adapter disabled: writer {}", error));
@@ -578,12 +627,18 @@ pub fn init() {
         skyline::install_hooks!(construct_records, clear_records, destroy_records, delete_records,
             reset_current_record, import_record, replace_record, start_recording, serialize_frame,
             stop_recording, stop_recording_alternate, reset_recording, publish_record_frames,
-            copy_record, create_save_actor, destroy_save_actor, update_save_actor, write_record);
-    }
+            copy_record, create_save_actor, destroy_save_actor, update_save_actor);
+        if save_site == "entry" {
+            skyline::install_hooks!(write_record);
+        } else {
+            skyline::install_hooks!(write_record_shared);
+        }
+        save_site
+    };
     // Ready only after guards, writer and hooks all succeeded (R2); until then the
     // Deluxe row answers UNAVAILABLE and the host writes nothing.
     toggle().set_ready();
     crate::logging::diagnostic(format_args!(
-        "[ReplayCapture] guarded live adapter ready capture={} host_registered={}",
-        on_off(seed), registered));
+        "[ReplayCapture] guarded live adapter ready capture={} host_registered={} save={}",
+        on_off(seed), registered, save_site));
 }
