@@ -449,7 +449,7 @@ unsafe fn observe_save(actor: usize) -> Option<(String, String, Arc<LiveSession>
         capture.saves.iter().position(|save| save.actor == actor)
             .and_then(|index| capture.saves.remove(index))
     };
-    let Some(saved) = saved else { return None };
+    let saved = saved?;
     if status == 1 && saved.queued && saved.payload == read::<usize>(actor + 0x110)
         && saved.index == read::<u64>(actor + 0x190)
         && read::<u32>(actor + 0x118) >= 944 {
