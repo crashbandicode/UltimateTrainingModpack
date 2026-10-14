@@ -4,11 +4,11 @@ Turn one fighter's replay inputs into a reusable Training drill, or record a new
 drill by controlling the CPU. Give it a name, load it from the library, and play
 it from your saved Training setup with adjustable position and starting momentum.
 
-**Development preview · Updated October 12, 2026, through revision 27.** These are
-real captures from native game tests of the local implementation. Native input
-preview has passed the scoped emulator checks below. This tree contains the
-walkthrough alongside the implementation source; the implementation has not been
-released or deployed to a physical Switch.
+**Development preview · Updated October 14, 2026.** These are real captures from
+native game tests of the local implementation. Native input preview has passed the
+scoped emulator checks below. The current plugin is installed on a development
+Switch for continued testing. This tree contains the walkthrough alongside the
+implementation source.
 
 The implementation source is in this tree; see
 [docs/named-macros.md](../named-macros.md) and
@@ -34,8 +34,11 @@ progress.
 - **Native input preview:** run the selected inputs through the Training CPU so
   movement, attacks, projectiles and effects happen normally. Play, Stop and Restart
   use a saved Training setup; progress follows emitted inputs.
-- **Crop editor:** independent In/Out boundaries, one-frame and accelerated edits,
-  and modifier-assisted 60-frame edits. Editing the range does not seek the game.
+- **Crop editor:** independent In/Out boundaries. D-pad Left/Right moves the
+  selected end, and the step grows the longer that direction is held. Hold ZL or
+  ZR (Z on a GameCube controller) to begin already fast. A diagonal press keeps
+  editing the end instead of changing fighters. Editing the range does not seek
+  the game.
 - **Placement and playback:** restore a Training setup, apply relative whole- or
   quarter-unit offsets, preserve recorded momentum or start at rest, and mirror
   horizontal inputs/momentum with facing. Temporary edits, overwrite and Save As
@@ -130,8 +133,8 @@ adjusts the loaded macro's starting position and momentum.
 
 ### 3. Choose the capture and fighter
 
-Open **Replay Window** while the CPU is idle or falling. **Up/Down** changes the
-selected fighter. **ZL+X** switches between the latest and previous capture when
+Open **Replay Window** while the CPU is idle or falling. **D-pad Up/Down** changes
+the selected fighter. **ZL+X** switches between the latest and previous capture when
 both exist. On a GameCube controller, use **Z** for modifier combinations.
 
 Before previewing, **enable save states and save a Training setup with both current
@@ -148,17 +151,20 @@ and the marker is back at the selection's start.*
 
 ### 4. Select an exact frame window
 
-**L** selects In and **R** selects Out. **Left/Right** edits that boundary one frame
-at a time; holding accelerates. Hold **ZL or ZR** for 60-frame edits. Handles cannot
-cross. An edit stops any active preview and restores the saved setup; it does not
-move a fighter to a recorded pose.
+**L** selects In and **R** selects Out. **D-pad Left/Right** edits that boundary.
+The first steps are one frame, then 3, 8, 20, 45, 90, and 180 frames per tick as
+the hold continues. Hold **ZL or ZR** (Z on a GameCube controller) to start at 20
+frames per tick; the same curve still speeds up from there. A diagonal D-pad press
+edits the end and does not change fighters. Handles cannot cross. An edit stops
+any active preview and restores the saved setup; it does not move a fighter to a
+recorded pose.
 
 | Control | Native preview action |
 | --- | --- |
 | **X** | Play the selected range from the saved setup; while playing, Stop and restore. |
 | **Y** | Restart the selected range from the saved setup. |
-| **L / R**, then **Left / Right** | Choose and edit In / Out. |
-| **ZL or ZR + Left / Right** | Edit the chosen boundary by 60 frames. |
+| **L / R**, then hold **D-pad Left / Right** | Choose an end and move it. The step speeds up while the direction is held. |
+| **ZL or ZR** while moving | Start at 20 frames per tick and keep accelerating. On a GameCube controller, hold Z. |
 | **B** | Close the editor and clean up preview. |
 
 ![Native input preview in progress, with Dr. Mario's red-and-blue capsule visible.](images/13-native-preview.png)

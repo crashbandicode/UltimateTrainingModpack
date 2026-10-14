@@ -9,7 +9,7 @@ use skyline::nn::ui2d::{Material, MaterialFlags, Pane, PaneFlag, TextBoxFlag};
 use smash::ui2d::{SmashPane, SmashTextBox};
 use training_mod_sync::read;
 use training_mod_tui::{
-    clip_panel::{ClipView, Handle},
+    clip_panel::{clip_help, ClipView, Handle},
     NX_SUBMENU_COLUMNS, NX_SUBMENU_ROWS,
 };
 
@@ -471,59 +471,32 @@ pub unsafe fn draw(root: &Pane, view: &ClipView, status: &str) {
         &clean_label,
         if view.clean_start { MUTED } else { GOLD },
     );
-    let playback = if view.playing {
-        "Stop [Playing]"
+    let help = clip_help(view, coarse, chord, crate::replay_capture::scrub_pace());
+    saved.label(root, 9, [0.0, -414.0, WIDTH], &help.primary, WHITE);
+    saved.label(root, 11, [0.0, -449.0, WIDTH], &help.follow, WHITE);
+    saved.label(root, 13, [0.0, -484.0, WIDTH], &help.controls, MUTED);
+    let needs_clean_start = !help.notice.is_empty();
+    let notice = if !status.is_empty() {
+        status.to_owned()
+    } else if needs_clean_start {
+        help.notice
+    } else if view.playing {
+        "Y restarts the preview from the saved setup.".to_owned()
     } else {
-        "Play selection"
+        let mut extra = format!("{chord}+Y jumps to the previous clean start.");
+        if view.previous_available {
+            extra = format!("{chord}+X switches capture. {extra}");
+        }
+        if view.quantized {
+            extra.push_str(" Quantized.");
+        }
+        if view.truncated {
+            extra.push_str(" Truncated.");
+        }
+        extra
     };
-    saved.label(
-        root,
-        9,
-        [-410.0, -414.0, 820.0],
-        &format!("X: {playback} | Y: Restart"),
-        WHITE,
-    );
-    saved.label(
-        root,
-        11,
-        [410.0, -414.0, 820.0],
-        "Up/Down: prev/next fighter | A: Name/save | B: Close",
-        WHITE,
-    );
-    saved.label(
-        root,
-        13,
-        [0.0, -449.0, WIDTH],
-        &format!(
-            "L/R: select In/Out | Left/Right: edit boundary | Hold {coarse}: 60-frame edits"
-        ),
-        MUTED,
-    );
-    saved.label(
-        root,
-        14,
-        [0.0, -484.0, WIDTH],
-        &format!(
-            "{chord}+X: capture{} | {chord}+Y: clean-start lead-in{}{}",
-            if view.previous_available {
-                ""
-            } else {
-                " (no prev.)"
-            },
-            if view.quantized {
-                " | Quantized"
-            } else {
-                ""
-            },
-            if view.truncated {
-                " | Truncated"
-            } else {
-                ""
-            }
-        ),
-        MUTED,
-    );
-    saved.label(root, 15, [0.0, -519.0, WIDTH], status, GOLD);
+    let alert = !status.is_empty() || needs_clean_start;
+    saved.label(root, 15, [0.0, -519.0, WIDTH], &notice, if alert { GOLD } else { MUTED });
 }
 
 /// Restore the borrowed panes before an ordinary menu draw. A root mismatch

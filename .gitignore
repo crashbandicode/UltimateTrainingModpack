@@ -4,3 +4,8 @@ Cargo.lock
 
 .idea/
 release/
+
+# Local handoff notes are never committed.
+HANDOFF.md
+*handoff*
+*HANDOFF*

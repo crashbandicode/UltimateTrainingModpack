@@ -13,6 +13,115 @@ pub enum ClipEffect {
     Export(Box<MacroRecording>), Error(String),
 }
 
+/// Frames of the same direction before held Left/Right starts repeating.
+const SCRUB_REPEAT_DELAY: u32 = 10;
+/// Hold time added when the fast modifier is already down, so the scroll
+/// starts fast and still picks up from there.
+const SCRUB_FAST_BIAS: u32 = 70;
+
+/// Timeline frames moved by one tick after holding a direction this long.
+/// A tap stays at one frame; a long hold reaches three minutes of replay per second.
+pub fn scrub_step(held_frames: u32) -> i32 {
+    match held_frames {
+        0..=24 => 1,
+        25..=44 => 3,
+        45..=69 => 8,
+        70..=99 => 20,
+        100..=134 => 45,
+        135..=174 => 90,
+        _ => 180,
+    }
+}
+
+/// Repeat step for a held direction. Zero during the tap window.
+pub fn scrub_repeat_step(held_frames: u32, fast: bool) -> i32 {
+    if held_frames < SCRUB_REPEAT_DELAY {
+        return 0;
+    }
+    let paced = if fast {
+        held_frames.saturating_add(SCRUB_FAST_BIAS)
+    } else {
+        held_frames
+    };
+    scrub_step(paced)
+}
+
+/// Horizontal editing wins over a diagonal D-pad. Fighter changes are D-pad
+/// Up/Down only, and only while Left/Right is not held.
+pub fn direction_action(
+    left_edge: bool,
+    right_edge: bool,
+    up_edge: bool,
+    down_edge: bool,
+    horizontal_held: bool,
+    fast: bool,
+) -> Option<ClipAction> {
+    let horizontal = i32::from(right_edge) - i32::from(left_edge);
+    if horizontal != 0 {
+        let step = if fast { scrub_step(SCRUB_FAST_BIAS) } else { 1 };
+        return Some(ClipAction::Nudge(horizontal * step));
+    }
+    if horizontal_held || (up_edge && down_edge) {
+        return None;
+    }
+    if up_edge {
+        return Some(ClipAction::PreviousFighter);
+    }
+    if down_edge {
+        return Some(ClipAction::NextFighter);
+    }
+    None
+}
+
+pub struct ClipHelp {
+    pub primary: String,
+    pub follow: String,
+    pub controls: String,
+    pub notice: String,
+}
+
+/// Button text for the step the crop editor is actually on.
+pub fn clip_help(view: &ClipView, coarse: &str, chord: &str, pace: i32) -> ClipHelp {
+    let controls = "D-pad Up/Down: fighter. X preview. A save. B close.".to_owned();
+    if view.playing {
+        return ClipHelp {
+            primary: "Previewing the selection.".to_owned(),
+            follow: "Press X to stop. Press L or R to edit the crop.".to_owned(),
+            controls,
+            notice: String::new(),
+        };
+    }
+    let (primary, follow) = match view.handle {
+        Handle::Out => (
+            "End selected. Hold Left or Right to move it.".to_owned(),
+            format!("Hold longer to speed up, or hold {coarse} to start fast."),
+        ),
+        Handle::In => (
+            "Start selected. Hold Left or Right to move it.".to_owned(),
+            format!("Hold longer to speed up, or hold {coarse} to start fast."),
+        ),
+        Handle::Playhead => (
+            "Press L for the start, or R for the end.".to_owned(),
+            format!("Then hold Left or Right. Hold {coarse} to start fast."),
+        ),
+    };
+    let follow = if pace > 1 {
+        if pace >= 180 {
+            format!("Moving {pace} frames per tick.")
+        } else {
+            format!("Moving {pace} frames per tick and speeding up.")
+        }
+    } else {
+        follow
+    };
+    let notice = if view.clean_start {
+        String::new()
+    } else {
+        format!("This start cannot be saved. Press {chord}+Y.")
+    };
+    ClipHelp { primary, follow, controls, notice }
+}
+
 /// Own the closing press independently of the draw clock. The native adapter polls
 /// this once per P1 input mapping, preserving the physical closing-button level
 /// between repeated mappings until the next native pad refresh. Neutralizing the
@@ -176,7 +285,7 @@ impl ClipEditor {
                         self.window.seek(self.window.end() - 1);
                     }
                     Handle::Playhead => {
-                        return ClipEffect::Error("Use L/R to edit In/Out; X plays the selected range".into());
+                        return ClipEffect::Error("Press L for the start or R for the end, then hold Left or Right".into());
                     }
                 }
             }
@@ -363,6 +472,67 @@ mod tests {
         assert_eq!((e.view().start, e.view().end), (0, 3));
         e.on_action(ClipAction::NextFighter);
         assert_eq!((e.view().start, e.view().end), (0, 10));
+    }
+
+    #[test]
+    fn holding_left_moves_the_end_instead_of_the_fighter() {
+        let mut editor = unequal_tracks();
+        editor.on_action(ClipAction::SelectOut);
+        let before = editor.view().fighter_kind;
+        let Some(ClipAction::Nudge(delta)) = direction_action(true, false, true, false, true, false) else {
+            panic!("a diagonal left press must edit the crop");
+        };
+        assert_eq!(delta, -1);
+        editor.on_action(ClipAction::Nudge(delta));
+        assert_eq!(editor.view().fighter_kind, before);
+        assert!(editor.view().end < editor.view().total);
+        assert!(direction_action(false, false, true, false, true, false).is_none());
+        assert!(matches!(
+            direction_action(false, false, true, false, false, false),
+            Some(ClipAction::PreviousFighter)
+        ));
+        assert!(matches!(
+            direction_action(false, false, false, true, false, false),
+            Some(ClipAction::NextFighter)
+        ));
+    }
+
+    #[test]
+    fn held_scrub_speeds_up_and_the_fast_modifier_starts_ahead() {
+        assert_eq!(scrub_repeat_step(0, false), 0);
+        assert_eq!(scrub_repeat_step(9, false), 0);
+        let early = scrub_repeat_step(12, false);
+        let middle = scrub_repeat_step(80, false);
+        let late = scrub_repeat_step(200, false);
+        assert!(early < middle && middle < late);
+        assert_eq!(late, 180);
+        assert!(scrub_repeat_step(12, true) > early);
+        let Some(ClipAction::Nudge(fast)) = direction_action(false, true, false, false, true, true) else {
+            panic!("right press");
+        };
+        assert!(fast > 1);
+    }
+
+    #[test]
+    fn instructions_follow_the_selected_end() {
+        let mut editor = editor();
+        let start = clip_help(&editor.view(), "ZL/ZR", "ZL", 0);
+        assert!(start.primary.contains("Press L") && start.primary.contains("R"));
+        assert!(start.primary.chars().count() <= 60);
+        editor.on_action(ClipAction::SelectOut);
+        let end = clip_help(&editor.view(), "ZL/ZR", "ZL", 0);
+        assert!(end.primary.contains("End selected"));
+        assert!(end.follow.contains("ZL/ZR"));
+        let moving = clip_help(&editor.view(), "ZL/ZR", "ZL", 45);
+        assert!(moving.follow.contains("45"));
+        assert!(moving.follow.chars().count() <= 60);
+        let capped = clip_help(&editor.view(), "Z", "Z", 180);
+        assert_eq!(capped.follow, "Moving 180 frames per tick.");
+        editor.on_action(ClipAction::SelectIn);
+        editor.on_action(ClipAction::Nudge(4));
+        let dirty = clip_help(&editor.view(), "ZL/ZR", "ZL", 0);
+        assert!(dirty.notice.contains("ZL+Y"));
+        assert!(dirty.primary.contains("Start selected"));
     }
 
     #[test]

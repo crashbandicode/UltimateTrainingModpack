@@ -12,7 +12,7 @@ use smash::app::{self, lua_bind::*, BattleObjectModuleAccessor, Fighter};
 use smash::lib::lua_const::*;
 use training_mod_macros::{InputFrame, LiveFrame, LiveInput, ReplayFrame, ReplaySession, ReplayTrack,
     StartState, MAX_FRAMES};
-use training_mod_tui::{macro_panel::{Effect as MenuEffect, LibraryRow, MacroUi, Pad, View}, clip_panel::{ClipAction, ClipEditor, ClipEffect, ClipView, CloseInputGuard}};
+use training_mod_tui::{macro_panel::{Effect as MenuEffect, LibraryRow, MacroUi, Pad, View}, clip_panel::{direction_action, scrub_repeat_step, ClipAction, ClipEditor, ClipEffect, ClipView, CloseInputGuard, Handle}};
 
 use crate::common::game_mode;
 
@@ -358,6 +358,10 @@ pub fn on_action(action: ClipAction) {
 
 /// Native physical controls, independent of gameplay remapping. Clock held-repeat
 /// from drawing, independently of native playback's input-consumption clock.
+///
+/// A Pro Controller D-pad rocks into the neighboring direction when held to one
+/// side. Left/Right must win that diagonal, or holding Left to move the end
+/// reloads the other fighter and the crop never moves.
 pub fn on_input(controller: &crate::input::Controller) {
     use crate::input::ControllerStyle;
     let p = controller.just_down;
@@ -379,12 +383,26 @@ pub fn on_input(controller: &crate::input::Controller) {
         else if p.y() { Some(if modifier { ClipAction::UseLeadIn } else { ClipAction::Restart }) }
         else if p.l() || (gcc && p.real_digital_l()) { Some(ClipAction::SelectIn) }
         else if p.r() || (gcc && p.real_digital_r()) { Some(ClipAction::SelectOut) }
-        else if p.dpad_up() || p.l_up() || p.r_up() { Some(ClipAction::PreviousFighter) }
-        else if p.dpad_down() || p.l_down() || p.r_down() { Some(ClipAction::NextFighter) }
-        else if p.dpad_left() || p.l_left() || p.r_left() { Some(ClipAction::Nudge(if modifier { -60 } else { -1 })) }
-        else if p.dpad_right() || p.l_right() || p.r_right() { Some(ClipAction::Nudge(if modifier { 60 } else { 1 })) }
-        else { None };
+        else {
+            direction_action(
+                p.dpad_left() || p.l_left() || p.r_left(),
+                p.dpad_right() || p.l_right() || p.r_right(),
+                p.dpad_up(),
+                p.dpad_down(),
+                left || right,
+                modifier,
+            )
+        };
     if let Some(action) = action { on_action(action); }
+}
+
+/// Frames per tick of the current held scrub, or 0 when the end is not being edited.
+pub fn scrub_pace() -> i32 {
+    let hold = *HOLD.lock().unwrap();
+    if hold.0 == 0 { return 0; }
+    let editing = clip_view().is_some_and(|view| view.handle != Handle::Playhead);
+    if !editing { return 0; }
+    scrub_repeat_step(hold.1, hold.2)
 }
 
 /// Called AFTER info_training draws, solely for held range-edit repeat.
@@ -398,11 +416,15 @@ pub fn after_draw() {
         let mut hold = HOLD.lock().unwrap();
         if hold.0 == 0 { None } else {
             hold.1 = hold.1.saturating_add(1);
-            let interval = if hold.1 > 120 { 1 } else if hold.1 > 60 { 2 } else { 4 };
-            (hold.1 >= 20 && hold.1.is_multiple_of(interval)).then_some(hold.0 * if hold.2 { 60 } else { 1 })
+            let step = scrub_repeat_step(hold.1, hold.2);
+            (step != 0).then_some(hold.0 * step)
         }
     };
-    if let Some(delta) = delta { on_action(ClipAction::Nudge(delta)); }
+    if let Some(delta) = delta {
+        if clip_view().is_some_and(|view| view.handle != Handle::Playhead) {
+            on_action(ClipAction::Nudge(delta));
+        }
+    }
 }
 
 pub(crate) unsafe fn state(module: &mut BattleObjectModuleAccessor) -> ReplayFrame {

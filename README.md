@@ -1,3 +1,25 @@
+> **This is an AI fork of the Ultimate Training Modpack.**
+>
+> Anyone, including the original developers, may reuse, analyze, redistribute, and otherwise use anything and everything in this repository as they see fit.
+
+## Features added in this fork
+
+### Hot-swap Player 1 and the CPU
+
+Change either fighter during Training without going back to the character select screen. **ZL+Left** cycles the CPU through its roster. **ZL+Right** cycles Player 1 after Player Swapping is enabled. The defaults start at Mr. Game & Watch, Palutena, and Pikachu for Player 1, and Pikachu, Kirby, Bowser, and Bayonetta for the CPU.
+
+[Hot-swap guide](docs/fighter-hotswap.md), including a GIF recorded in Training. Waiting-room behavior is in [Lobby Practice](docs/lobby-practice.md).
+
+![Player 1 and the CPU after a Training hot-swap.](docs/fighter-hotswap/still.png)
+
+### Recording and macro import
+
+Save a match, then open it in Training, crop the frames you want, and play that window on the CPU from a saved setup. The crop moves one frame at a time and speeds up the longer Left or Right is held. A saved replay stays selectable after the game restarts when capture is turned on.
+
+[Illustrated macro guide](docs/named-macros/README.md)
+
+![A saved match listed in Training as a replay that can be cropped into a macro.](docs/named-macros/images/16-persistent-capture.png)
+
 > **Named CPU macros — screenshot walkthrough**
 >
 > [Open the illustrated guide](docs/named-macros/README.md) for saved-replay

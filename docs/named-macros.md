@@ -139,16 +139,19 @@ native replay simulation runs:
 2. End playback using the game's displayed quit combination, then enter Training
    **without restarting the game**. The latest two observed timelines are held in memory.
 3. Open **Input Recording → Replay Window** while the CPU is idle or falling.
-   **Up/Down** selects the previous/next fighter; changing kind reloads the CPU and
+   **D-pad Up/Down** selects the previous/next fighter; changing kind reloads the CPU and
    retains the crop. During loading, P1 input is isolated and the CPU must settle
    to grounded idle. **B** closes the editor while an already-started install finishes.
    Before previewing, enable save states and save a setup with the current pair of
    fighters. If selecting a different CPU, close the editor, save the new setup,
    and reopen it. Preview uses the explicitly selected saved slot, its original
    facing and saved damage, independently of random-slot/mirroring/damage options.
-4. **L** selects In and **R** selects Out. **Left/Right** edits that boundary by one
-   frame; holding accelerates. Hold **ZL or ZR** for 60-frame edits. Handles cannot
-   cross: `[In, Out)` includes In, excludes Out, and contains at least one input.
+4. **L** selects In and **R** selects Out. **Left/Right** then edits that boundary.
+   Holding speeds up, from one frame to three minutes of the replay per second.
+   Hold **ZL or ZR** (Z on a GameCube controller) to start at the fast rate. A
+   diagonal D-pad still edits the boundary; only a clean **D-pad Up/Down** changes
+   fighter. Handles cannot cross: `[In, Out)` includes In, excludes Out, and contains
+   at least one input.
    Editing a boundary stops preview and restores the saved setup; it does not seek
    the game to an arbitrary recorded pose.
 5. **X** plays the selected inputs from the saved setup, or stops and restores it.
