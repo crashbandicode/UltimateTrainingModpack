@@ -12,11 +12,10 @@ implementation source.
 
 The implementation source is in this tree; see
 [docs/named-macros.md](../named-macros.md) and
-[docs/named-macros-build.md](../named-macros-build.md). The revision 27 branch is
-published as [named-macros-capture](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-capture),
-and the [qualification reports / benchmark source](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-research/PUBLICATION.md)
-are on the named-macros-research branch. Performance qualification is still in
-progress.
+[docs/named-macros-build.md](../named-macros-build.md). The revision 27
+qualification archive remains in commit
+[`86a1426`](https://github.com/crashbandicode/UltimateTrainingModpack/commit/86a1426597246a2d0b36e9e652878053efea38a0).
+Performance qualification is still in progress.
 
 ## Implemented features
 

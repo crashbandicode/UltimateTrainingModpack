@@ -1,12 +1,9 @@
 # Revision27 capture source and build inputs
 
-This development source is published on the Forgejo
-[`named-macros-capture` branch](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-capture).
-The illustrated walkthrough is included in this tree at
-[named-macros/README.md](named-macros/README.md) and is also published on the
-[`named-macros-walkthrough` branch](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-walkthrough/docs/named-macros/README.md);
-the [source/evidence archive](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/src/branch/named-macros-research/PUBLICATION.md)
-is on a separate branch of the same repository.
+This development source is on main. The illustrated walkthrough is
+[named-macros/README.md](named-macros/README.md). The revision 27 qualification
+archive remains in commit
+[`86a1426`](https://github.com/crashbandicode/UltimateTrainingModpack/commit/86a1426597246a2d0b36e9e652878053efea38a0).
 
 ## Qualification
 
@@ -28,13 +25,13 @@ To reproduce that layout, place the projects as follows:
 ```text
 workspace/
   smash-training-lobby/
-    UltimateTrainingModpack-single-file/  # this source branch
-    research/named-macros/                # named-macros-research branch
+    UltimateTrainingModpack-single-file/  # this tree
+    research/named-macros/                # local qualification archive
   smash-match-data-design/                # pinned shared-format source
   smash-replay-export/replay-core/        # existing optional decoder crate
 ```
 
-The research branch contains `revision27-builds/normal.json`, `trace.json`, the
+That archive commit contains `revision27-builds/normal.json`, `trace.json`, the
 exact shared-format source snapshot under `revision27-builds/external/smash-match-data/`,
 and the four qualified Cargo lockfiles under `revision27-builds/source/`.
 Restore those lockfiles at their matching product-relative paths and use that
