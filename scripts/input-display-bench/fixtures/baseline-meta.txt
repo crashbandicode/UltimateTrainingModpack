@@ -1,0 +1,5 @@
+commit=17c4e3f9b257000b17d099b4ed42b79448b5dcfd
+path=src/training/ui/input_log.rs
+blob=b78a0b6ac9667673418c3255f3bcc585e4685039
+bytes=5499
+source=git cat-file blob b78a0b6ac9667673418c3255f3bcc585e4685039

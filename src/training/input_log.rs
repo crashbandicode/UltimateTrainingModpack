@@ -174,7 +174,7 @@ impl InputLog {
         }
     }
 
-    pub fn button_icons(&self) -> VecDeque<(&str, ResColor)> {
+    pub fn button_icons(&self) -> VecDeque<(&'static str, ResColor)> {
         match read(&MENU).input_display {
             InputDisplay::SMASH => self.smash_button_icons(),
             InputDisplay::RAW => self.raw_button_icons(),
@@ -184,7 +184,7 @@ impl InputLog {
         }
     }
 
-    fn smash_button_icons(&self) -> VecDeque<(&str, ResColor)> {
+    fn smash_button_icons(&self) -> VecDeque<(&'static str, ResColor)> {
         self.smash_inputs
             .buttons
             .to_vec()
@@ -208,7 +208,7 @@ impl InputLog {
             .collect::<VecDeque<(&str, ResColor)>>()
     }
 
-    fn raw_button_icons(&self) -> VecDeque<(&str, ResColor)> {
+    fn raw_button_icons(&self) -> VecDeque<(&'static str, ResColor)> {
         let buttons = self.raw_inputs.current_buttons;
         let mut icons = VecDeque::new();
         if buttons.a() {

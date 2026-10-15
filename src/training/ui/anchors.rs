@@ -136,6 +136,9 @@ unsafe fn training_modpack_ui_register_calculate(ctx: &mut InlineCtx) {
         ));
     }
     let probe = crate::hang_trace::TICK_REGISTER.enter(layout as u64);
+    if matches!(layout_registry::layout_name(layout), Some(b"info_training" | b"info_waiting")) {
+        super::input_log::invalidate();
+    }
     super::tick(layout);
     drop(probe);
     // Live evidence that the registry resolves the modpack's own layouts by name.
