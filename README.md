@@ -14,7 +14,7 @@ Change either fighter during Training without going back to the character select
 
 ### Recording and macro import
 
-Turn on replay capture, save a match with **Save Replay**, then open its captured inputs in Training. Crop the frames you want and play that window on the CPU from a saved setup. The crop moves one frame at a time and speeds up the longer Left or Right is held. Saved captures stay selectable after a restart.
+Turn on replay capture, save a match with **Save Replay**, then open its captured inputs in Training. Select your opponent, crop the frames you want, and play that window on the CPU from a saved setup. The crop moves one frame at a time and speeds up the longer Left or Right is held. Saved captures stay selectable after a restart.
 
 [Illustrated macro guide](docs/named-macros/README.md)
 
