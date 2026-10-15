@@ -556,6 +556,8 @@ pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
     let clip_foreground = crate::training::named_macros::clip_foreground() && !vanilla_active;
     if !clip_foreground { super::clip_editor::restore(root_pane); }
     let panel_open = crate::training::named_macros::panel_visible() || crate::replay_capture::loading();
+    let roster_open = !panel_open && read(&QUICK_MENU_ACTIVE)
+        && lock_read(&QUICK_MENU_APP).page == AppPage::ROSTER;
     // Visibility is lifecycle state, not an input-driven menu update. In
     // particular, neither the clip branch nor a quiet loading frame may skip it.
     if let Some(status_r_pane) = native_root.find_pane_by_name_recursive("status_R") {
@@ -564,6 +566,10 @@ pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
     let overall_parent_pane = root_pane.find_pane_by_name_recursive_expect("TrModMenu");
     overall_parent_pane
         .set_visible((read(&QUICK_MENU_ACTIVE) || panel_open) && !read(&VANILLA_MENU_ACTIVE));
+    if read(&QUICK_MENU_ACTIVE) || panel_open {
+        // The parent hides the grid during gameplay; no extra grid traversal then.
+        super::roster_grid::visibility(overall_parent_pane, roster_open);
+    }
     let menu_close_wait_frame = frame_counter::get_frame_count(*MENU_CLOSE_FRAME_COUNTER);
     if panel_open {
         overall_parent_pane.alpha = 255;
@@ -625,6 +631,13 @@ pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
     // Update menu display
     // Grabbing lock as read-only, essentially
     let mut app = lock_write(&QUICK_MENU_APP);
+    let roster_page = app.page == AppPage::ROSTER;
+    super::roster_grid::ordinary_controls(root_pane, !roster_page);
+    if roster_page {
+        super::roster_grid::draw(root_pane, &app,
+            read(&P1_CONTROLLER_STYLE) == ControllerStyle::GCController);
+        return;
+    }
     // We don't really need to change anything, but get_before_selected requires &mut self
 
     let tab_titles = [
@@ -717,6 +730,7 @@ pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
         AppPage::TOGGLE => "Reset Current",
         AppPage::CONFIRMATION => "",
         AppPage::CLOSE => "",
+        AppPage::ROSTER => "",
     };
     if !title.is_empty() {
         let key_help_pane = root_pane.find_pane_by_name_recursive_expect(name);
@@ -756,6 +770,7 @@ pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
         AppPage::TOGGLE => render_toggle_page(&mut app, root_pane),
         AppPage::CONFIRMATION => render_confirmation_page(&mut app, root_pane),
         AppPage::CLOSE => {}
+        AppPage::ROSTER => {}
     }
     if let Some(view) = crate::training::named_macros::panel_view() {
         render_named_panel(root_pane, &view);

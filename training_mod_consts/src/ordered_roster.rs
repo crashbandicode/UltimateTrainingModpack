@@ -3,7 +3,10 @@ use training_mod_tui::{
     StatefulTable, SubMenu, SubMenuType, Toggle, NX_SUBMENU_COLUMNS, NX_SUBMENU_ROWS,
 };
 
-use crate::{trio::CHOICES, TrioFighter};
+use crate::{
+    trio::{CHOICES, LEGACY_CHOICE_COUNT},
+    TrioFighter,
+};
 
 /// Catalog positions stay fixed; nonzero ranks represent the user's cycle order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,11 +102,13 @@ impl Serialize for OrderedFighterRoster {
 impl<'de> Deserialize<'de> for OrderedFighterRoster {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = Vec::<u8>::deserialize(deserializer)?;
-        if values.len() != CHOICES.len() + 1 || values[0] > 1 {
+        if (values.len() != CHOICES.len() + 1 && values.len() != LEGACY_CHOICE_COUNT + 1)
+            || values[0] > 1
+        {
             return Err(serde::de::Error::custom("invalid ordered character roster"));
         }
         let mut ranks = [0; CHOICES.len()];
-        ranks.copy_from_slice(&values[1..]);
+        ranks[..values.len() - 1].copy_from_slice(&values[1..]);
         let all = values[0] == 1;
         let mut sorted: Vec<_> = ranks.iter().copied().filter(|rank| *rank != 0).collect();
         sorted.sort_unstable();
@@ -145,6 +150,58 @@ pub const DEFAULT_CPU_ROSTER: OrderedFighterRoster = match OrderedFighterRoster:
 mod tests {
     use super::*;
     use training_mod_tui::InputControl;
+
+    #[test]
+    fn legacy_rosters_keep_their_order_and_all_semantics() {
+        let mut legacy = vec![0u8; 81];
+        legacy[80] = 1; // Sora first, then Mario.
+        legacy[1] = 2;
+        let roster: OrderedFighterRoster =
+            serde_json::from_value(serde_json::json!(legacy)).unwrap();
+        assert_eq!(
+            roster
+                .fighters()
+                .iter()
+                .map(|f| f.kind())
+                .collect::<Vec<_>>(),
+            vec![0x5d, 0]
+        );
+        let current = serde_json::to_value(roster).unwrap();
+        assert_eq!(current.as_array().unwrap().len(), 86);
+        assert!(current.as_array().unwrap()[81..].iter().all(|v| v == 0));
+        legacy.fill(0);
+        legacy[0] = 1;
+        let all: OrderedFighterRoster = serde_json::from_value(serde_json::json!(legacy)).unwrap();
+        assert_eq!(all.fighters(), TrioFighter::available());
+        legacy[1] = 1; // All and an explicit rank remain mutually exclusive.
+        assert!(serde_json::from_value::<OrderedFighterRoster>(serde_json::json!(legacy)).is_err());
+        legacy[0] = 0;
+        legacy[80] = 1; // Duplicate ranks remain invalid.
+        assert!(serde_json::from_value::<OrderedFighterRoster>(serde_json::json!(legacy)).is_err());
+        legacy[80] = 3; // As do gaps.
+        assert!(serde_json::from_value::<OrderedFighterRoster>(serde_json::json!(legacy)).is_err());
+        for length in [0, 80, 82, 85, 87] {
+            assert!(
+                serde_json::from_value::<OrderedFighterRoster>(serde_json::json!(vec![
+                    0u8;
+                    length
+                ]))
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn starting_forms_preserve_explicit_order() {
+        let fighters: Vec<_> = [0x26, 0x5b, 0x24, 0x5a, 0x25]
+            .iter().copied()
+            .map(|kind| TrioFighter::from_kind(kind).unwrap())
+            .collect();
+        let roster = OrderedFighterRoster::from_fighters(&fighters).unwrap();
+        let restored: OrderedFighterRoster =
+            serde_json::from_str(&serde_json::to_string(&roster).unwrap()).unwrap();
+        assert_eq!(restored.fighters(), fighters);
+    }
 
     fn choose(picker: &mut SubMenu<'_>, fighter: TrioFighter) {
         let index = picker

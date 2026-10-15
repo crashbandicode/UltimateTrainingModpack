@@ -1,0 +1,80 @@
+{
+  "recorded_date": "2026-10-15",
+  "environment": "Linux Eden, real Training and solo local-wireless waiting-room UI",
+  "nro_sha256": "9de5ba48646b2d088707d4285f40f36464ab628a0f4a40f7d9160da7a9c0bf69",
+  "source_manifest_sha256": "ecc65507cbd02d3730f20b25cbc362b235165e050d41d344c943cae9138f9f7e",
+  "clips": [
+    {
+      "path": "docs/fighter-hotswap/character-cycles.gif",
+      "sha256": "05456bf093384c8407801a0b8ff606fba09fa8b023de4ddd88464e01fed5d6db",
+      "frames": 130,
+      "seconds": 13,
+      "fps": 10,
+      "dimensions": [
+        960,
+        540
+      ],
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/training-performance-followup-20261015/media/roster-aegis",
+      "source_frame_range": [
+        0,
+        129
+      ],
+      "captured_seconds": 13.393892,
+      "timing_warning": false,
+      "crop_source_pixels": {
+        "top": 39,
+        "bottom": 41
+      },
+      "review": "/home/intpa/smash-training-lobby/artifacts/training-performance-followup-20261015/media/roster-aegis-review",
+      "visual_review": "accepted start/action/end; waiting also source frame 40 before replacement"
+    },
+    {
+      "path": "docs/fighter-hotswap/hotswap.gif",
+      "sha256": "4b1367d65cc8f049db34dbd65379d7e9ff7efeece8ff45bd27109a7d294136f1",
+      "frames": 180,
+      "seconds": 18,
+      "fps": 10,
+      "dimensions": [
+        800,
+        450
+      ],
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/training-performance-followup-20261015/media/hotswap",
+      "source_frame_range": [
+        0,
+        179
+      ],
+      "captured_seconds": 18.000091,
+      "timing_warning": false,
+      "crop_source_pixels": {
+        "top": 39,
+        "bottom": 41
+      },
+      "review": "/home/intpa/smash-training-lobby/artifacts/training-performance-followup-20261015/media/hotswap-review",
+      "visual_review": "accepted start/action/end; waiting also source frame 40 before replacement"
+    },
+    {
+      "path": "docs/lobby-practice/waiting-room.gif",
+      "sha256": "ade41980260dd44f904e539cc793149799e1d23b0b0eb94d87626a3ef7089b9e",
+      "frames": 140,
+      "seconds": 14,
+      "fps": 10,
+      "dimensions": [
+        960,
+        540
+      ],
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/training-performance-followup-20261015/media/waiting",
+      "source_frame_range": [
+        0,
+        139
+      ],
+      "captured_seconds": 22.000089,
+      "timing_warning": false,
+      "crop_source_pixels": {
+        "top": 39,
+        "bottom": 41
+      },
+      "review": "/home/intpa/smash-training-lobby/artifacts/training-performance-followup-20261015/media/waiting-final-review",
+      "visual_review": "accepted start/action/end; waiting also source frame 40 before replacement"
+    }
+  ]
+}

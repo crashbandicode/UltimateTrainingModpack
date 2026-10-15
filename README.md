@@ -12,6 +12,8 @@ Change either fighter during Training without going back to the character select
 
 [Hot-swap guide](docs/fighter-hotswap.md), including a GIF recorded in Training. Waiting-room behavior is in [Lobby Practice](docs/lobby-practice.md).
 
+The development build adds a shared portrait grid with red player order and blue CPU order, including Pyra/Mythra and all three Pokémon starting forms. See the [development checks and limitations](docs/character-cycles-validation.md).
+
 ![Player 1 and the CPU changing fighters during Training.](docs/fighter-hotswap/hotswap.gif)
 
 ### Recording and macro import
@@ -28,7 +30,7 @@ The modpack menu and its practice tools work in the waiting room, not only in Tr
 
 [Lobby practice](docs/lobby-practice.md)
 
-![Lobby Practice menu changing the CPU from Sonic to King Dedede in a local-wireless waiting room.](docs/lobby-practice/waiting-room.gif)
+![Shared character-cycle grid and a CPU swap from Charizard to Link in a local-wireless waiting room.](docs/lobby-practice/waiting-room.gif)
 
 *Captured in an emulator's local-wireless waiting room.*
 

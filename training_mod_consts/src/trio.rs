@@ -1,9 +1,11 @@
-//! Ordinary single-body roster choices, pinned to skyline-smash01bf583.
+//! Practice roster choices, including individual starting forms.
 //! Order is serialized as one-hot menu choices: keep it stable.
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use training_mod_tui::{
     StatefulTable, SubMenu, SubMenuType, Toggle, NX_SUBMENU_COLUMNS, NX_SUBMENU_ROWS,
 };
+
+pub(crate) const LEGACY_CHOICE_COUNT: usize = 80;
 
 pub(crate) const CHOICES: &[(u32, &str)] = &[
     (0x00, "Mario"),
@@ -86,6 +88,12 @@ pub(crate) const CHOICES: &[(u32, &str)] = &[
     (0x59, "Sephiroth"),
     (0x5c, "Kazuya"),
     (0x5d, "Sora"),
+    // Append forms: old saved catalog positions must not move.
+    (0x5a, "Pyra"),
+    (0x5b, "Mythra"),
+    (0x24, "Squirtle"),
+    (0x25, "Ivysaur"),
+    (0x26, "Charizard"),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,7 +167,7 @@ impl Serialize for TrioFighter {
 impl<'de> Deserialize<'de> for TrioFighter {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = Vec::<u8>::deserialize(deserializer)?;
-        if values.len() != CHOICES.len()
+        if (values.len() != CHOICES.len() && values.len() != LEGACY_CHOICE_COUNT)
             || values.iter().any(|v| *v > 1)
             || values.iter().filter(|v| **v == 1).count() != 1
         {
@@ -178,7 +186,7 @@ mod tests {
     use super::*;
     use training_mod_tui::InputControl;
     #[test]
-    fn every_choice_round_trips_and_special_groups_are_excluded() {
+    fn every_choice_round_trips_and_unsupported_groups_are_excluded() {
         for (kind, _) in CHOICES {
             let choice = TrioFighter(*kind);
             assert_eq!(
@@ -188,9 +196,6 @@ mod tests {
             );
         }
         for kind in [
-            0x24,
-            0x25,
-            0x26,
             0x48,
             0x49,
             0x4a,
@@ -200,13 +205,32 @@ mod tests {
             0x4e,
             0x4f,
             0x50,
-            0x5a,
-            0x5b,
             0x75,
             u32::MAX,
         ] {
             assert!(!TrioFighter::supported_kind(kind));
         }
+    }
+    #[test]
+    fn legacy_one_hot_positions_remain_stable() {
+        // Saved before forms existed: Sora was the final choice, at index 79.
+        let mut legacy = vec![0u8; 80];
+        legacy[79] = 1;
+        let fighter: TrioFighter = serde_json::from_value(serde_json::json!(legacy)).unwrap();
+        assert_eq!(fighter.kind(), 0x5d);
+        let current = serde_json::to_value(fighter).unwrap();
+        assert_eq!(current.as_array().unwrap().len(), 85);
+        assert_eq!(current[79], 1);
+        assert_eq!(current[80], 0);
+        for length in [0, 79, 81, 84, 86] {
+            let mut invalid = vec![0u8; length];
+            if length > 0 {
+                invalid[0] = 1;
+            }
+            assert!(serde_json::from_value::<TrioFighter>(serde_json::json!(invalid)).is_err());
+        }
+        legacy[0] = 1;
+        assert!(serde_json::from_value::<TrioFighter>(serde_json::json!(legacy)).is_err());
     }
     #[test]
     fn malformed_choices_are_not_randomized() {
@@ -230,6 +254,15 @@ mod tests {
                 .unwrap()
                 .kind(),
             0x5d
+        );
+        picker.on_down();
+        assert_eq!(picker.toggles.state.selected_row(), Some(20));
+        picker.toggles.select(21, 0);
+        picker.on_a();
+        assert_eq!(
+            serde_json::from_str::<TrioFighter>(&serde_json::to_string(&picker).unwrap())
+                .unwrap().kind(),
+            0x26
         );
         picker.on_down();
         assert_eq!(picker.toggles.state.selected_row(), Some(0));

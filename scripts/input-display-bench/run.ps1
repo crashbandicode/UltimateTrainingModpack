@@ -10,7 +10,7 @@ $Bench = Join-Path $Repo 'scripts/input-display-bench'
 $Baseline = Join-Path $Bench 'fixtures/baseline-input_log.rs'
 $CandidateSrc = Join-Path $Repo 'src/training/ui/input_log.rs'
 $Candidate = Join-Path $Work 'candidate-input_log.rs'
-$ExpectedBlob = 'b78a0b6ac9667673418c3255f3bcc585e4685039'
+$ExpectedBlob = '9c1bcc221da0be1faf9d429ceeec4db090de0f09'
 
 New-Item -ItemType Directory -Force -Path $Build | Out-Null
 if (-not (Test-Path -LiteralPath $Rustc)) {
@@ -69,7 +69,7 @@ function Build-Bench([string]$Renderer, [string]$Label, [string]$Cfg, [string]$O
 }
 
 $BaselineBin = Join-Path $Build 'bench-baseline'
-$BaselineCode = Build-Bench $Baseline 'baseline-git-17c4e3f9b257000b17d099b4ed42b79448b5dcfd' 'bench_baseline' $BaselineBin
+$BaselineCode = Build-Bench $Baseline 'baseline-7.1.2' 'bench_baseline' $BaselineBin
 if ($BaselineCode -ne 0) { throw 'baseline harness failed to compile' }
 
 [IO.File]::Copy($CandidateSrc, $Candidate, $true)

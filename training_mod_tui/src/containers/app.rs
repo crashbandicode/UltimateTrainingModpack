@@ -3,6 +3,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::{InputControl, StatefulList, SubMenu, SubMenuType, Tab};
+use crate::roster_grid::{Direction, Outcome, Role, RosterGrid};
 
 #[derive(PartialEq, Serialize, Clone, Copy)]
 pub enum AppPage {
@@ -11,6 +12,7 @@ pub enum AppPage {
     SLIDER,
     CONFIRMATION,
     CLOSE,
+    ROSTER,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -48,6 +50,10 @@ pub struct App<'a> {
     pub serialized_default_settings: String,
     pub confirmation_state: ConfirmationState,
     pub confirmation_return_page: AppPage,
+    /// Settings with no separate launch control, still serialized and reset normally.
+    pub hidden_submenus: Vec<SubMenu<'a>>,
+    pub roster_grid: RosterGrid,
+    pub roster_kinds: Vec<u32>,
 }
 
 impl<'a> App<'a> {
@@ -59,6 +65,9 @@ impl<'a> App<'a> {
             serialized_default_settings: String::new(),
             confirmation_state: ConfirmationState::HoverNo,
             confirmation_return_page: AppPage::SUBMENU,
+            hidden_submenus: Vec::new(),
+            roster_grid: RosterGrid::new(Role::Player),
+            roster_kinds: Vec::new(),
         }
     }
 
@@ -105,6 +114,11 @@ impl<'a> App<'a> {
                 }
             }
         }
+        for submenu in &mut self.hidden_submenus {
+            if let Some(val) = all_settings.get(submenu.id) {
+                submenu.update_from_vec(val.clone());
+            }
+        }
         self.save_settings();
     }
 
@@ -113,6 +127,11 @@ impl<'a> App<'a> {
         let all_settings: HashMap<String, Vec<u8>> =
             serde_json::from_str(json).expect("Could not parse the json!");
         if let Some(val) = all_settings.get(submenu_id) {
+            for submenu in &mut self.hidden_submenus {
+                if submenu.id == submenu_id {
+                    submenu.update_from_vec(val.clone());
+                }
+            }
             // No need to iterate through all the submenus if the id doesn't exist in the hashmap
             'tabs_scope: for tab in self.tabs.iter_mut() {
                 'submenus_scope: for submenu_opt in tab.submenus.iter_mut() {
@@ -130,6 +149,51 @@ impl<'a> App<'a> {
 
     pub fn confirm(&mut self) -> bool {
         self.confirmation_state == ConfirmationState::HoverYes
+    }
+
+    fn roster_id(role: Role) -> &'static str {
+        match role {
+            Role::Player => "player_roster",
+            Role::Cpu => "cpu_roster",
+        }
+    }
+
+    pub fn roster_values(&self, role: Role) -> Vec<u8> {
+        self.tabs.iter()
+            .flat_map(|tab| tab.submenus.iter())
+            .chain(self.hidden_submenus.iter())
+            .find(|submenu| submenu.id == Self::roster_id(role))
+            .map(|submenu| submenu.toggles.iter().map(|toggle| toggle.value).collect())
+            .unwrap_or_default()
+    }
+
+    fn set_roster_values(&mut self, role: Role, values: Vec<u8>) {
+        let id = Self::roster_id(role);
+        for tab in self.tabs.iter_mut() {
+            for submenu in tab.submenus.iter_mut().flatten() {
+                if submenu.id == id {
+                    submenu.update_from_vec(values);
+                    return;
+                }
+            }
+        }
+        if let Some(submenu) = self.hidden_submenus.iter_mut().find(|submenu| submenu.id == id) {
+            submenu.update_from_vec(values);
+        }
+    }
+
+    fn edit_roster(&mut self, remove: bool) {
+        let role = self.roster_grid.role();
+        let mut values = self.roster_values(role);
+        let changed = if remove {
+            self.roster_grid.remove(&self.roster_kinds, &mut values)
+        } else {
+            self.roster_grid.confirm(&self.roster_kinds, &mut values) == Outcome::RosterChanged
+        };
+        if changed {
+            self.set_roster_values(role, values);
+            self.save_settings();
+        }
     }
 
     pub fn return_from_confirmation(&mut self) {
@@ -171,12 +235,15 @@ impl<'a> Serialize for App<'a> {
     {
         // Serializes as a mapping between submenu titles and values
         // Need to iterate through tabs to avoid making a list of mappings
-        let len: usize = self.tabs.iter().map(|tab| tab.len()).sum();
+        let len: usize = self.tabs.iter().map(|tab| tab.len()).sum::<usize>() + self.hidden_submenus.len();
         let mut map = serializer.serialize_map(Some(len))?;
         for tab in self.tabs.iter() {
             for submenu in tab.submenus.iter() {
                 map.serialize_entry(submenu.id, submenu)?;
             }
+        }
+        for submenu in &self.hidden_submenus {
+            map.serialize_entry(submenu.id, submenu)?;
         }
         map.end()
     }
@@ -186,6 +253,10 @@ impl<'a> InputControl for App<'a> {
     fn on_a(&mut self) {
         match self.page {
             AppPage::SUBMENU => {
+                if self.selected_submenu().id == "player_roster" && !self.roster_kinds.is_empty() {
+                    self.page = AppPage::ROSTER;
+                    return;
+                }
                 // Large single-choice pickers reopen on the configured option,
                 // including choices beyond the first screen of the native UI.
                 let submenu = self.selected_submenu();
@@ -227,6 +298,7 @@ impl<'a> InputControl for App<'a> {
                 self.return_from_confirmation();
             }
             AppPage::CLOSE => {}
+            AppPage::ROSTER => self.edit_roster(false),
         }
         self.save_settings(); // A button can make changes, update the serialized settings
     }
@@ -236,7 +308,7 @@ impl<'a> InputControl for App<'a> {
                 // Exit the app
                 self.page = AppPage::CLOSE;
             }
-            AppPage::TOGGLE => {
+            AppPage::TOGGLE | AppPage::ROSTER => {
                 // Return to the list of submenus
                 self.page = AppPage::SUBMENU;
             }
@@ -262,17 +334,23 @@ impl<'a> InputControl for App<'a> {
         self.save_settings(); // B button can make changes, update the serialized settings
     }
     fn on_x(&mut self) {
-        self.save_default_settings();
+        if self.page == AppPage::ROSTER {
+            self.roster_grid.cycle_form();
+        } else {
+            self.save_default_settings();
+        }
     }
     fn on_y(&mut self) {
         // Clear current toggle, for toggles w/ weighted selections
         match self.page {
             AppPage::TOGGLE => self.selected_submenu().on_y(),
+            AppPage::ROSTER => self.roster_grid.toggle_role(),
             _ => {}
         }
     }
     fn on_up(&mut self) {
         match self.page {
+            AppPage::ROSTER => self.roster_grid.step(Direction::Up),
             AppPage::SUBMENU => self.tabs.get_selected().expect("No tab selected!").on_up(),
             AppPage::TOGGLE => self
                 .tabs
@@ -296,6 +374,7 @@ impl<'a> InputControl for App<'a> {
     }
     fn on_down(&mut self) {
         match self.page {
+            AppPage::ROSTER => self.roster_grid.step(Direction::Down),
             AppPage::SUBMENU => self
                 .tabs
                 .get_selected()
@@ -323,6 +402,7 @@ impl<'a> InputControl for App<'a> {
     }
     fn on_left(&mut self) {
         match self.page {
+            AppPage::ROSTER => self.roster_grid.step(Direction::Left),
             AppPage::SUBMENU => self
                 .tabs
                 .get_selected()
@@ -350,6 +430,7 @@ impl<'a> InputControl for App<'a> {
     }
     fn on_right(&mut self) {
         match self.page {
+            AppPage::ROSTER => self.roster_grid.step(Direction::Right),
             AppPage::SUBMENU => self
                 .tabs
                 .get_selected()
@@ -381,6 +462,10 @@ impl<'a> InputControl for App<'a> {
     }
     fn on_l(&mut self) {}
     fn on_r(&mut self) {
+        if self.page == AppPage::ROSTER {
+            self.edit_roster(true);
+            return;
+        }
         // Reset settings to default
         // See App::on_a() for the logic
         self.confirmation_return_page = self.page;
@@ -388,6 +473,16 @@ impl<'a> InputControl for App<'a> {
     }
     fn on_zl(&mut self) {
         match self.page {
+            AppPage::ROSTER => {
+                let role = self.roster_grid.role();
+                let mut values = self.roster_values(role);
+                if !values.is_empty() {
+                    values.fill(0);
+                    values[0] = 1;
+                    self.set_roster_values(role, values);
+                    self.save_settings();
+                }
+            }
             AppPage::SUBMENU => {
                 self.tabs.previous();
             }

@@ -272,7 +272,6 @@ fn disarm_allocs() {
 }
 
 fn invalidate_renderer() {
-    #[cfg(bench_candidate)]
     crate::training::ui::input_log::invalidate();
 }
 
@@ -464,6 +463,9 @@ fn main() {
     status_toggle();
     hide_reopen();
     ttl_fade();
+    ttl_decay();
+    ring_rotate();
+    late_head_tick();
     reset_logs();
     reregister();
     println!("DONE");
@@ -743,6 +745,128 @@ fn ttl_fade() {
     prime_history();
     capture("ttl_fade", "draw");
     time_case("ttl_fade", &setup, &|| draw());
+}
+
+fn decay_logs() {
+    let mut logs = read(&training::input_log::P1_INPUT_LOGS);
+    for log in logs.iter_mut() {
+        if log.ttl > 0 {
+            log.ttl -= 1;
+        }
+    }
+    if logs[0].frames < 99 {
+        logs[0].frames += 1;
+    }
+    put_logs(logs);
+}
+
+/// Three real ttl decrements after the cache is warm. Rows at or below 200 fade;
+/// 201 stays above the fade threshold for the first step.
+fn ttl_decay() {
+    let none = training::input_log::STICK_NONE;
+    let ttls = [500u32, 200, 199, 50, 1, 0, 201, 400, 400, 400, 400, 180, 20, 199, 2];
+    let setup = || {
+        reset_world();
+        let mut logs = [training::input_log::InputLog::default(); 15];
+        for index in 0..15 {
+            logs[index] = head_log(
+                if index == 0 {
+                    1 << 0
+                } else {
+                    1 << ((index % 8) as u32)
+                },
+                ttls[index],
+                40,
+                10 + index as i32,
+                13,
+                none,
+                none,
+            );
+        }
+        put_logs(logs);
+    };
+    let body = || {
+        for _ in 0..3 {
+            decay_logs();
+            draw();
+        }
+    };
+    setup();
+    prime_history();
+    decay_logs();
+    capture("ttl_decay", "frame1");
+    decay_logs();
+    capture("ttl_decay", "frame2");
+    decay_logs();
+    capture("ttl_decay", "frame3");
+    time_case("ttl_decay", &setup, &body);
+}
+
+fn ring_rotate() {
+    let none = training::input_log::STICK_NONE;
+    let setup = || {
+        reset_world();
+        put_logs(filled(1 << 0, none, none));
+    };
+    let body = || {
+        draw();
+        for turn in 0..3u32 {
+            rotate_front(head_log(
+                1u32 << (turn + 1),
+                480u32 - turn * 10,
+                1,
+                20 + turn as i32,
+                13,
+                none,
+                none,
+            ));
+            draw();
+        }
+    };
+    setup();
+    prime_history();
+    for turn in 0..3u32 {
+        rotate_front(head_log(
+            1u32 << (turn + 1),
+            480u32 - turn * 10,
+            1,
+            20 + turn as i32,
+            13,
+            none,
+            none,
+        ));
+        capture("ring_rotate", &format!("turn{}", turn + 1));
+    }
+    time_case("ring_rotate", &setup, &body);
+}
+
+/// Head frame tick while `DRAW_LOG_BASE_IDX` maps the head onto `TrModInputLog14`.
+fn late_head_tick() {
+    let none = training::input_log::STICK_NONE;
+    let setup = || {
+        reset_world();
+        assign(&training::input_log::DRAW_LOG_BASE_IDX, 1usize);
+        put_logs(filled(1 << 0, none, none));
+    };
+    let body = || {
+        draw();
+        let mut logs = read(&training::input_log::P1_INPUT_LOGS);
+        logs[0].frames = logs[0].frames.saturating_add(1).min(99);
+        if logs[0].ttl > 0 {
+            logs[0].ttl -= 1;
+        }
+        put_logs(logs);
+        draw();
+    };
+    setup();
+    prime_history();
+    capture("late_head", "steady");
+    let mut logs = read(&training::input_log::P1_INPUT_LOGS);
+    logs[0].frames += 1;
+    logs[0].ttl -= 1;
+    put_logs(logs);
+    capture("late_head", "frame");
+    time_case("late_head", &setup, &body);
 }
 
 fn reset_logs() {

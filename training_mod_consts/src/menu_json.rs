@@ -395,6 +395,7 @@ mod tests {
             .tabs
             .iter()
             .flat_map(|tab| tab.submenus.iter().map(|submenu| submenu.id))
+            .chain(app.hidden_submenus.iter().map(|submenu| submenu.id))
             .collect();
         let stored = modern();
         let keys = stored.as_object().unwrap();
@@ -412,7 +413,7 @@ mod tests {
             .submenus
             .iter()
             .any(|submenu| submenu.id.starts_with("trio_")));
-        // The editor parses the stored form directly; a null or hidden key would panic here.
+        // Both visible and shared-editor settings must survive a full commit.
         app.update_all_from_json(&stored.to_string());
         let committed: TrainingModpackMenu =
             serde_json::from_str(&app.current_settings_to_json()).unwrap();
@@ -423,7 +424,7 @@ mod tests {
     fn editor_commits_reparse_through_ingress_with_the_edited_order() {
         let cases = [
             (
-                "cpu_characters",
+                "player_characters",
                 "cpu_roster",
                 vec![F::PIKACHU, F::KIRBY, F::BOWSER, F::BAYONETTA, F::MARIO],
             ),
@@ -443,15 +444,15 @@ mod tests {
                 .selected_tab()
                 .submenus
                 .iter()
-                .position(|submenu| submenu.id == submenu_id)
+                .position(|submenu| submenu.id == "player_roster")
                 .unwrap();
             let cols = app.selected_tab().submenus.cols;
             app.selected_tab()
                 .submenus
                 .select(index / cols, index % cols);
             app.on_a();
-            // Mario follows All and appends after the configured characters.
-            app.selected_submenu().toggles.select(0, 1);
+            // The shared grid starts on Mario; append after the configured order.
+            if submenu_id == "cpu_roster" { app.on_y(); }
             app.on_a();
             app.on_b();
             let text = app.get_serialized_settings_with_defaults();

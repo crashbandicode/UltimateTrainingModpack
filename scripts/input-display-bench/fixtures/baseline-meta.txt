@@ -1,5 +1,6 @@
-commit=17c4e3f9b257000b17d099b4ed42b79448b5dcfd
+renderer=7.1.2
 path=src/training/ui/input_log.rs
-blob=b78a0b6ac9667673418c3255f3bcc585e4685039
-bytes=5499
-source=git cat-file blob b78a0b6ac9667673418c3255f3bcc585e4685039
+blob=9c1bcc221da0be1faf9d429ceeec4db090de0f09
+bytes=9141
+source=snapshot of src/training/ui/input_log.rs before the direct-child walk
+previous=fixtures/pre-7.1.2-input_log.rs blob b78a0b6ac9667673418c3255f3bcc585e4685039

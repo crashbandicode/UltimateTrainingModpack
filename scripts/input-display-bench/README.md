@@ -2,7 +2,7 @@
 
 Compares the frozen git baseline of `src/training/ui/input_log.rs` with the current worktree file. The harness compiles those renderer sources with `include!` and host shims. It does not build the product crate, start an emulator, or measure FPS.
 
-The baseline fixture is git blob `b78a0b6ac9667673418c3255f3bcc585e4685039` from commit `17c4e3f9b257000b17d099b4ed42b79448b5dcfd`. `run.ps1` checks that hash before compiling.
+The baseline fixture is the 7.1.2 renderer, git blob `9c1bcc221da0be1faf9d429ceeec4db090de0f09`. `run.ps1` checks that hash before compiling. The older renderer remains at `fixtures/pre-7.1.2-input_log.rs` and is not compiled. Both the 7.1.2 baseline and the candidate export `invalidate()`, and the harness calls it for each.
 
 ## Run
 
@@ -18,8 +18,8 @@ The included file is the renderer. Pane lookup is a depth-first name walk over o
 
 `InputLog` button and stick mapping is a fixture bitset, not the game's controller mapper. Status strings are `k{kind}/s{status}`, not the real status table. CPU time is host `Instant` at opt-level 3. It is not Switch frame time.
 
-`fade_out` uses the same alpha curve as `src/training/ui/mod.rs`. The candidate build calls `pub fn invalidate()`; the baseline build does not have that function.
+`fade_out` uses the same alpha curve as `src/training/ui/mod.rs`. `ttl_decay` decrements every live ttl for three frames after warm-up. `ring_rotate` advances the ring three times. `late_head` ticks the head frame count while that head is `TrModInputLog14`. These are host pane counts, not FPS.
 
 History is populated through renderer calls before measurements; this models rows that previously appeared at the head of the input log. Setup and this warm-up are outside timed regions. Timings cover each scenario body (which can contain multiple frames), not a single game frame. Allocation counts cover Rust allocations in the harness; the native lookup wrapper's temporary C strings and real status-name resolution are not modelled.
 
-The comparison checks visible pane state, not captured screenshots. It normalises positive/negative zero positions and matrix-dirty flags. Hidden child dumps may differ. After same-address layout recreation, the candidate must restore its established history; a control without `invalidate()` must fail to restore it. The old renderer only repaints the newest row in that case.
+The comparison checks visible pane state, not captured screenshots. It normalises positive/negative zero positions and matrix-dirty flags. Hidden child dumps may differ. After same-address layout recreation, both the 7.1.2 baseline and candidate must restore their established history; a candidate control without `invalidate()` must fail to restore it.

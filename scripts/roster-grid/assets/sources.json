@@ -1,0 +1,807 @@
+{
+  "credit": "Nintendo and respective character owners; stock icons via SmashWiki, the source credited by the operator-provided TierMaker template.",
+  "reference": "https://tiermaker.com/create/smash-ultimate-icons-148186",
+  "icons": [
+    {
+      "kind": 0,
+      "name": "Mario",
+      "filename": "fighter-00.png",
+      "source": "https://www.ssbwiki.com/File:MarioHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/0/0d/MarioHeadSSBU.png",
+      "sha256": "24bd76b1e49657c064be4510615c618673960300de324ab5d628fa821b561156",
+      "bytes": 5065
+    },
+    {
+      "kind": 1,
+      "name": "Donkey Kong",
+      "filename": "fighter-01.png",
+      "source": "https://www.ssbwiki.com/File:DonkeyKongHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/b/ba/DonkeyKongHeadSSBU.png",
+      "sha256": "3b48d5377a1fad15638eb37b52952f173e1dea20bcbfb3040eba9bf2404093af",
+      "bytes": 4002
+    },
+    {
+      "kind": 2,
+      "name": "Link",
+      "filename": "fighter-02.png",
+      "source": "https://www.ssbwiki.com/File:LinkHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/a/aa/LinkHeadSSBU.png",
+      "sha256": "86f31bd32ee7e7d5f5a88efa43ceefbd41fe74183d78b932046d2929f7fae565",
+      "bytes": 5164
+    },
+    {
+      "kind": 3,
+      "name": "Samus",
+      "filename": "fighter-03.png",
+      "source": "https://www.ssbwiki.com/File:SamusHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/7/7f/SamusHeadSSBU.png",
+      "sha256": "47ebf938b6541c1e6d89bd1e3aba0c14bf7f3ff383fb29a9cc2d6f99058d4d5e",
+      "bytes": 4850
+    },
+    {
+      "kind": 4,
+      "name": "Dark Samus",
+      "filename": "fighter-04.png",
+      "source": "https://www.ssbwiki.com/File:DarkSamusHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/9/96/DarkSamusHeadSSBU.png",
+      "sha256": "f45f854fea2da2cb8d4d1e71dbd62888424f64c5951fd88d3004ef9e19adeefb",
+      "bytes": 4633
+    },
+    {
+      "kind": 5,
+      "name": "Yoshi",
+      "filename": "fighter-05.png",
+      "source": "https://www.ssbwiki.com/File:YoshiHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/0/03/YoshiHeadSSBU.png",
+      "sha256": "e1e87ab268a27ee9981721c93792c11dbca96d96dbf0b479b2740e0ae86cc687",
+      "bytes": 4017
+    },
+    {
+      "kind": 6,
+      "name": "Kirby",
+      "filename": "fighter-06.png",
+      "source": "https://www.ssbwiki.com/File:KirbyHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/9/91/KirbyHeadSSBU.png",
+      "sha256": "fa0b3bd531f2c72e706fdb7901fff2b3b9bd6a3f20542086cc15e7e75f3cf955",
+      "bytes": 3465
+    },
+    {
+      "kind": 7,
+      "name": "Fox",
+      "filename": "fighter-07.png",
+      "source": "https://www.ssbwiki.com/File:FoxHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/0/04/FoxHeadSSBU.png",
+      "sha256": "423f24f8c12f5d639c66e42f31a144f6c23ae10d02a493aa95ac0a1248c77d4d",
+      "bytes": 5507
+    },
+    {
+      "kind": 8,
+      "name": "Pikachu",
+      "filename": "fighter-08.png",
+      "source": "https://www.ssbwiki.com/File:PikachuHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/f/fa/PikachuHeadSSBU.png",
+      "sha256": "dc4e22921177f520aecdc1550648583e63c83486536094a0588218b9544ea8ab",
+      "bytes": 4066
+    },
+    {
+      "kind": 9,
+      "name": "Luigi",
+      "filename": "fighter-09.png",
+      "source": "https://www.ssbwiki.com/File:LuigiHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/c/c6/LuigiHeadSSBU.png",
+      "sha256": "36ce84fd114008d5b3cebe20821fa984a9b04c16ef01bfc8a87be99104a34bbc",
+      "bytes": 4542
+    },
+    {
+      "kind": 10,
+      "name": "Ness",
+      "filename": "fighter-0a.png",
+      "source": "https://www.ssbwiki.com/File:NessHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/0/0f/NessHeadSSBU.png",
+      "sha256": "f19e962bef3f95677fff915f43adbd0d7916e7816bb5d10fdbfabf5f83404df7",
+      "bytes": 3902
+    },
+    {
+      "kind": 11,
+      "name": "Captain Falcon",
+      "filename": "fighter-0b.png",
+      "source": "https://www.ssbwiki.com/File:CaptainFalconHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/3/35/CaptainFalconHeadSSBU.png",
+      "sha256": "d40e76f821cd934cd03c0bbc53507a701e4ce9e2f532dd3944140587abb3e50c",
+      "bytes": 5277
+    },
+    {
+      "kind": 12,
+      "name": "Jigglypuff",
+      "filename": "fighter-0c.png",
+      "source": "https://www.ssbwiki.com/File:JigglypuffHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/9/95/JigglypuffHeadSSBU.png",
+      "sha256": "b5071257ba0e1b11c384d35923ff7ce8ccb6f47b062b35d5491a28cdc5298c0b",
+      "bytes": 4299
+    },
+    {
+      "kind": 13,
+      "name": "Peach",
+      "filename": "fighter-0d.png",
+      "source": "https://www.ssbwiki.com/File:PeachHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/d/d2/PeachHeadSSBU.png",
+      "sha256": "c15103956417a7c8009d703c2eec7f681e3ffe95cc0180bb6313b3a00723c225",
+      "bytes": 4892
+    },
+    {
+      "kind": 14,
+      "name": "Daisy",
+      "filename": "fighter-0e.png",
+      "source": "https://www.ssbwiki.com/File:DaisyHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/9/96/DaisyHeadSSBU.png",
+      "sha256": "5e953f64eaf17a60e802d14e63ae21d3a4589a95a4c20035ffa8425b652149d6",
+      "bytes": 4746
+    },
+    {
+      "kind": 15,
+      "name": "Bowser",
+      "filename": "fighter-0f.png",
+      "source": "https://www.ssbwiki.com/File:BowserHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/b/b5/BowserHeadSSBU.png",
+      "sha256": "823265a6b8dcd8852d1d3f3b2ccb225fb81b21feff9911db00efadc1ab9ed5bc",
+      "bytes": 4536
+    },
+    {
+      "kind": 16,
+      "name": "Sheik",
+      "filename": "fighter-10.png",
+      "source": "https://www.ssbwiki.com/File:SheikHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/3/37/SheikHeadSSBU.png",
+      "sha256": "864455c1512fe2aedcd4afe8d3be961087dbcb7f1ad3c9fec3564b4d1ad136fb",
+      "bytes": 5391
+    },
+    {
+      "kind": 17,
+      "name": "Zelda",
+      "filename": "fighter-11.png",
+      "source": "https://www.ssbwiki.com/File:ZeldaHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/c/c1/ZeldaHeadSSBU.png",
+      "sha256": "308ad8986e4f4cd44945ac76f2c6755276d64d4f7584fb4fab8793a82e8d486c",
+      "bytes": 5703
+    },
+    {
+      "kind": 18,
+      "name": "Dr. Mario",
+      "filename": "fighter-12.png",
+      "source": "https://www.ssbwiki.com/File:DrMarioHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/7/78/DrMarioHeadSSBU.png",
+      "sha256": "5bda95d91a58a1e3258afecc81eec7a93330c1a40cc121d643454bf8e97270fe",
+      "bytes": 5360
+    },
+    {
+      "kind": 19,
+      "name": "Pichu",
+      "filename": "fighter-13.png",
+      "source": "https://www.ssbwiki.com/File:PichuHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/d/d6/PichuHeadSSBU.png",
+      "sha256": "a888f92c4d477dbaa953c5c590a80111ef6373fd45a8ad135cf830ef5f31ece1",
+      "bytes": 4152
+    },
+    {
+      "kind": 20,
+      "name": "Falco",
+      "filename": "fighter-14.png",
+      "source": "https://www.ssbwiki.com/File:FalcoHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/2/2f/FalcoHeadSSBU.png",
+      "sha256": "0e167bc475b47b31b19702482e512b30ae8f298af596c741f9d2d96d74220720",
+      "bytes": 4464
+    },
+    {
+      "kind": 21,
+      "name": "Marth",
+      "filename": "fighter-15.png",
+      "source": "https://www.ssbwiki.com/File:MarthHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/b/bd/MarthHeadSSBU.png",
+      "sha256": "3ff5ddfc43a5c8a1615645c9db97d8296dd859b64e4de6bb352dd6e247657f4d",
+      "bytes": 4591
+    },
+    {
+      "kind": 22,
+      "name": "Lucina",
+      "filename": "fighter-16.png",
+      "source": "https://www.ssbwiki.com/File:LucinaHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/0/04/LucinaHeadSSBU.png",
+      "sha256": "09a58fc92df23ed60621daf1b8b6377734c41dc463f7cbd7879d927a78a1c314",
+      "bytes": 5260
+    },
+    {
+      "kind": 23,
+      "name": "Young Link",
+      "filename": "fighter-17.png",
+      "source": "https://www.ssbwiki.com/File:YoungLinkHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/c/cd/YoungLinkHeadSSBU.png",
+      "sha256": "552a4fb1e10842640193d6290fbdfecc1f15be4addde07669c462cab5a4f0a9c",
+      "bytes": 4731
+    },
+    {
+      "kind": 24,
+      "name": "Ganondorf",
+      "filename": "fighter-18.png",
+      "source": "https://www.ssbwiki.com/File:GanondorfHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/7/78/GanondorfHeadSSBU.png",
+      "sha256": "3aa48695384d43f55d9c466c6be0f94a77df3344eceed30f82480b5f3769812d",
+      "bytes": 4864
+    },
+    {
+      "kind": 25,
+      "name": "Mewtwo",
+      "filename": "fighter-19.png",
+      "source": "https://www.ssbwiki.com/File:MewtwoHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/9/96/MewtwoHeadSSBU.png",
+      "sha256": "851a47e1dd38a7e8b6cb56cb0738e5f27b4b468d5ed4b7828ffbfacfbb4390d2",
+      "bytes": 3977
+    },
+    {
+      "kind": 26,
+      "name": "Roy",
+      "filename": "fighter-1a.png",
+      "source": "https://www.ssbwiki.com/File:RoyHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/e/ed/RoyHeadSSBU.png",
+      "sha256": "59a035651e6256b2daf62d53e1bb8bc430605afebcbb0fc02867b9a92d82b23d",
+      "bytes": 5046
+    },
+    {
+      "kind": 27,
+      "name": "Chrom",
+      "filename": "fighter-1b.png",
+      "source": "https://www.ssbwiki.com/File:ChromHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/2/25/ChromHeadSSBU.png",
+      "sha256": "2c59428f6a1799eb29af9197b4ec828a1bc211cc3df32e7140e2228014ab3b90",
+      "bytes": 4649
+    },
+    {
+      "kind": 28,
+      "name": "Mr. Game & Watch",
+      "filename": "fighter-1c.png",
+      "source": "https://www.ssbwiki.com/File:MrGame%26WatchHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/6/6b/MrGame%26WatchHeadSSBU.png",
+      "sha256": "722ba1beee32db46ade9d8332eba6640a1871236cbd6595357928220b4713ed5",
+      "bytes": 2926
+    },
+    {
+      "kind": 29,
+      "name": "Meta Knight",
+      "filename": "fighter-1d.png",
+      "source": "https://www.ssbwiki.com/File:MetaKnightHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/d/de/MetaKnightHeadSSBU.png",
+      "sha256": "927e8539ac86f68597205e238bb6942ad33521f69e889b5f8189d63f9b423eba",
+      "bytes": 3648
+    },
+    {
+      "kind": 30,
+      "name": "Pit",
+      "filename": "fighter-1e.png",
+      "source": "https://www.ssbwiki.com/File:PitHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/a/aa/PitHeadSSBU.png",
+      "sha256": "28965be5d45ee542964ee58c20a1968ca5201d16dfe64df5338466559bee58a0",
+      "bytes": 5417
+    },
+    {
+      "kind": 31,
+      "name": "Dark Pit",
+      "filename": "fighter-1f.png",
+      "source": "https://www.ssbwiki.com/File:DarkPitHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/e/ed/DarkPitHeadSSBU.png",
+      "sha256": "4ecc2985a2b509538a79fadefa8d3cd0f6580aa20eab0dec2fee6041baca55a6",
+      "bytes": 4524
+    },
+    {
+      "kind": 32,
+      "name": "Zero Suit Samus",
+      "filename": "fighter-20.png",
+      "source": "https://www.ssbwiki.com/File:ZeroSuitSamusHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/7/71/ZeroSuitSamusHeadSSBU.png",
+      "sha256": "a3efb48d60b2c5b072b1879733290a03bbef15704cd3bca5df0442aaa17c7936",
+      "bytes": 5032
+    },
+    {
+      "kind": 33,
+      "name": "Wario",
+      "filename": "fighter-21.png",
+      "source": "https://www.ssbwiki.com/File:WarioHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/0/05/WarioHeadSSBU.png",
+      "sha256": "132db946990621c4d915cbd720a2d3626351bb744db67a70207615fd9637f248",
+      "bytes": 5662
+    },
+    {
+      "kind": 34,
+      "name": "Snake",
+      "filename": "fighter-22.png",
+      "source": "https://www.ssbwiki.com/File:SnakeHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/9/9a/SnakeHeadSSBU.png",
+      "sha256": "c1cdef1e99d3b13859503e505206293729888761547ca5c8502f9f464e8df260",
+      "bytes": 4757
+    },
+    {
+      "kind": 35,
+      "name": "Ike",
+      "filename": "fighter-23.png",
+      "source": "https://www.ssbwiki.com/File:IkeHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/b/b2/IkeHeadSSBU.png",
+      "sha256": "472ed1cff80951e59cddfddfed8f65820f8cc1951d61c9965c181f3a2c500fde",
+      "bytes": 4985
+    },
+    {
+      "kind": 39,
+      "name": "Diddy Kong",
+      "filename": "fighter-27.png",
+      "source": "https://www.ssbwiki.com/File:DiddyKongHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/3/36/DiddyKongHeadSSBU.png",
+      "sha256": "3accca1e505c9cab70107a661383de3cd7f0b78563d44ad7fb290c406f817edb",
+      "bytes": 3950
+    },
+    {
+      "kind": 40,
+      "name": "Lucas",
+      "filename": "fighter-28.png",
+      "source": "https://www.ssbwiki.com/File:LucasHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/f/ff/LucasHeadSSBU.png",
+      "sha256": "7594caf312b10548e041e03d8e57f6262d9b4689dd7607adcf2bbd014a857b20",
+      "bytes": 3652
+    },
+    {
+      "kind": 41,
+      "name": "Sonic",
+      "filename": "fighter-29.png",
+      "source": "https://www.ssbwiki.com/File:SonicHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/7/76/SonicHeadSSBU.png",
+      "sha256": "2127005a4302cecf3befd0b979fa23c38a0169fb9a4a56441e7771896302a056",
+      "bytes": 4322
+    },
+    {
+      "kind": 42,
+      "name": "King Dedede",
+      "filename": "fighter-2a.png",
+      "source": "https://www.ssbwiki.com/File:KingDededeHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/b/bb/KingDededeHeadSSBU.png",
+      "sha256": "1efaa4c3b62f1c3e98a04c48fc382a0680e3793a5507021a86fc7800fe787993",
+      "bytes": 4031
+    },
+    {
+      "kind": 43,
+      "name": "Olimar",
+      "filename": "fighter-2b.png",
+      "source": "https://www.ssbwiki.com/File:OlimarHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/9/91/OlimarHeadSSBU.png",
+      "sha256": "bba0ac68d9e74454737d227ee6a487b9ad4ae76ba518afa432c0fc64ec3c32a0",
+      "bytes": 5013
+    },
+    {
+      "kind": 44,
+      "name": "Lucario",
+      "filename": "fighter-2c.png",
+      "source": "https://www.ssbwiki.com/File:LucarioHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/c/cd/LucarioHeadSSBU.png",
+      "sha256": "906769d1e85975ebd1640cdc7c68bd55961ead3b0ff2b2246371cf2818dfaeca",
+      "bytes": 4649
+    },
+    {
+      "kind": 45,
+      "name": "R.O.B.",
+      "filename": "fighter-2d.png",
+      "source": "https://www.ssbwiki.com/File:ROBHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/b/b3/ROBHeadSSBU.png",
+      "sha256": "3d7820b7a8388ae388219f75b06c780c41d04d0e61a8fd7140542db59163d6c0",
+      "bytes": 4075
+    },
+    {
+      "kind": 46,
+      "name": "Toon Link",
+      "filename": "fighter-2e.png",
+      "source": "https://www.ssbwiki.com/File:ToonLinkHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/e/e6/ToonLinkHeadSSBU.png",
+      "sha256": "4041ed6d4ed52df5734358b82cb1d8f27181681eb6d6c4a19441b8e85076455f",
+      "bytes": 4126
+    },
+    {
+      "kind": 47,
+      "name": "Wolf",
+      "filename": "fighter-2f.png",
+      "source": "https://www.ssbwiki.com/File:WolfHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/e/e8/WolfHeadSSBU.png",
+      "sha256": "7e583ba0df94576e5aaeabd41afae70b75b5993f510f7370893736c804b7ab31",
+      "bytes": 5026
+    },
+    {
+      "kind": 48,
+      "name": "Villager",
+      "filename": "fighter-30.png",
+      "source": "https://www.ssbwiki.com/File:VillagerHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/b/b9/VillagerHeadSSBU.png",
+      "sha256": "cfa765a9a498faca182db3d0307a15da047876ca49816a6b0f71b2b7e2fc2c9a",
+      "bytes": 4253
+    },
+    {
+      "kind": 49,
+      "name": "Mega Man",
+      "filename": "fighter-31.png",
+      "source": "https://www.ssbwiki.com/File:MegaManHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/5/55/MegaManHeadSSBU.png",
+      "sha256": "2ca8d18eb8beca959970e351f86a2d1d25db22a65178c4e0f284c81291071857",
+      "bytes": 4036
+    },
+    {
+      "kind": 50,
+      "name": "Wii Fit Trainer",
+      "filename": "fighter-32.png",
+      "source": "https://www.ssbwiki.com/File:WiiFitTrainerHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/8/87/WiiFitTrainerHeadSSBU.png",
+      "sha256": "3d79d53a16bce0cde31106dd1122091f56fd674bc34479ff7b6d3dda6612b643",
+      "bytes": 4141
+    },
+    {
+      "kind": 51,
+      "name": "Rosalina & Luma",
+      "filename": "fighter-33.png",
+      "source": "https://www.ssbwiki.com/File:RosalinaHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/e/e8/RosalinaHeadSSBU.png",
+      "sha256": "7e9a50cea4fe87efdedcbb7592feb7e94636d152c21d46f08602bd5e3bb30c23",
+      "bytes": 4550
+    },
+    {
+      "kind": 52,
+      "name": "Little Mac",
+      "filename": "fighter-34.png",
+      "source": "https://www.ssbwiki.com/File:LittleMacHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/1/10/LittleMacHeadSSBU.png",
+      "sha256": "18e6914e786d9d302128221b63dc6f3b82cbda0ed78db84447ea4a46275867d3",
+      "bytes": 4238
+    },
+    {
+      "kind": 53,
+      "name": "Greninja",
+      "filename": "fighter-35.png",
+      "source": "https://www.ssbwiki.com/File:GreninjaHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/6/65/GreninjaHeadSSBU.png",
+      "sha256": "7b1ba1db5b5ba6b28a634b7d07a4fa4dd0636898cf58c8239e9999ae236e2d83",
+      "bytes": 5069
+    },
+    {
+      "kind": 54,
+      "name": "Palutena",
+      "filename": "fighter-36.png",
+      "source": "https://www.ssbwiki.com/File:PalutenaHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/a/a9/PalutenaHeadSSBU.png",
+      "sha256": "7fdfaa3c005e9f89fc9eece5ae2f82d31c5f27d5e3b463fa4b7e619099281ece",
+      "bytes": 5811
+    },
+    {
+      "kind": 55,
+      "name": "PAC-MAN",
+      "filename": "fighter-37.png",
+      "source": "https://www.ssbwiki.com/File:Pac-ManHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/4/45/Pac-ManHeadSSBU.png",
+      "sha256": "1cdb087a6dabb05e4836ab284c2f4e870cdb675aee87112eb21216e67d54b6bb",
+      "bytes": 2718
+    },
+    {
+      "kind": 56,
+      "name": "Robin",
+      "filename": "fighter-38.png",
+      "source": "https://www.ssbwiki.com/File:RobinHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/2/25/RobinHeadSSBU.png",
+      "sha256": "a8a951296d94626efb0c88b5a31e2068781879a1d23c52ef418f6f8cad5132fb",
+      "bytes": 4924
+    },
+    {
+      "kind": 57,
+      "name": "Shulk",
+      "filename": "fighter-39.png",
+      "source": "https://www.ssbwiki.com/File:ShulkHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/c/c1/ShulkHeadSSBU.png",
+      "sha256": "ba44775549e4c6cfb39663cb575d50f0b29041d8225aa8c111e75d47045dc638",
+      "bytes": 5280
+    },
+    {
+      "kind": 58,
+      "name": "Bowser Jr.",
+      "filename": "fighter-3a.png",
+      "source": "https://www.ssbwiki.com/File:BowserJrHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/0/07/BowserJrHeadSSBU.png",
+      "sha256": "07dbf5c66923cb94c6b957c5383714bb27fbedb8d7e5e07cf4dab8a6dc1cb836",
+      "bytes": 3949
+    },
+    {
+      "kind": 59,
+      "name": "Duck Hunt",
+      "filename": "fighter-3b.png",
+      "source": "https://www.ssbwiki.com/File:DuckHuntHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/a/a1/DuckHuntHeadSSBU.png",
+      "sha256": "de6b9d8ee5903ecb17594b2493d729cd7d59187d680000261b8036d298c47a04",
+      "bytes": 5436
+    },
+    {
+      "kind": 60,
+      "name": "Ryu",
+      "filename": "fighter-3c.png",
+      "source": "https://www.ssbwiki.com/File:RyuHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/f/fb/RyuHeadSSBU.png",
+      "sha256": "e7a3a45ecf36f98c48c1f9c5edb1e9d2c3f7d3fb290709051b570c4f8403e873",
+      "bytes": 5767
+    },
+    {
+      "kind": 61,
+      "name": "Ken",
+      "filename": "fighter-3d.png",
+      "source": "https://www.ssbwiki.com/File:KenHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/7/72/KenHeadSSBU.png",
+      "sha256": "8ac5a270b02da6a6cbef63f53fdb18714dbe45f81860dcb7bb665dfd05ea5028",
+      "bytes": 5266
+    },
+    {
+      "kind": 62,
+      "name": "Cloud",
+      "filename": "fighter-3e.png",
+      "source": "https://www.ssbwiki.com/File:CloudHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/3/3b/CloudHeadSSBU.png",
+      "sha256": "06a3ff45ad5705894e6778b034c2cfceb6e315116d827150e2ea0d1adcd66405",
+      "bytes": 4860
+    },
+    {
+      "kind": 63,
+      "name": "Corrin",
+      "filename": "fighter-3f.png",
+      "source": "https://www.ssbwiki.com/File:CorrinHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/c/cf/CorrinHeadSSBU.png",
+      "sha256": "202dd2de1d6dae7e89393edd3f3b1f266fd54fa6fbf825a9170aa06665d948ea",
+      "bytes": 4931
+    },
+    {
+      "kind": 64,
+      "name": "Bayonetta",
+      "filename": "fighter-40.png",
+      "source": "https://www.ssbwiki.com/File:BayonettaHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/6/6c/BayonettaHeadSSBU.png",
+      "sha256": "ffdd3131451227c305ef5e88ca478a7a9e444ebf956af3516b7f3161088dc843",
+      "bytes": 5648
+    },
+    {
+      "kind": 65,
+      "name": "Inkling",
+      "filename": "fighter-41.png",
+      "source": "https://www.ssbwiki.com/File:InklingHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/f/f1/InklingHeadSSBU.png",
+      "sha256": "986c439f7cfdf5f636fd755739b87b19273006617e5a00814b094efc7b02c14a",
+      "bytes": 4869
+    },
+    {
+      "kind": 66,
+      "name": "Ridley",
+      "filename": "fighter-42.png",
+      "source": "https://www.ssbwiki.com/File:RidleyHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/5/5b/RidleyHeadSSBU.png",
+      "sha256": "2a689fc9dba1dbadbe3186fe2be25eeb6bf850be7778f2e35830d708a32ab157",
+      "bytes": 3759
+    },
+    {
+      "kind": 67,
+      "name": "Simon",
+      "filename": "fighter-43.png",
+      "source": "https://www.ssbwiki.com/File:SimonHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/d/df/SimonHeadSSBU.png",
+      "sha256": "16837c140bad5f012f0a279b4a90c0f5261fb08e03dee368abaf42d02766d290",
+      "bytes": 5122
+    },
+    {
+      "kind": 68,
+      "name": "Richter",
+      "filename": "fighter-44.png",
+      "source": "https://www.ssbwiki.com/File:RichterHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/0/07/RichterHeadSSBU.png",
+      "sha256": "175f6bd88053f22893bba327afa937fda4231f4f26fe6eb0bd30098971cbcfcf",
+      "bytes": 4925
+    },
+    {
+      "kind": 69,
+      "name": "King K. Rool",
+      "filename": "fighter-45.png",
+      "source": "https://www.ssbwiki.com/File:KingKRoolHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/d/de/KingKRoolHeadSSBU.png",
+      "sha256": "598089d3d1f8bf1f42f016e93f2ad758594ab977d1438ff114d68e9eed5f7300",
+      "bytes": 3733
+    },
+    {
+      "kind": 70,
+      "name": "Isabelle",
+      "filename": "fighter-46.png",
+      "source": "https://www.ssbwiki.com/File:IsabelleHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/2/2f/IsabelleHeadSSBU.png",
+      "sha256": "72c3c9057e4d0e0389400e3bfe901e6feddba9048cb9f52beef13885667d32d2",
+      "bytes": 4458
+    },
+    {
+      "kind": 71,
+      "name": "Incineroar",
+      "filename": "fighter-47.png",
+      "source": "https://www.ssbwiki.com/File:IncineroarHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/5/50/IncineroarHeadSSBU.png",
+      "sha256": "ed5e21cee7d429d14a841d642bebafac2eb50af9475b8705df188348f32ef41b",
+      "bytes": 4592
+    },
+    {
+      "kind": 81,
+      "name": "Piranha Plant",
+      "filename": "fighter-51.png",
+      "source": "https://www.ssbwiki.com/File:PiranhaPlantHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/3/38/PiranhaPlantHeadSSBU.png",
+      "sha256": "a823b2e47c3373be9dcc03b9c3600b3c1daa7295a2e0e04d1d41f43a667bb2ae",
+      "bytes": 4034
+    },
+    {
+      "kind": 82,
+      "name": "Joker",
+      "filename": "fighter-52.png",
+      "source": "https://www.ssbwiki.com/File:JokerHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/2/25/JokerHeadSSBU.png",
+      "sha256": "96ed065821ca466e4b020cb7e370270aef682369148aaf7beb3d02e516390b8c",
+      "bytes": 4744
+    },
+    {
+      "kind": 83,
+      "name": "Hero",
+      "filename": "fighter-53.png",
+      "source": "https://www.ssbwiki.com/File:HeroHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/3/3d/HeroHeadSSBU.png",
+      "sha256": "56bc6665d0847622318b08753ffb56cd7c6d9c6ffd1f592df18b1fa9fa20d31a",
+      "bytes": 4994
+    },
+    {
+      "kind": 84,
+      "name": "Banjo & Kazooie",
+      "filename": "fighter-54.png",
+      "source": "https://www.ssbwiki.com/File:Banjo%26KazooieHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/6/60/Banjo%26KazooieHeadSSBU.png",
+      "sha256": "68be4d5e4fcfc09b4835bb3b4f422235fd2147cca6a9560fe96d80e5b3f86f4f",
+      "bytes": 4913
+    },
+    {
+      "kind": 85,
+      "name": "Terry",
+      "filename": "fighter-55.png",
+      "source": "https://www.ssbwiki.com/File:TerryHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/f/f9/TerryHeadSSBU.png",
+      "sha256": "6720dc44568ba934e513db2783db1ec5ab9c30941f41c2b1e703c232b4d676bb",
+      "bytes": 4970
+    },
+    {
+      "kind": 86,
+      "name": "Byleth",
+      "filename": "fighter-56.png",
+      "source": "https://www.ssbwiki.com/File:BylethHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/a/a2/BylethHeadSSBU.png",
+      "sha256": "eb7d3c97d3d48859123613059f2745eace20fe60b8f29f35ac21a8976abc2e55",
+      "bytes": 4621
+    },
+    {
+      "kind": 87,
+      "name": "Min Min",
+      "filename": "fighter-57.png",
+      "source": "https://www.ssbwiki.com/File:MinMinHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/d/de/MinMinHeadSSBU.png",
+      "sha256": "54e7e2854c26c6f37afc4ff4a9cd9ae10c2de73c08b1bc1d688a41c5f6aa6573",
+      "bytes": 4637
+    },
+    {
+      "kind": 88,
+      "name": "Steve",
+      "filename": "fighter-58.png",
+      "source": "https://www.ssbwiki.com/File:SteveHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/1/11/SteveHeadSSBU.png",
+      "sha256": "7d0eabfbf3480aed3a4323fcc70c1231d349c12c20e4ebe24ad685f5edc55a2f",
+      "bytes": 2863
+    },
+    {
+      "kind": 89,
+      "name": "Sephiroth",
+      "filename": "fighter-59.png",
+      "source": "https://www.ssbwiki.com/File:SephirothHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/5/5e/SephirothHeadSSBU.png",
+      "sha256": "c32914b935b11e22525bebb9d433449a2e2a0f3a46306ba181684d5ef56f8f47",
+      "bytes": 4912
+    },
+    {
+      "kind": 92,
+      "name": "Kazuya",
+      "filename": "fighter-5c.png",
+      "source": "https://www.ssbwiki.com/File:KazuyaHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/6/67/KazuyaHeadSSBU.png",
+      "sha256": "47f91938dcd9beaaafc59645d75b3bbdff4843347d35b3271dd40ed156cef407",
+      "bytes": 3789
+    },
+    {
+      "kind": 93,
+      "name": "Sora",
+      "filename": "fighter-5d.png",
+      "source": "https://www.ssbwiki.com/File:SoraHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/0/0e/SoraHeadSSBU.png",
+      "sha256": "6b11524b7e99747a52a44816f8ef1e72498bb06d7a18294c17af6da375c8a5ba",
+      "bytes": 5016
+    },
+    {
+      "kind": 90,
+      "name": "Pyra",
+      "filename": "fighter-5a.png",
+      "source": "https://www.ssbwiki.com/File:PyraHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/7/79/PyraHeadSSBU.png",
+      "sha256": "e500f39ec1f724564df84db272e020e1b22a2ddce9befd7d0b68f46e1c432c9f",
+      "bytes": 5308
+    },
+    {
+      "kind": 91,
+      "name": "Mythra",
+      "filename": "fighter-5b.png",
+      "source": "https://www.ssbwiki.com/File:MythraHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/3/32/MythraHeadSSBU.png",
+      "sha256": "304f8fff0e59060cd584b59fe6434df9858d98cff7a17d625cd950cd649363e9",
+      "bytes": 4289
+    },
+    {
+      "kind": 36,
+      "name": "Squirtle",
+      "filename": "fighter-24.png",
+      "source": "https://www.ssbwiki.com/File:SquirtleHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/4/40/SquirtleHeadSSBU.png",
+      "sha256": "7e0f89bd110fbe5039eff13afc449c4007f667ee317b3535f6c7bb4283a691ca",
+      "bytes": 3834
+    },
+    {
+      "kind": 37,
+      "name": "Ivysaur",
+      "filename": "fighter-25.png",
+      "source": "https://www.ssbwiki.com/File:IvysaurHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/b/b4/IvysaurHeadSSBU.png",
+      "sha256": "ca875c57261cc6ef129314a53069e07bb9e03798db01bda7f56f9d52016f6cd5",
+      "bytes": 4753
+    },
+    {
+      "kind": 38,
+      "name": "Charizard",
+      "filename": "fighter-26.png",
+      "source": "https://www.ssbwiki.com/File:CharizardHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/c/c9/CharizardHeadSSBU.png",
+      "sha256": "d9add0d0e0b6f61b999fc74b5b4231ec0889893df48cc53b9dd6efff15ab3dee",
+      "bytes": 4001
+    },
+    {
+      "kind": 75,
+      "name": "Ice Climbers",
+      "filename": "fighter-4b.png",
+      "source": "https://www.ssbwiki.com/File:IceClimbersHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/8/8b/IceClimbersHeadSSBU.png",
+      "sha256": "272dfb5d21a4fd34ada62530ae53dfd82af98ab9388a23a5b2b1d26d96c20f99",
+      "bytes": 3753
+    },
+    {
+      "kind": 72,
+      "name": "Mii Brawler",
+      "filename": "fighter-48.png",
+      "source": "https://www.ssbwiki.com/File:MiiBrawlerHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/d/d8/MiiBrawlerHeadSSBU.png",
+      "sha256": "5279e4b0845470a1be03b6faa5e9a5989505a37e9a60eebc5e15ddc86426985d",
+      "bytes": 3874
+    },
+    {
+      "kind": 73,
+      "name": "Mii Swordfighter",
+      "filename": "fighter-49.png",
+      "source": "https://www.ssbwiki.com/File:MiiSwordfighterHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/e/ef/MiiSwordfighterHeadSSBU.png",
+      "sha256": "3ef5ce5b3bb5269ad987cc5ad7dae8d8120996a1565d2a17e43213e201daffe0",
+      "bytes": 3968
+    },
+    {
+      "kind": 74,
+      "name": "Mii Gunner",
+      "filename": "fighter-4a.png",
+      "source": "https://www.ssbwiki.com/File:MiiGunnerHeadSSBU.png",
+      "url": "https://ssb.wiki.gallery/images/3/3d/MiiGunnerHeadSSBU.png",
+      "sha256": "8c6db53ba4cf9ee580e7e3840bd3797fee68d3cfab3a9cbcde93db4378e2bcb3",
+      "bytes": 3908
+    }
+  ]
+}

@@ -17,6 +17,7 @@ mod damage;
 mod clip_editor;
 mod display;
 mod input_log;
+mod roster_grid;
 mod layout_registry;
 pub mod menu;
 pub(crate) mod native_menu;

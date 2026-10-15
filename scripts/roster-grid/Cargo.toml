@@ -1,0 +1,18 @@
+[package]
+name = "roster-grid-builder"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+nx-layout-toolbox = { path = "../../../../eden-gnw/toolbox-cli", default-features = false }
+serde_json = "1"
+
+[profile.dev]
+debug = 0
+
+[[bin]]
+name = "roster-grid-builder"
+path = "main.rs"

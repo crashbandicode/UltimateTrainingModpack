@@ -91,6 +91,111 @@ struct Row {
 
 // Cache only values we wrote, never game-owned pane/material/text pointers. Registration
 // invalidates even if the allocator reuses the same root address after a scene reload.
+// A direct-child index lives on the `draw` stack and is dropped before `draw` returns.
+const FADE_FRAMES: u32 = 200;
+const CHILD_WALK_LIMIT: usize = 128;
+
+struct RowDelta {
+    position_changed: bool,
+    fade_changed: bool,
+    update_content: bool,
+    icons_changed: bool,
+    frames_changed: bool,
+    status_changed: bool,
+}
+
+impl RowDelta {
+    fn any(&self) -> bool {
+        self.position_changed
+            || self.fade_changed
+            || self.icons_changed
+            || self.frames_changed
+            || self.status_changed
+    }
+}
+
+fn row_delta(log_idx: usize, log: &InputLog, settings: DrawSettings, row: &Row) -> RowDelta {
+    let DrawSettings {
+        mode,
+        status,
+        refresh_all,
+    } = settings;
+    let position_changed = row.position != Some(log_idx);
+    let fade_changed =
+        row.position.is_none() || row.ttl.min(FADE_FRAMES) != log.ttl.min(FADE_FRAMES);
+    let previous = row.head;
+    let update_content = log_idx == 0 || (refresh_all && log.ttl > 0);
+    let icons_changed = update_content
+        && previous.is_none_or(|head| head.mode != mode || head.log.is_different(log));
+    let frames_changed =
+        update_content && previous.is_none_or(|head| head.log.frames != log.frames);
+    let status_changed = update_content
+        && previous.is_none_or(|head| {
+            head.status != status
+                || (status
+                    && (head.log.status != log.status || head.log.fighter_kind != log.fighter_kind))
+        });
+    RowDelta {
+        position_changed,
+        fade_changed,
+        update_content,
+        icons_changed,
+        frames_changed,
+        status_changed,
+    }
+}
+
+fn pane_name_is(pane: &Pane, expected: &str) -> bool {
+    let bytes = expected.as_bytes();
+    if bytes.len() >= pane.name.len() {
+        return false;
+    }
+    for (index, byte) in bytes.iter().enumerate() {
+        if pane.name[index] != *byte {
+            return false;
+        }
+    }
+    pane.name[bytes.len()] == 0
+}
+
+/// `Pane::children_list` is the sentinel. Each direct child's `link` is the list node.
+/// Pinned nnsdk `d23f131` has these fields and no child iterator. Pointers do not escape.
+unsafe fn direct_row_index(logs_pane: &Pane, needed: &[bool; NUM_LOGS]) -> [*mut Pane; NUM_LOGS] {
+    let mut rows = [std::ptr::null_mut(); NUM_LOGS];
+    let mut pending = needed.iter().filter(|flag| **flag).count();
+    if pending == 0 {
+        return rows;
+    }
+    #[cfg(any(bench_baseline, bench_candidate))]
+    skyline::note_direct_lookup();
+    let sentinel = std::ptr::addr_of!(logs_pane.children_list);
+    let mut node = (*sentinel).next;
+    let mut seen = 0usize;
+    while !node.is_null() && !std::ptr::eq(node, sentinel) && pending != 0 {
+        seen += 1;
+        if seen > CHILD_WALK_LIMIT {
+            break;
+        }
+        #[cfg(any(bench_baseline, bench_candidate))]
+        skyline::note_direct_visit();
+        let child = node
+            .cast::<u8>()
+            .sub(std::mem::offset_of!(Pane, link))
+            .cast::<Pane>();
+        if let Some(index) = ROW_NAMES
+            .iter()
+            .position(|name| pane_name_is(&*child, name))
+        {
+            if needed[index] && rows[index].is_null() {
+                rows[index] = child;
+                pending -= 1;
+            }
+        }
+        node = (*node).next;
+    }
+    rows
+}
+
 struct RenderCache {
     root: usize,
     rows: [Row; NUM_LOGS],
@@ -158,38 +263,26 @@ fn get_input_icons(log: &InputLog) -> VecDeque<Icon> {
 }
 
 unsafe fn draw_log(
-    logs_pane: &Pane,
+    log_pane: &mut Pane,
     log_idx: usize,
-    draw_log_idx: usize,
     log: &InputLog,
     settings: DrawSettings,
     row: &mut Row,
 ) {
-    let DrawSettings {
-        mode,
-        status,
-        refresh_all,
-    } = settings;
-    const FADE_FRAMES: u32 = 200;
-    let position_changed = row.position != Some(log_idx);
-    let fade_changed =
-        row.position.is_none() || row.ttl.min(FADE_FRAMES) != log.ttl.min(FADE_FRAMES);
-    let previous = row.head;
-    let update_content = log_idx == 0 || (refresh_all && log.ttl > 0);
-    let icons_changed = update_content
-        && previous.is_none_or(|head| head.mode != mode || head.log.is_different(log));
-    let frames_changed =
-        update_content && previous.is_none_or(|head| head.log.frames != log.frames);
-    let status_changed = update_content
-        && previous.is_none_or(|head| {
-            head.status != status
-                || (status
-                    && (head.log.status != log.status || head.log.fighter_kind != log.fighter_kind))
-        });
-    if !position_changed && !fade_changed && !icons_changed && !frames_changed && !status_changed {
+    let DrawSettings { mode, status, .. } = settings;
+    let delta = row_delta(log_idx, log, settings, row);
+    if !delta.any() {
         return;
     }
-    let log_pane = logs_pane.find_pane_by_name_recursive_expect(ROW_NAMES[draw_log_idx]);
+    let RowDelta {
+        fade_changed,
+        update_content,
+        icons_changed,
+        frames_changed,
+        status_changed,
+        ..
+    } = delta;
+    let previous = row.head;
 
     // Handle visibility and alpha
     if row.position.is_none() {
@@ -310,13 +403,26 @@ pub unsafe fn draw(root_pane: &Pane) {
         status,
         refresh_all: cache.refresh_all,
     };
+    let mut needed = [false; NUM_LOGS];
+    for (log_idx, log) in logs.iter().enumerate() {
+        let draw_log_idx = (log_idx + (NUM_LOGS - base)) % NUM_LOGS;
+        needed[draw_log_idx] = row_delta(log_idx, log, settings, &cache.rows[draw_log_idx]).any();
+    }
+    // Same-call index only. Not stored in `RenderCache` and not reused on the next draw.
+    let row_ptrs = direct_row_index(logs_pane, &needed);
 
     for (log_idx, log) in logs.iter().enumerate() {
         let draw_log_idx = (log_idx + (NUM_LOGS - base)) % NUM_LOGS;
+        if !needed[draw_log_idx] {
+            continue;
+        }
+        let log_pane = row_ptrs[draw_log_idx];
+        if log_pane.is_null() {
+            panic!("Could not find pane {}", ROW_NAMES[draw_log_idx]);
+        }
         draw_log(
-            logs_pane,
+            &mut *log_pane,
             log_idx,
-            draw_log_idx,
             log,
             settings,
             &mut cache.rows[draw_log_idx],

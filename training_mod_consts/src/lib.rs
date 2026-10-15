@@ -5,6 +5,7 @@ extern crate num_derive;
 use serde::{Deserialize, Serialize};
 
 pub mod trio;
+pub mod character_forms;
 pub use trio::*;
 pub mod menu_json;
 pub mod ordered_roster;
@@ -908,7 +909,7 @@ pub unsafe fn create_app<'a>() -> App<'a> {
     };
     overall_menu.tabs.push(misc_tab);
 
-    let player_tab_submenus = vec![OnOff::to_submenu(
+    let character_tab_submenus = vec![OnOff::to_submenu(
         "Player Swapping",
         "trio_practice",
         "Enable changing your character during practice. Choose a character or cycle through your selected character order.",
@@ -918,38 +919,30 @@ pub unsafe fn create_app<'a>() -> App<'a> {
         "Player Character",
         "player_character",
         "Apply after closing the menu, without leaving practice.",
+    ), TrioFighter::to_submenu(
+        "CPU Character",
+        "cpu_character",
+        "Apply after closing the menu, without leaving practice.",
     ), OrderedFighterRoster::to_submenu(
-        "Cycle Characters",
+        "Character Cycles",
         "player_roster",
-        "Select characters in the order you want to cycle; numbers show the order.\nAll cycles every menu character in menu order. Keep at least one character selected.",
+        "Choose both cycles on the portrait grid: red player order, blue CPU order.\nSwitch roles with Y; X changes the form at a shared fighter slot.",
     )];
     overall_menu.tabs.push(Tab {
         id: "player_characters",
-        title: "Player Characters",
+        title: "Characters",
         submenus: StatefulTable::with_items(
             NX_SUBMENU_ROWS,
             NX_SUBMENU_COLUMNS,
-            player_tab_submenus,
+            character_tab_submenus,
         ),
     });
 
-    let cpu_tab_submenus = vec![
-        TrioFighter::to_submenu(
-            "CPU Character",
-            "cpu_character",
-            "Apply after closing the menu, without leaving practice.",
-        ),
-        OrderedFighterRoster::to_submenu(
-            "Cycle Characters",
-            "cpu_roster",
-            "Select characters in the order you want to cycle; numbers show the order.\nAll cycles every menu character in menu order. Keep at least one character selected.",
-        ),
-    ];
-    overall_menu.tabs.push(Tab {
-        id: "cpu_characters",
-        title: "CPU Characters",
-        submenus: StatefulTable::with_items(NX_SUBMENU_ROWS, NX_SUBMENU_COLUMNS, cpu_tab_submenus),
-    });
+    // The shared screen edits this same serialized setting without a second entry.
+    overall_menu.hidden_submenus.push(OrderedFighterRoster::to_submenu(
+        "CPU Cycle Characters", "cpu_roster", "CPU cycle order",
+    ));
+    overall_menu.roster_kinds = TrioFighter::available().iter().map(|fighter| fighter.kind()).collect();
 
     // Ensure that a tab is always selected
     if overall_menu.tabs.get_selected().is_none() {
@@ -958,3 +951,6 @@ pub unsafe fn create_app<'a>() -> App<'a> {
 
     overall_menu
 }
+
+#[cfg(test)]
+mod roster_menu_tests;

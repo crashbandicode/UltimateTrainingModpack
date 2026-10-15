@@ -150,7 +150,22 @@ unsafe fn handle_pokemon_decide(ctx: &mut InlineCtx) {
     let module_accessor = (*fighter).battle_object.module_accessor;
     let pokemon_value = save_states::get_state_pokemon(module_accessor);
     if pokemon_value <= 2 {
-        ctx.registers[8].set_w(pokemon_value);
+        // At this hook x9 is the native destination entry for the +591a store.
+        // A non-Squirtle starting descriptor rotates the three body slots.
+        let entry = ctx.registers[9].x() as *const u8;
+        if entry.is_null() || !(entry as usize).is_multiple_of(8) {
+            return;
+        }
+        let count = std::ptr::read_volatile(entry.add(0x14).cast::<u32>());
+        let kinds: [u32; 3] = std::array::from_fn(|index| {
+            std::ptr::read_volatile(entry.add(0x18 + index * 4).cast::<u32>())
+        });
+        let forms = training_mod_consts::character_forms::Forms::starting(kinds[0]);
+        if count == 3 && forms.count == 3 && kinds == forms.kinds {
+            if let Some(index) = forms.index_of(pokemon_value + 0x24) {
+                ctx.registers[8].set_w(u32::from(index));
+            }
+        }
     }
 }
 

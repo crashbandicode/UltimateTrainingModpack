@@ -5,22 +5,28 @@ This independent experimental fork targets Smash Ultimate 13.0.5. It uses the na
 ## Configure and swap characters
 
 1. Enter ordinary Training. Press **Minus**, or hold Plus for about half a second, to open the Modpack Menu. A short Plus press keeps the native pause menu.
-2. Open **Player Characters → Player Swapping** and enable P1 replacement.
-3. Use **Player Character** or **CPU Characters → CPU Character** for a one-time replacement.
-4. Use **Cycle Characters** in either tab to choose that role's independent ordered roster.
+2. In the development build, open **Characters → Player Swapping** and enable P1 replacement.
+3. Use **Player Character** or **CPU Character** in that same tab for a one-time replacement.
+4. Open **Character Cycles** for the shared portrait grid. **Y** switches between red player order and blue CPU order. **A** adds, **R** removes, and **ZL** selects All. **X** cycles the individual form at Pyra/Mythra and Pokémon Trainer's shared slots; **A** adds the displayed form.
 5. Close with **B** to commit. Fighters load without leaving practice; no matching first CSS choice or re-entry is needed.
 
 Defaults: **P1 G&W → Palutena → Pikachu**; **CPU Pikachu → Kirby → Bowser → Bayonetta**. Existing ordered rosters and older fixed-slot selections migrate when loaded. New saves write only ordered rosters, which release29 can also read. Earlier fixed-slot-only development builds cannot recover edited rosters from the new file; keep a backup if downgrading to those builds.
 
-Choose **All (menu order)** to cycle through the whole supported chooser catalog in displayed order. Manual selections show numbered order; deselect and reselect to move a fighter to the end. Selecting a fighter while All is active starts a custom sequence. Up/Down crosses pages. There is no eight-character limit, and at least one fighter remains selected.
+All cycles through the stable supported catalog. Manual selections show numbered order; remove and add a fighter to move it to the end. Selecting a fighter while All is active starts a custom sequence. Directional inputs move the marker across the portrait grid. There is no eight-character limit, and at least one fighter remains selected. GameCube controls use **Z** to remove and **L** for All.
 
 Default mappings are **ZL + Right** for P1 and **ZL + Left** for CPU. Configure them under **Button Config → Cycle Player Character / Cycle CPU Character**. Holding a mapping advances only once. A fighter already in the sequence advances to its successor; otherwise cycling starts at the first choice, then wraps.
 
-The chooser contains 80 supported stock fighter kinds. Pokémon Trainer, Pyra/Mythra, Ice Climbers, Miis and non-playable forms are excluded. These are plugin roster settings, not new game slots. Coverage is representative, not every character/costume/move combination.
+The development chooser contains 85 supported starting kinds, including Pyra, Mythra and all three Pokémon. Normal Down+B transformations remain available. Ice Climbers and Miis appear dimmed in their usual positions and cannot be selected. The portrait layout matches the all-unlocked save used for testing; it does not read arbitrary save layouts. These are plugin roster settings, not new game slots. Coverage is representative, not every character/costume/move combination. The [portrait asset manifest](../scripts/roster-grid/assets/sources.json) records the stock icons supplied by SmashWiki.
 
 ## Lobby Practice and presentation
 
 Enable **Misc Settings → Lobby Practice → On**, close the editor, and enter the waiting practice area. The editor appears as Lobby Practice. The waiting-enabled build uses the waiting-roster-reload feature; ordinary Training remains available without it.
+
+![The shared CPU cycle grid, then Charizard replaced by Link while waiting.](lobby-practice/waiting-room.gif)
+
+*Recorded with the development build in an emulator's local-wireless waiting
+room. The CPU swap finishes and its icon updates; the lower player card retains
+the original Sonic match selection while Player 1 practices as Pyra.*
 
 Actual matches use the original character-select choice, regardless of P1's practice replacement. The lower waiting roster card intentionally shows that match selection. CPU replacements affect the local practice dummy. Practice shortcuts and hooks are disabled in an actual match.
 

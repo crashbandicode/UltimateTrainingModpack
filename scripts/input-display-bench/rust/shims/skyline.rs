@@ -2,8 +2,9 @@
 //!
 //! `find_pane_by_name_recursive` is a depth-first search that checks the pane
 //! itself, then each child in order, and stops at the first match. That is the
-//! shape of the game's recursive name lookup. Visit and call counters measure
-//! that search. This is not the Switch layout library and it is not FPS.
+//! shape of the game's recursive name lookup. The direct-child walk uses the
+//! same child order through `children_list`/`link`, and each examined child
+//! counts as one visit. This is not the Switch layout library and it is not FPS.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -89,8 +90,19 @@ pub mod nn {
             }
         }
 
+        /// Same two-pointer node as pinned nnsdk `PaneNode` (`d23f131`).
+        #[repr(C)]
+        #[derive(Copy, Clone)]
+        pub struct PaneNode {
+            pub prev: *mut PaneNode,
+            pub next: *mut PaneNode,
+        }
+
         #[repr(C)]
         pub struct Pane {
+            pub link: PaneNode,
+            pub children_list: PaneNode,
+            pub name: [u8; 25],
             pub pos_y: f32,
             pub flags: u8,
             pub alpha: u8,
@@ -415,6 +427,7 @@ pub mod nn {
             unsafe {
                 *std::ptr::addr_of_mut!(FOREST) = Some(tree);
             }
+            bind_intrusive_lists();
         }
 
         fn assign_ids(
@@ -450,14 +463,80 @@ pub mod nn {
             meta[parent as usize].child_len = kids.len() as u16;
         }
 
+        fn empty_node() -> PaneNode {
+            PaneNode {
+                prev: std::ptr::null_mut(),
+                next: std::ptr::null_mut(),
+            }
+        }
+
         fn initial_pane(id: u32, visible: bool) -> Pane {
             Pane {
+                link: empty_node(),
+                children_list: empty_node(),
+                name: [0; 25],
                 pos_y: 0.0,
                 flags: if visible { 1 << PaneFlag::Visible as u8 } else { 0 },
                 alpha: 255,
                 global_alpha: 255,
                 id,
             }
+        }
+
+        fn write_name(pane: &mut Pane, name: &str) {
+            pane.name = [0; 25];
+            let bytes = name.as_bytes();
+            assert!(bytes.len() < pane.name.len(), "pane name does not fit");
+            for (index, byte) in bytes.iter().enumerate() {
+                pane.name[index] = *byte;
+            }
+        }
+
+        /// Install sibling links only after the forest vecs are in their final address.
+        fn bind_intrusive_lists() {
+            unsafe {
+                let count = (*forest_ptr()).meta.len();
+                let mut child_lists = Vec::with_capacity(count);
+                for id in 0..count {
+                    let tree = &*forest_ptr();
+                    let start = tree.meta[id].child_start as usize;
+                    let len = tree.meta[id].child_len as usize;
+                    child_lists.push(tree.children[start..start + len].to_vec());
+                }
+                for id in 0..count {
+                    let name = (&(*forest_ptr()).meta)[id].name;
+                    let pane = pane_ptr(id as u32);
+                    write_name(&mut *pane, name);
+                    let sentinel = std::ptr::addr_of_mut!((*pane).children_list);
+                    (*sentinel).next = sentinel;
+                    (*sentinel).prev = sentinel;
+                }
+                for (id, kids) in child_lists.into_iter().enumerate() {
+                    let parent = pane_ptr(id as u32);
+                    let sentinel = std::ptr::addr_of_mut!((*parent).children_list);
+                    let mut prev = sentinel;
+                    for child_id in kids {
+                        let child = pane_ptr(child_id);
+                        let node = std::ptr::addr_of_mut!((*child).link);
+                        (*prev).next = node;
+                        (*node).prev = prev;
+                        prev = node;
+                    }
+                    (*prev).next = sentinel;
+                    (*sentinel).prev = prev;
+                }
+            }
+        }
+
+        fn reset_visual(pane: &mut Pane, visible: bool) {
+            pane.pos_y = 0.0;
+            pane.flags = if visible {
+                1 << PaneFlag::Visible as u8
+            } else {
+                0
+            };
+            pane.alpha = 255;
+            pane.global_alpha = 255;
         }
 
         pub fn reset_panes() {
@@ -468,15 +547,13 @@ pub mod nn {
                     let id = tree.plain[index].id;
                     let name = tree.meta[id as usize].name;
                     let visible = id == 0 || name == "TrModInputLog" || name.starts_with("Input");
-                    tree.plain[index] = initial_pane(id, visible);
+                    reset_visual(&mut tree.plain[index], visible);
                 }
                 for picture in &mut tree.picture {
-                    let id = picture.pane.id;
-                    picture.pane = initial_pane(id, true);
+                    reset_visual(&mut picture.pane, true);
                 }
                 for text in &mut tree.text {
-                    let id = text.pane.id;
-                    text.pane = initial_pane(id, true);
+                    reset_visual(&mut text.pane, true);
                     text.len = 0;
                 }
                 for material in &mut tree.materials {
@@ -601,4 +678,12 @@ pub fn counters() -> Counters {
 
 pub fn note_fade() {
     FADE_WRITES.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn note_direct_lookup() {
+    LOOKUP_CALLS.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn note_direct_visit() {
+    LOOKUP_VISITS.fetch_add(1, Ordering::Relaxed);
 }

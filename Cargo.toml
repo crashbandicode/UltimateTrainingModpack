@@ -78,3 +78,6 @@ named-input-trace = []
 # Runtime capture toggle on the Deluxe Plugins page. Without a Deluxe host the
 # registration reports HostMissing and revision 27 behaviour is unchanged.
 deluxe-sdk = ["dep:deluxe-plugin-sdk"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(bench_baseline)', 'cfg(bench_candidate)'] }

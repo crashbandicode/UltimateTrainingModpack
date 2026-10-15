@@ -9,6 +9,7 @@ use training_mod_consts::{OnOff, TrainingModpackMenu, TrioFighter, MENU};
 use training_mod_sync::{lock_write, read as setting};
 
 use crate::character_memory::WaitingSession;
+use training_mod_consts::character_forms::{EntryState, Forms};
 use crate::common::{
     button_config, game_mode,
     input::{Buttons, MappedInputs},
@@ -347,29 +348,37 @@ unsafe fn read<T: Copy>(entry: *const u8, offset: usize) -> T {
 }
 
 unsafe fn active_body(entry: *const u8, owner: u32, kind: u32) -> bool {
-    if !aligned(entry)
-        || read::<u32>(entry, 0xe0) != owner
-        || read::<u32>(entry, 0x14) != 1
-        || read::<u32>(entry, 0x28) != 1
-        || read::<u32>(entry, 0x18) != kind
-        || read::<u32>(entry, 0x1c) != u32::MAX
-        || read::<u32>(entry, 0x20) != u32::MAX
-        || read::<u64>(entry, 0x4150) != 1
-        || read::<u8>(entry, 0x5918) != 0
-        || read::<u8>(entry, 0x5920) != 6
-        || read::<u8>(entry, 0x591c) != 14
-        || read::<u8>(entry, 0x5935) != 0
-        || read::<u8>(entry, 0x5934) != 0
-    {
-        return false;
+    ready_kind(entry, owner) == Some(kind)
+}
+
+unsafe fn ready_kind(entry: *const u8, owner: u32) -> Option<u32> {
+    if !aligned(entry) || read::<u32>(entry, 0xe0) != owner {
+        return None;
     }
-    let body = read::<*const u8>(entry, 0x4160);
-    aligned(body)
-        && read::<usize>(body, 0) == BASE.load(Ordering::Acquire) + 0x4f80210
-        && read::<u32>(body, 0xc) == kind
-        && read::<u64>(body, 0x10) == u64::from(owner)
-        && read::<u8>(body, 0x3a) == 4
-        && aligned(read::<*const u8>(body, 0x20))
+    let state = EntryState {
+        count: read(entry, 0x14),
+        kinds: [read(entry, 0x18), read(entry, 0x1c), read(entry, 0x20)],
+        actor_count: read(entry, 0x28), installed: read(entry, 0x4150),
+        index: read(entry, 0x5918), previous_or_next: read(entry, 0x5919),
+        pending: read(entry, 0x591a), flags: read(entry, 0x591f),
+        outer: read(entry, 0x5920), loader: read(entry, 0x591c),
+        changing: read(entry, 0x5934), guard: read(entry, 0x5935),
+    };
+    TrioFighter::from_kind(state.kinds[0])?;
+    let (forms, live_kind) = state.ready()?;
+    for index in 0..forms.count as usize {
+        let body = read::<*const u8>(entry, 0x4160 + index * 8);
+        if !aligned(body)
+            || read::<usize>(body, 0) != BASE.load(Ordering::Acquire) + 0x4f80210
+            || read::<u32>(body, 0xc) != forms.kinds[index]
+            || read::<u64>(body, 0x10) != u64::from(owner)
+            || read::<u8>(body, 0x3a) != if index == state.index as usize { 4 } else { 3 }
+            || !aligned(read::<*const u8>(body, 0x20))
+        {
+            return None;
+        }
+    }
+    Some(live_kind)
 }
 
 // This current native callback owns entry lifetime. Cached numeric identities
@@ -410,6 +419,8 @@ unsafe fn service(ctx: &mut InlineCtx) {
         if !active.departed
             && scope(role) == Some(active.scope)
             && active_body(entry, owner, active.target.kind())
+            && read::<u32>(entry, 0x18) == active.target.kind()
+            && read::<u8>(entry, 0x5918) == 0
         {
             let mut state = state_for(role).lock().unwrap();
             if state.epoch != active.epoch {
@@ -466,7 +477,7 @@ unsafe fn service(ctx: &mut InlineCtx) {
         if let Some(current_scope) =
             scope(role).filter(|s| s.owner == owner && !menu::captures_input())
         {
-            let kind = read::<u32>(entry, 0x18);
+            let Some(kind) = ready_kind(entry, owner) else { return; };
             if let Some(fighter) = TrioFighter::from_kind(kind) {
                 let mut state = state_for(role).lock().unwrap();
                 // A new same-owner preview can coexist with a departing entry
@@ -478,12 +489,12 @@ unsafe fn service(ctx: &mut InlineCtx) {
                 {
                     return;
                 }
-                if !active_body(entry, owner, kind) {
-                    return;
-                }
                 let newly_observed = state.observed != Some((entry as usize, kind));
                 if newly_observed {
                     state.observed = Some((entry as usize, kind));
+                    if state.loaded.is_some_and(|(identity, loaded_owner, _)| identity == entry as usize && loaded_owner == owner) {
+                        state.loaded = Some((entry as usize, owner, kind));
+                    }
                     trace!(
                         "[CharacterRoster] observed owner={} entry=0x{:x} kind=0x{:x} epoch={}",
                         owner,
@@ -535,15 +546,13 @@ unsafe fn service(ctx: &mut InlineCtx) {
         return;
     }
     state.pending = None;
-    let current = read::<u32>(entry, 0x18);
+    let current = ready_kind(entry, owner);
     if menu::captures_input()
         || lobby::native_ui_busy()
         || button_config::has_pending_request()
         || training::save_states::is_loading()
         || training::recording_or_playback()
-        || !active_body(entry, owner, current)
-        || read::<u8>(entry, 0x591a) != 0xff
-        || read::<u8>(entry, 0x591f) != 0
+        || current.is_none()
     {
         drop(state);
         if !request.restoring {
@@ -554,6 +563,7 @@ unsafe fn service(ctx: &mut InlineCtx) {
         }
         return;
     }
+    let current = current.unwrap();
     let m = setting(&MENU);
     let choices = roster(&m, role);
     let count = choices.len();
@@ -562,8 +572,9 @@ unsafe fn service(ctx: &mut InlineCtx) {
         Selection::Cycle => {
             let next = state
                 .cursor
-                .filter(|i| *i < count && choices[*i].kind() == current)
+                .filter(|i| *i < count && Forms::starting(choices[*i].kind()).same_group(current))
                 .or_else(|| choices[..count].iter().position(|f| f.kind() == current))
+                .or_else(|| choices[..count].iter().position(|f| Forms::starting(f.kind()).same_group(current)))
                 .map_or(0, |i| (i + 1) % count);
             (choices[next], Some(next))
         }
@@ -613,13 +624,16 @@ unsafe fn service(ctx: &mut InlineCtx) {
     state.active = Some(active);
     drop(state);
     // 653240 synchronously copies this descriptor. Preserve all native role,
-    // controller/team/costume options; change only the supported single kind.
+    // controller/team/costume options; replace the complete canonical group.
     let mut descriptor = [0u64; 14];
     std::ptr::copy_nonoverlapping(entry, descriptor.as_mut_ptr().cast::<u8>(), 0x70);
-    std::ptr::write(
-        descriptor.as_mut_ptr().cast::<u8>().add(0x18).cast::<u32>(),
-        target.kind(),
-    );
+    let raw = descriptor.as_mut_ptr().cast::<u8>();
+    let forms = Forms::starting(target.kind());
+    std::ptr::write(raw.add(0x14).cast::<u32>(), forms.count);
+    for (index, kind) in forms.kinds.iter().copied().enumerate() {
+        std::ptr::write(raw.add(0x18 + index * 4).cast::<u32>(), kind);
+    }
+    std::ptr::write(raw.add(0x43), 0); // Requested starting form is kinds[0].
     training::clear_session_state();
     trace!("[CharacterRoster] install owner={} entry=0x{:x} from=0x{:x} to=0x{:x} slot={:?} epoch={} mode=0x{:x}",
         owner, entry as usize, current, target.kind(), slot.map(|i| i+1), active.epoch, active.scope.mode);
@@ -687,7 +701,7 @@ pub unsafe fn on_destroy(entry: *const u8) {
     }
 }
 
-/// Native reset already owns the HUD lookup. Admit our fresh, single fighter body
+/// Native reset already owns the HUD lookup. Admit our fresh, active fighter body
 /// into its existing presentation helper; never retain a HUD pane reference.
 pub unsafe fn allow_portrait(ctx: &mut InlineCtx, entry_id: u64, entry: *const u8) {
     if busy() || entry_id > 1 {
