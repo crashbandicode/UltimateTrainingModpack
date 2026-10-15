@@ -10,7 +10,7 @@ Change either fighter during Training without going back to the character select
 
 [Hot-swap guide](docs/fighter-hotswap.md), including a GIF recorded in Training. Waiting-room behavior is in [Lobby Practice](docs/lobby-practice.md).
 
-![Player 1 and the CPU after a Training hot-swap.](docs/fighter-hotswap/still.png)
+![Player 1 and the CPU changing fighters during Training.](docs/fighter-hotswap/hotswap.gif)
 
 ### Recording and macro import
 
@@ -18,7 +18,7 @@ Turn on replay capture, save a match with **Save Replay**, then open its capture
 
 [Illustrated macro guide](docs/named-macros/README.md)
 
-![Replay Captures in Training, with a saved match ready to crop.](docs/named-macros/images/replay-list.png)
+![The Training CPU playing the opponent's captured P2 Hero inputs.](docs/named-macros/images/playback-p2.gif)
 
 ### Lobby practice
 
@@ -26,7 +26,7 @@ The modpack menu and its practice tools work in the waiting room, not only in Tr
 
 [Lobby practice](docs/lobby-practice.md)
 
-![Lobby Practice menu in a local-wireless waiting room, with the CPU swapped to Pikachu.](docs/lobby-practice/waiting-room.png)
+![Lobby Practice menu changing the CPU from Sonic to King Dedede in a local-wireless waiting room.](docs/lobby-practice/waiting-room.gif)
 
 *Captured in an emulator's local-wireless waiting room.*
 
