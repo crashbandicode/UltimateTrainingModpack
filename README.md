@@ -14,18 +14,23 @@ Change either fighter during Training without going back to the character select
 
 ### Recording and macro import
 
-Save a match, then open it in Training, crop the frames you want, and play that window on the CPU from a saved setup. The crop moves one frame at a time and speeds up the longer Left or Right is held. A saved replay stays selectable after the game restarts when capture is turned on.
+Turn on replay capture, save a match with **Save Replay**, then open its captured inputs in Training. Crop the frames you want and play that window on the CPU from a saved setup. The crop moves one frame at a time and speeds up the longer Left or Right is held. Saved captures stay selectable after a restart.
 
 [Illustrated macro guide](docs/named-macros/README.md)
 
-![A saved match listed in Training as a replay that can be cropped into a macro.](docs/named-macros/images/16-persistent-capture.png)
+![Replay Captures in Training, with a saved match ready to crop.](docs/named-macros/images/replay-list.png)
 
-> **Named CPU macros — screenshot walkthrough**
->
-> [Open the illustrated guide](docs/named-macros/README.md) for saved-replay
-> extraction, exact frame windows, the named library, and relative placement.
-> The guide shows the local development build through revision 27 (October 12, 2026).
-> This branch contains both the documentation and the development implementation; performance qualification is still in progress.
+### Lobby practice
+
+The modpack menu and its practice tools work in the waiting room, not only in Training. Turn that on under **Misc Settings → Lobby Practice**. A practice replacement stays in the waiting room. The match itself still uses the character chosen on the select screen.
+
+[Lobby practice](docs/lobby-practice.md)
+
+![Lobby Practice menu in a local-wireless waiting room, with the CPU swapped to Pikachu.](docs/lobby-practice/waiting-room.png)
+
+*Captured in an emulator's local-wireless waiting room.*
+
+---
 
 <img align="right" src="./photos/character_item.gif">
 <img align="right" width="620" src="./photos/mash_trigger_tumble.gif">
