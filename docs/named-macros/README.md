@@ -2,7 +2,7 @@
 
 Save a match, open it in Training, choose a captured player, crop the part you want, and play those inputs on the CPU. Choose your opponent to practice against their inputs.
 
-Before the match, turn on capture in `sd:/ultimate/TrainingModpack/replay_capture.ini`:
+Before starting Smash, turn on capture in `sd:/ultimate/TrainingModpack/replay_capture.ini`:
 
 ```ini
 [capture]

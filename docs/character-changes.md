@@ -146,8 +146,9 @@ editor's Save keeps a new Mii.
 ### Opponent Miis from your matches
 
 With replay capture on, saving a replay on the results screen also stores the
-fighters' Mii data with the capture. When you choose that opponent's capture in
-Training, the CPU loads that exact Mii, with its look and moves.
+fighters' Mii data. Entering Training in the same game session imports it
+automatically; watching the replay is unnecessary. The [short walkthrough](mii-replay-discovery/README.md)
+shows a new opponent and an already-owned Mii.
 
 - If an identical Mii is already in your Smash Mii list, that one is used.
 - Otherwise it is added once to the modpack's own library
@@ -155,6 +156,10 @@ Training, the CPU loads that exact Mii, with its look and moves.
   **Replay Brawler**. It then appears beside your saved Miis in the modpack
   lists, including after a restart. Choosing the same capture again adds no copy.
 - Discovered opponents are never added to Smash's own Mii list.
+
+If the Mii does not appear, selecting its track in **Input Recording
+→ Replay Window** retries from the saved capture. Choosing that track also loads
+the exact Mii on the Training CPU for input playback.
 
 ### Known limit
 

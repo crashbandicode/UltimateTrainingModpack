@@ -54,7 +54,7 @@ Give any Player 1 fighter a character item and keep it in a save state, includin
 
 ### Saved Miis and the native editor
 
-Choose saved Miis for either role, create a new fighter in Smash's own editor, or practice against Miis discovered in saved replay captures. [Mii walkthrough.](docs/mii-fighters.md)
+Choose saved Miis for either role or create a new fighter in Smash's own editor. With replay capture on, **Save Replay** also keeps an unfamiliar opponent's Mii for Training—[watch discovery and duplicate matching](docs/mii-replay-discovery/README.md), or follow the [Mii selection guide](docs/mii-fighters.md).
 
 ![Choosing a saved Mii Brawler and using its selected neutral special in Training.](docs/feature-walkthroughs/mii-selection.gif)
 

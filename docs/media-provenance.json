@@ -243,6 +243,96 @@
       ],
       "timing": "Timestamp-derived holds; no time compression; GIF rounding/final hold within 0.2s",
       "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/docs136/MEDIA-REVIEW.json"
+    },
+    {
+      "path": "docs/mii-replay-discovery/mii-discovery-new.gif",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden, real private LAN Online match followed by ordinary Training; no Vault playback",
+      "nro_sha256": "e4df2a5f778896c1ec846f549f6098bee698fbc9a44febea8cc4bd418b269507",
+      "source_content_sha256": "98e482e00be9c4aa9ee0776207a885a0e275ad5acaab27e6a54498262bbdf7cd",
+      "sha256": "7f19a8a7a6439773005eccfbaf9b2e7a6967db4961430eaffa7869f87e8dab3d",
+      "frames": 127,
+      "seconds": 17,
+      "fps": 10,
+      "dimensions": [
+        1280,
+        720
+      ],
+      "source_segments": [
+        [
+          "unknown-match01",
+          3.0,
+          7.0
+        ],
+        [
+          "unknown-save01",
+          11.5,
+          18.0
+        ],
+        [
+          "unknown-library01",
+          1.5,
+          8.0
+        ]
+      ],
+      "source_capture_root": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/mii-replay-guide139/runtime/captures",
+      "source_timing_map": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/mii-replay-guide139/media/unknown-timing-map.json",
+      "source_timing_map_sha256": "9cbd8d695d30228746a0080e69be5451aea6163f63f2e7086a0218962777a136",
+      "navigation_omitted": true,
+      "crop_source_pixels": [
+        129,
+        44,
+        1657,
+        932
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/mii-replay-guide139/media/review-new",
+      "timing_note": "Actual screenshot timestamps mapped to 10 fps output, holding intervening frames; live-match capture is lower-rate than game rendering. No gameplay speed or FPS claim.",
+      "visual_review": "Reviewed decoded first/middle/last and Save Replay confirmation. New green Brawler becomes Replay Brawler 2111; existing red 格斗 1111 leaves the same two-entry list. Native saves unchanged; no console acceptance claim."
+    },
+    {
+      "path": "docs/mii-replay-discovery/mii-discovery-existing.gif",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden, real private LAN Online match followed by ordinary Training; no Vault playback",
+      "nro_sha256": "e4df2a5f778896c1ec846f549f6098bee698fbc9a44febea8cc4bd418b269507",
+      "source_content_sha256": "98e482e00be9c4aa9ee0776207a885a0e275ad5acaab27e6a54498262bbdf7cd",
+      "sha256": "551a69614e542af5262aa40bf98db402cdbea2fd0c55da6966dcebe1f7f09f1d",
+      "frames": 132,
+      "seconds": 17,
+      "fps": 10,
+      "dimensions": [
+        1280,
+        720
+      ],
+      "source_segments": [
+        [
+          "owned-match01",
+          3.0,
+          7.0
+        ],
+        [
+          "owned-save01",
+          11.5,
+          18.0
+        ],
+        [
+          "owned-library01",
+          1.5,
+          8.0
+        ]
+      ],
+      "source_capture_root": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/mii-replay-guide139/runtime/captures",
+      "source_timing_map": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/mii-replay-guide139/media/owned-timing-map.json",
+      "source_timing_map_sha256": "297c8cb5e5eae65504f6a7764cf2e3a8d5d5c10fa545fb5760f7307542876db2",
+      "navigation_omitted": true,
+      "crop_source_pixels": [
+        129,
+        44,
+        1657,
+        932
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/mii-replay-guide139/media/review-existing",
+      "timing_note": "Actual screenshot timestamps mapped to 10 fps output, holding intervening frames; live-match capture is lower-rate than game rendering. No gameplay speed or FPS claim.",
+      "visual_review": "Reviewed decoded first/middle/last and Save Replay confirmation. New green Brawler becomes Replay Brawler 2111; existing red 格斗 1111 leaves the same two-entry list. Native saves unchanged; no console acceptance claim."
     }
   ],
   "screenshots": [

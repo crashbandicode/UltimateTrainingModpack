@@ -24,7 +24,7 @@ In an online (Quickplay) waiting room, the pages offer only Add New, and Headgea
 
 ## Opponents from your replays
 
-With [replay capture](named-macros/README.md) on, Save Replay also keeps each fighter's Mii. When you choose that opponent's capture in Training, the CPU loads the exact Mii. A Mii that is not already in your Smash list is kept once in the modpack's own list. It is never added to Smash's list.
+With [replay capture](named-macros/README.md) on, **Save Replay → enter Training** adds an unfamiliar opponent's Mii to the modpack library, or reuses an identical saved Mii. No replay playback is needed. [Watch both cases.](mii-replay-discovery/README.md)
 
 ## Known limit
 
