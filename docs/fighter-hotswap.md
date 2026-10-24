@@ -38,8 +38,10 @@ Default lists:
 
 Open **Characters → Character Cycles**. Both roles' numbers stay visible:
 **red, top-left** is P1 order; **blue, top-right** is CPU order. The original
-P1 fighter's whole group is greyed out as **0** and cannot also occupy a numbered
-P1 slot. The CPU's original fighter remains selectable in its list.
+P1 fighter's whole group normally appears as grey **0**. In the current development
+source, Ice Climbers can also have a numbered P1 slot when its red S setting differs
+from Character Extras → Solo Popo. Matching configurations remain grey. The CPU's
+original fighter remains selectable in its list.
 
 | Control | Action | GameCube equivalent |
 | --- | --- | --- |
@@ -66,10 +68,10 @@ shortcut advances to the next group or P1's original slot 0.
 **All** (the Smash Ball tile or ZL) uses character-select row order, left to
 right and top to bottom, with each transforming group once. It preserves
 configured starting forms (defaulting to Pyra and Squirtle), excludes P1's
-original group from the numbered P1 list,
+original group from the numbered P1 list (except the opposite Solo Popo configuration),
 and includes the CPU's original fighter. Each role's All selection is independent.
 The layout matches the tested all-unlocked character-select screen; it does not
-read arbitrary save layouts. Miis remain unavailable pending the separate Plan 2.
+read arbitrary save layouts. Saved-Mii cycling is available in this alpha; the native Mii editor and managed Mii-helper gates remain disabled. See the [release limits](experimental-release.md).
 
 **Ice Climbers is supported**, as the pair or Solo Popo. The three Solo settings
 save independently:
@@ -87,8 +89,9 @@ Popo remains alone after respawn. See the [Solo Popo guide](solo-popo.md).
 
 ![Shared cycle grid with red and blue orders, independent Solo Popo toggles, and All.](fighter-hotswap/character-cycles.gif)
 
-*The original P1 Ice Climbers slot stays grey in Player mode. The demonstration
-switches roles, toggles each S, then enables All separately for P1 and CPU.*
+*This earlier demonstration shows the original always-grey behavior. The current
+development source allows opposite Solo configurations as described above; refreshed
+footage will follow validation. The clip switches roles, toggles each S and enables All.*
 
 ## Save states and demonstration
 

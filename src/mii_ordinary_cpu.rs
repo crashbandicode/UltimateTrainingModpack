@@ -41,7 +41,6 @@ struct Prepared {
     descriptor:[u8;0x70], publish:Option<Configuration>, destination:Destination, same_class:Option<SameClass>, replay:Option<training_mod_consts::mii::replay::Selection>,
 }
 /// Read-only receipt for an ordinary load kept on the generic roster path.
-#[derive(Clone,Copy)]
 struct Generic {
     token:InstallToken,before:native::Snapshot,expected:native::Snapshot,live:Destination,
     descriptor:[u8;0x70],
@@ -700,7 +699,7 @@ pub(super) unsafe fn complete_generic(entry:*mut u8,token:InstallToken,kind:u32,
     if !enabled() {return;}
     let generic={
         let mut s=STATE.lock().unwrap();
-        if s.generic.is_some_and(|g|g.token==token && g.before.binding.entry==entry as usize) {
+        if s.generic.as_ref().is_some_and(|g|g.token==token && g.before.binding.entry==entry as usize) {
             s.generic.take()
         } else {None}
     };
@@ -721,7 +720,7 @@ pub(super) fn scene_changed() {
 pub(super) fn on_destroy(entry:*const u8) {
     let token={
         let mut s=STATE.lock().unwrap();
-        if s.generic.is_some_and(|g|g.before.binding.entry==entry as usize) {s.generic=None;}
+        if s.generic.as_ref().is_some_and(|g|g.before.binding.entry==entry as usize) {s.generic=None;}
         let exact=s.owner.as_ref().is_some_and(|o|o.origin.binding.entry==entry as usize);
         if exact {s.owner=None;s.request=None;s.restore=None;s.replay_result=None;s.capture=false;s.menu_valid=false;s.reservation.retire(true);s.departed=false;}
         if s.track.as_ref().is_some_and(|t|t.ticket.entry==entry as usize) {

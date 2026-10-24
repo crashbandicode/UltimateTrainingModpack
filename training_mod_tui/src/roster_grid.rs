@@ -382,6 +382,14 @@ pub const fn group_kind(kind: u32) -> u32 {
     }
 }
 
+/// Native group the Player cycle skips because the original CSS fighter is slot 0.
+/// Ice Climbers is the one exception: when its Solo Popo preference differs between
+/// the original and the cycle, they load different bodies, so it may repeat as a
+/// numbered slot. Equal preferences keep the usual exclusion.
+pub fn cycle_exclusion(original: Option<u32>, original_solo: bool, cycle_solo: bool) -> Option<u32> {
+    original.filter(|kind| *kind != 0x4b || original_solo == cycle_solo)
+}
+
 pub fn selected_group_index(kinds: &[u32], values: &[u8], kind: u32) -> Option<usize> {
     kinds
         .iter()
@@ -1127,5 +1135,27 @@ mod tests {
             assert_eq!(explicit(&values), model, "step {step}");
             assert_eq!(values[0] != 0, model.is_empty(), "step {step}");
         }
+    }
+
+    #[test]
+    fn ice_climbers_repeats_in_the_cycle_only_when_its_solo_setting_differs() {
+        // Only an Ice Climbers original can be un-excluded; everything else keeps slot 0 exclusive.
+        for (solo_original, solo_cycle) in [(false, false), (true, true)] {
+            assert_eq!(cycle_exclusion(Some(0x4b), solo_original, solo_cycle), Some(0x4b));
+        }
+        for (solo_original, solo_cycle) in [(false, true), (true, false)] {
+            assert_eq!(cycle_exclusion(Some(0x4b), solo_original, solo_cycle), None);
+        }
+        for kind in [0x00, 0x06, 0x24, 0x26, 0x5a, 0x5b] {
+            for (solo_original, solo_cycle) in [(false, false), (false, true), (true, false), (true, true)] {
+                assert_eq!(cycle_exclusion(Some(kind), solo_original, solo_cycle), Some(kind));
+            }
+        }
+        assert_eq!(cycle_exclusion(None, false, true), None);
+        // The released exclusion is what the CSS order and badges see: IC is listed again.
+        let kinds = [0x00, 0x4b, 0x5d];
+        let all = [1, 0, 0, 0];
+        assert_eq!(css_order(&kinds, &all, cycle_exclusion(Some(0x4b), true, true)), [0x00, 0x5d]);
+        assert_eq!(css_order(&kinds, &all, cycle_exclusion(Some(0x4b), true, false)), [0x00, 0x4b, 0x5d]);
     }
 }

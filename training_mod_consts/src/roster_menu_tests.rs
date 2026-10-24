@@ -391,10 +391,13 @@ fn grey_original_ic_solo_preferences_persist_independently_and_old_files_default
     app.set_original_player_kind(Some(0x4b));
     seek(&mut app, 0x4b);
     let roster = app.roster_values(Role::Player);
+    // Equal settings keep slot 0 grey, so A refuses; Y still edits the cycle setting.
     app.on_a();
     app.on_y();
     assert_eq!(app.roster_values(Role::Player), roster);
-    assert_eq!(app.roster_badge(Role::Player, 0x4b), Some(0));
+    // The cycle now differs from the original, so the tile is ordinary and unselected.
+    assert!(!app.roster_excluded(Role::Player, 0x4b));
+    assert_eq!(app.roster_badge(Role::Player, 0x4b), None);
     let menu = committed(&app);
     assert_eq!(menu.solo_popo_original, OnOff::OFF);
     assert_eq!(menu.solo_popo_player_cycle, OnOff::ON);
@@ -417,8 +420,8 @@ fn grey_original_ic_solo_preferences_persist_independently_and_old_files_default
         .position(|tab| tab.id == "character_extras")
         .unwrap();
     reopened.tabs.state.select(Some(extras));
-    assert_eq!(reopened.selected_tab().submenus.len(), 3);
     reopened.selected_tab().submenus.select(0, 0);
+    assert_eq!(reopened.selected_submenu().id, "solo_popo_original");
     reopened.on_a();
     reopened.selected_submenu().toggles.select(0, 0); // On, through the real extras picker.
     reopened.on_a();
@@ -447,6 +450,93 @@ fn grey_original_ic_solo_preferences_persist_independently_and_old_files_default
             parsed.solo_popo_cpu
         ),
         (OnOff::OFF, OnOff::OFF, OnOff::OFF)
+    );
+}
+
+const IC: u32 = 0x4b;
+
+fn set_original_solo(app: &mut App<'_>, on: bool) {
+    // Same stored shape as the Character Extras picker: [On, Off].
+    let values = if on { [1, 0] } else { [0, 1] };
+    app.update_one_from_json(
+        &serde_json::json!({ "solo_popo_original": values }).to_string(),
+        "solo_popo_original",
+    );
+}
+
+#[test]
+fn original_ic_tile_greys_only_while_both_solo_settings_match() {
+    let mut app = editor();
+    app.set_original_player_kind(Some(IC));
+    // Both off: Ice Climbers is slot 0 only. The CPU grid never excludes it.
+    assert!(app.roster_excluded(Role::Player, IC));
+    assert_eq!(app.roster_badge(Role::Player, IC), Some(0));
+    assert!(!app.roster_excluded(Role::Cpu, IC));
+    // Ordinary original, Solo cycle: Ice Climbers becomes a selectable numbered choice.
+    seek(&mut app, IC);
+    app.on_y();
+    assert!(!app.roster_excluded(Role::Player, IC));
+    app.on_a();
+    assert_eq!(app.roster_badge(Role::Player, IC), Some(4));
+    let menu = committed(&app);
+    assert_eq!(
+        (menu.solo_popo_original, menu.solo_popo_player_cycle),
+        (OnOff::OFF, OnOff::ON)
+    );
+    assert!(menu.player_roster.fighters().contains(&TrioFighter::ICE_CLIMBERS));
+    // Reopening with the same settings keeps the numbered entry.
+    let stored = app.current_settings_to_json();
+    app.update_all_from_json(&stored);
+    assert_eq!(app.roster_badge(Role::Player, IC), Some(4));
+    // A Solo original matches the Solo cycle again: grey slot 0, entry normalized away.
+    set_original_solo(&mut app, true);
+    assert!(app.roster_excluded(Role::Player, IC));
+    assert_eq!(app.roster_badge(Role::Player, IC), Some(0));
+    assert!(!committed(&app).player_roster.fighters().contains(&TrioFighter::ICE_CLIMBERS));
+    // Solo original, ordinary cycle: the opposite difference releases it again.
+    seek(&mut app, IC);
+    app.on_y();
+    assert!(!app.roster_excluded(Role::Player, IC));
+    app.on_a();
+    let menu = committed(&app);
+    assert_eq!(
+        (menu.solo_popo_original, menu.solo_popo_player_cycle),
+        (OnOff::ON, OnOff::OFF)
+    );
+    assert!(menu.player_roster.fighters().contains(&TrioFighter::ICE_CLIMBERS));
+}
+
+#[test]
+fn runtime_player_cycle_lists_original_ic_only_when_solo_settings_differ() {
+    use training_mod_tui::roster_grid::cycle_exclusion;
+    let roster = OrderedFighterRoster::from_fighters(&[
+        TrioFighter::MARIO,
+        TrioFighter::ICE_CLIMBERS,
+        TrioFighter::PIKACHU,
+    ])
+    .unwrap();
+    let kinds = |original: Option<u32>, original_solo, cycle_solo| -> Vec<u32> {
+        roster
+            .fighters_excluding(cycle_exclusion(original, original_solo, cycle_solo))
+            .iter()
+            .map(|fighter| fighter.kind())
+            .collect()
+    };
+    assert_eq!(kinds(Some(IC), false, false), [0x00, 0x08]);
+    assert_eq!(kinds(Some(IC), true, true), [0x00, 0x08]);
+    assert_eq!(kinds(Some(IC), true, false), [0x00, IC, 0x08]);
+    assert_eq!(kinds(Some(IC), false, true), [0x00, IC, 0x08]);
+    // Any other original still removes its own group whatever the Solo settings say.
+    assert_eq!(kinds(Some(0x08), false, true), [0x00, IC]);
+    assert_eq!(kinds(None, true, false), [0x00, IC, 0x08]);
+    let all = OrderedFighterRoster::all();
+    assert_eq!(
+        all.fighters_excluding(cycle_exclusion(Some(IC), false, false)).len() + 1,
+        all.fighters().len()
+    );
+    assert_eq!(
+        all.fighters_excluding(cycle_exclusion(Some(IC), false, true)),
+        all.fighters()
     );
 }
 

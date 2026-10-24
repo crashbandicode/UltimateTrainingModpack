@@ -1,15 +1,74 @@
 use std::collections::HashMap;
 
-use crate::common::menu::{MENU_CLOSE_FRAME_COUNTER, QUICK_MENU_ACTIVE};
+use crate::common::menu::QUICK_MENU_ACTIVE;
 use crate::common::ButtonConfig;
 use crate::input::{ControllerStyle::*, *};
-use crate::training::frame_counter;
 use crate::training::ui::menu::VANILLA_MENU_ACTIVE;
 
 use training_mod_consts::{OnOff, MENU};
 use training_mod_sync::*;
 
 use strum_macros::EnumIter;
+
+use training_mod_consts::menu_shortcuts::{self, MenuShortcuts, BUTTONS, DEFAULT_SHORTCUTS};
+
+pub fn menu_shortcut_description() -> String { read(&MENU_SHORTCUTS).description() }
+
+static MENU_SHORTCUTS: RwLock<MenuShortcuts> = RwLock::new(DEFAULT_SHORTCUTS);
+static SHORTCUTS_INIT: std::sync::Once = std::sync::Once::new();
+const BUTTON_CONFIG_PATH: &str = "sd:/ultimate/TrainingModpack/button_config.ini";
+
+/// Startup-only: input hooks only copy the fixed-size cached configuration.
+pub fn init() {
+    SHORTCUTS_INIT.call_once(|| {
+        use std::io::Read;
+
+        let contents = (|| -> std::io::Result<String> {
+            // Pinned Skyline open() loses NotFound; metadata() preserves it.
+            // Use the same existence check as the Mii library, then bound the read.
+            match std::fs::metadata(BUTTON_CONFIG_PATH) {
+                Ok(_) => {
+                    let file = std::fs::File::open(BUTTON_CONFIG_PATH)?;
+                    let mut contents = String::new();
+                    file.take(8193).read_to_string(&mut contents)?;
+                    if contents.len() > 8192 {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "button_config.ini exceeds 8 KiB",
+                        ));
+                    }
+                    Ok(contents)
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    std::fs::create_dir_all(training_mod_consts::TRAINING_MODPACK_ROOT)?;
+                    use std::io::Write;
+                    // Never truncate a file created by another initializer.
+                    std::fs::OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .create_new(true)
+                        .truncate(false)
+                        .open(BUTTON_CONFIG_PATH)?
+                        .write_all(menu_shortcuts::DEFAULT_INI.as_bytes())?;
+                    Ok(menu_shortcuts::DEFAULT_INI.to_owned())
+                }
+                Err(error) => Err(error),
+            }
+        })();
+        match contents {
+            Ok(contents) => {
+                let shortcuts = MenuShortcuts::parse(&contents);
+                assign(&MENU_SHORTCUTS, shortcuts);
+                crate::logging::diagnostic(format_args!("[MenuShortcuts] loaded {}", shortcuts.description()));
+            }
+            Err(error) => {
+                log::warn!("Could not load {BUTTON_CONFIG_PATH}; using default menu shortcuts: {error}");
+                crate::logging::diagnostic(format_args!("[MenuShortcuts] defaults: {error}"));
+            }
+        }
+        LazyLock::force(&BUTTON_COMBO_REQUESTS);
+    });
+}
 
 pub fn button_mapping(
     button_config: ButtonConfig,
@@ -168,15 +227,11 @@ pub enum ButtonCombo {
     PlayerCycle,
 }
 
-pub const DEFAULT_OPEN_MENU_CONFIG: ButtonConfig = ButtonConfig {
-    B: 1,
-    DPAD_UP: 1,
-    ..ButtonConfig::empty()
-};
+pub const DEFAULT_OPEN_MENU_CONFIG: ButtonConfig = menu_shortcuts::DEFAULT_OPEN_MENU_CONFIG;
 
 unsafe fn get_combo_keys(combo: ButtonCombo) -> ButtonConfig {
     match combo {
-        // For OpenMenu, have a default in addition to accepting start press
+        // Permanent fallback; configurable alternatives are dispatched separately.
         ButtonCombo::OpenMenu => DEFAULT_OPEN_MENU_CONFIG,
         ButtonCombo::SaveState => read(&MENU).save_state_save,
         ButtonCombo::LoadState => read(&MENU).save_state_load,
@@ -199,15 +254,11 @@ static BUTTON_COMBO_REQUESTS: LazyLock<RwLock<HashMap<ButtonCombo, bool>>> = Laz
         (ButtonCombo::PlayerCycle, false),
     ]))
 });
-static START_HOLD_FRAMES: RwLock<u32> = RwLock::new(0);
-static START_RELEASE_FRAMES: RwLock<u32> = RwLock::new(0);
 
 pub fn clear_session_state() {
     for request in lock_write(&BUTTON_COMBO_REQUESTS).values_mut() {
         *request = false;
     }
-    assign(&START_HOLD_FRAMES, 0);
-    assign(&START_RELEASE_FRAMES, 0);
 }
 
 /// Observe ownership without consuming a request needed by its normal handler.
@@ -245,35 +296,53 @@ fn _combo_passes(p1_controller: Controller, combo: ButtonCombo) -> bool {
             return false;
         }
 
-        let combo_keys = get_combo_keys(combo).to_vec();
-        // Even a one-button character mapping is an edge, never repeat while held.
-        if matches!(combo, ButtonCombo::CpuCycle | ButtonCombo::PlayerCycle)
-            && !combo_keys
-                .iter()
-                .any(|button| button_mapping(*button, p1_controller.style, p1_controller.just_down))
-        {
-            return false;
-        }
-        let mut this_combo_passes = false;
-
-        for hold_button in combo_keys.iter() {
-            if button_mapping(
-                *hold_button,
-                p1_controller.style,
-                p1_controller.current_buttons,
-            ) && combo_keys
-                .iter()
-                .filter(|press_button| press_button != &hold_button)
-                .all(|press_button| {
-                    button_mapping(*press_button, p1_controller.style, p1_controller.just_down)
-                })
-            {
-                this_combo_passes = true;
-            }
+        if combo == ButtonCombo::OpenMenu {
+            return read(&MENU_SHORTCUTS).passes(
+                |button| button_mapping(button, p1_controller.style, p1_controller.current_buttons),
+                |button| button_mapping(button, p1_controller.style, p1_controller.just_down),
+            );
         }
 
-        this_combo_passes
+        legacy_combo_passes(p1_controller, combo, get_combo_keys(combo))
     }
+}
+
+// Preserve the existing save/load/record/playback chord semantics while avoiding
+// the old per-combo Vec allocation. Menu shortcuts have their own edge semantics.
+fn legacy_combo_passes(
+    p1_controller: Controller,
+    combo: ButtonCombo,
+    combo_keys: ButtonConfig,
+) -> bool {
+    // Even a one-button character mapping is an edge, never repeat while held.
+    if matches!(combo, ButtonCombo::CpuCycle | ButtonCombo::PlayerCycle)
+        && !BUTTONS
+            .iter()
+            .filter(|button| combo_keys.contains(button))
+            .any(|button| button_mapping(*button, p1_controller.style, p1_controller.just_down))
+    {
+        return false;
+    }
+    let mut this_combo_passes = false;
+
+    for hold_button in BUTTONS.iter().filter(|button| combo_keys.contains(button)) {
+        if button_mapping(
+            *hold_button,
+            p1_controller.style,
+            p1_controller.current_buttons,
+        ) && BUTTONS
+            .iter()
+            .filter(|button| combo_keys.contains(button))
+            .filter(|press_button| press_button != &hold_button)
+            .all(|press_button| {
+                button_mapping(*press_button, p1_controller.style, p1_controller.just_down)
+            })
+        {
+            this_combo_passes = true;
+        }
+    }
+
+    this_combo_passes
 }
 
 pub fn combo_passes(combo: ButtonCombo) -> bool {
@@ -299,81 +368,13 @@ pub fn consume_player_cycle_request() -> bool {
     combo_passes(ButtonCombo::PlayerCycle)
 }
 
-fn handle_menu_open_start_press(controller: &mut Controller) -> bool {
-    if crate::training::named_macros::panel_visible() || crate::replay_capture::loading() {
-        assign(&START_HOLD_FRAMES, 0);
+fn suppress_pause(controller: &mut Controller, owns_input: bool) {
+    if owns_input {
         controller.previous_buttons.set_plus(false);
         controller.current_buttons.set_plus(false);
         controller.just_down.set_plus(false);
         controller.just_release.set_plus(false);
-        return false;
     }
-    // If we press (-), open the modpack menu.
-    // Exception: If the vanilla menu is open, don't open the modpack menu.
-    if controller.current_buttons.minus() && !read(&VANILLA_MENU_ACTIVE) {
-        return true;
-    }
-
-    // If we aren't currently holding start on this frame...
-    // and we weren't holding start on the previous frame...
-    if !controller.current_buttons.plus() && !controller.previous_buttons.plus() {
-        // If we've only been releasing the start button for < 2 frames,
-        // end here. This is done in order to ensure that the user has
-        // actually released the start button, by waiting for a few more frames.
-        if read(&START_RELEASE_FRAMES) < 2 {
-            assign(&START_RELEASE_FRAMES, read(&START_RELEASE_FRAMES) + 1);
-            return false;
-        }
-    }
-
-    if controller.current_buttons.plus() {
-        assign(&START_RELEASE_FRAMES, 0);
-
-        // If the vanilla menu is open, we don't want to open the modpack menu.
-        // Instead, we should just close the vanilla menu.
-        if read(&VANILLA_MENU_ACTIVE) {
-            assign(&START_HOLD_FRAMES, 0);
-            return false;
-        }
-
-        assign(&START_HOLD_FRAMES, read(&START_HOLD_FRAMES) + 1);
-
-        // Reset the (+) button state, so that the game doesn't
-        // process the (+) button input until we're sure which action to take.
-        // (i.e.: open the vanilla menu, open the modpack menu, or do nothing)
-        controller.previous_buttons.set_plus(false);
-        controller.current_buttons.set_plus(false);
-        controller.just_down.set_plus(false);
-        controller.just_release.set_plus(false);
-
-        // If we've held the (+) button for more than 10 frames,
-        // open the modpack menu.
-        if read(&START_HOLD_FRAMES) >= 10 {
-            assign(&START_HOLD_FRAMES, 0);
-            return true;
-        }
-
-        // Don't open the modpack menu (at least, not on this frame).
-        return false;
-    }
-
-    // If the (+) button was held for 1-10 frames, then released,
-    // we should simulate a normal (+) button input, opening the vanilla menu.
-    if read(&START_HOLD_FRAMES) > 0 && read(&START_HOLD_FRAMES) < 10 {
-        if !read(&QUICK_MENU_ACTIVE)
-            && frame_counter::get_frame_count(*MENU_CLOSE_FRAME_COUNTER) == 0
-        {
-            // If we held for fewer than 10 frames, let's let the game know that
-            // we had pressed start
-            controller.current_buttons.set_plus(true);
-            controller.just_down.set_plus(true);
-            assign(&VANILLA_MENU_ACTIVE, true);
-        }
-        assign(&START_HOLD_FRAMES, 0);
-    }
-
-    // Don't open the modpack menu (at least, not on this frame).
-    false
 }
 
 pub fn handle_final_input_mapping(player_idx: i32, controller_struct: &mut SomeControllerStruct) {
@@ -381,11 +382,12 @@ pub fn handle_final_input_mapping(player_idx: i32, controller_struct: &mut SomeC
         return;
     }
     let p1_controller = &mut *controller_struct.controller;
-    let mut start_menu_request = false;
-
-    if read(&MENU).menu_open_start_press == OnOff::ON {
-        start_menu_request = handle_menu_open_start_press(p1_controller);
-    }
+    // Plus passes straight through to the game's normal pause handler, except
+    // while a modal feature owns input. There is no implicit long-Plus opener.
+    suppress_pause(
+        p1_controller,
+        crate::training::named_macros::panel_visible() || crate::replay_capture::loading(),
+    );
 
     let mut button_combo_requests_lock = lock_write(&BUTTON_COMBO_REQUESTS);
     (*button_combo_requests_lock)
@@ -393,9 +395,83 @@ pub fn handle_final_input_mapping(player_idx: i32, controller_struct: &mut SomeC
         .for_each(|(combo, is_request)| {
             if !*is_request {
                 *is_request = _combo_passes(*p1_controller, *combo);
-                if *combo == ButtonCombo::OpenMenu && start_menu_request {
-                    *is_request = true;
-                }
             }
-        })
+        });
+    // An explicitly configured Plus chord owns its pause press as well. Evaluate
+    // all practice shortcuts first, against the same unmodified controller data.
+    suppress_pause(
+        p1_controller,
+        button_combo_requests_lock.get(&ButtonCombo::OpenMenu).copied().unwrap_or(false),
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normal_plus_press_hold_release_are_passed_through() {
+        let plus = ButtonBitfield::new().with_plus(true);
+        for (previous, current, pressed, released) in [
+            (ButtonBitfield::new(), plus, plus, ButtonBitfield::new()),
+            (plus, plus, ButtonBitfield::new(), ButtonBitfield::new()),
+            (plus, ButtonBitfield::new(), ButtonBitfield::new(), plus),
+        ] {
+            let mut controller = Controller {
+                previous_buttons: previous,
+                current_buttons: current,
+                just_down: pressed,
+                just_release: released,
+                ..Default::default()
+            };
+            suppress_pause(&mut controller, false);
+            assert_eq!(controller.previous_buttons, previous);
+            assert_eq!(controller.current_buttons, current);
+            assert_eq!(controller.just_down, pressed);
+            assert_eq!(controller.just_release, released);
+        }
+    }
+
+    #[test]
+    fn menu_or_modal_ownership_suppresses_plus_without_erasing_other_buttons() {
+        let buttons = ButtonBitfield::new().with_plus(true).with_x(true);
+        let mut controller = Controller {
+            previous_buttons: buttons,
+            current_buttons: buttons,
+            just_down: buttons,
+            just_release: buttons,
+            ..Default::default()
+        };
+        suppress_pause(&mut controller, true);
+        for buttons in [controller.previous_buttons, controller.current_buttons,
+            controller.just_down, controller.just_release] {
+            assert!(!buttons.plus());
+            assert!(buttons.x());
+        }
+    }
+
+    #[test]
+    fn practice_shortcuts_keep_hold_modifier_and_press_semantics() {
+        let keys = ButtonConfig::ZL.union(ButtonConfig::X);
+        let mut controller = Controller {
+            current_buttons: ButtonBitfield::new().with_zl(true).with_x(true),
+            just_down: ButtonBitfield::new().with_x(true),
+            style: ProController,
+            ..Default::default()
+        };
+        for combo in [ButtonCombo::SaveState, ButtonCombo::LoadState,
+            ButtonCombo::InputRecord, ButtonCombo::InputPlayback] {
+            assert!(legacy_combo_passes(controller, combo, keys));
+            controller.just_down.set_x(false);
+            assert!(!legacy_combo_passes(controller, combo, keys));
+            controller.just_down.set_x(true);
+            assert!(!legacy_combo_passes(controller, combo, ButtonConfig::empty()));
+        }
+        // Existing one-button playback remains level-triggered; character cycle
+        // shortcuts retain their stricter press-edge rule.
+        controller.just_down = ButtonBitfield::new();
+        assert!(legacy_combo_passes(controller, ButtonCombo::InputPlayback, ButtonConfig::X));
+        assert!(!legacy_combo_passes(controller, ButtonCombo::CpuCycle, ButtonConfig::X));
+        assert!(!legacy_combo_passes(controller, ButtonCombo::PlayerCycle, ButtonConfig::X));
+    }
 }

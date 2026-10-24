@@ -57,14 +57,14 @@ unsafe fn idle() -> bool {
         })
 }
 pub(super) unsafe fn service(entry: *const u8, owner: u32) {
-    let Some(logical)=mii_backend::current().and_then(|l|l.logical(owner)) else{return;};
-    if logical > 1
-        || !pending()
+    if !pending()
         || !mii_ordinary_player::enabled()
         || !mii_ordinary_cpu::enabled()
     {
         return;
     }
+    let Some(logical)=mii_backend::current().and_then(|l|l.logical(owner)) else{return;};
+    if logical > 1 {return;}
     let eligible = original_kind(Role::Player).is_some()
         && original_kind(Role::Cpu).is_some()
         && scope(Role::Player).is_some_and(|s| s.owner == 0)

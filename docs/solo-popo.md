@@ -1,7 +1,8 @@
 # Solo Popo
 
 Practice as Popo without Nana, or give the CPU the same setup. This feature is
-in the enhancements development build; it is not in the published 7.1.2 package.
+in the [unstable enhancements alpha](experimental-release.md); it is not in the
+stable 7.1.2 package.
 
 If you chose Ice Climbers on the game's character-select screen, open
 **Character Extras → Solo Popo → On**, then close the modpack menu. The change
@@ -21,9 +22,13 @@ highlight Ice Climbers, and press **Y**. **ZR** switches which role you edit.
 | Blue S, bottom-right of the portrait | CPU Ice Climbers, originally selected or cycled in |
 
 These settings save independently. An S appears only while its setting is on.
-The original P1 portrait stays grey as slot 0, but you can still toggle its red
-S for a future session. That red S does not change the current original P1 or
-the Character Extras setting.
+In the enhancements alpha, the original Ice Climbers portrait is grey
+only when Character Extras and the red S request the same configuration. When
+they differ, add Ice Climbers to the cycle to switch between the pair and Solo
+Popo. Slot 0 uses Character Extras; the numbered slot uses the red S. Editing
+one preference never overwrites the other. Eden verified original Solo Popo →
+numbered paired Ice Climbers → original Solo Popo. Physical-console acceptance
+of this refinement remains pending; the GIF above predates it.
 
 The applicable setting switches between Popo alone and the pair when the menu
 closes. Player cycling returns through the original slot 0 after the last

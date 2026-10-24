@@ -2,11 +2,8 @@
 use skyline::nn::ui2d::{Pane, PaneFlag};
 use smash::ui2d::{SmashPane, SmashTextBox};
 use training_mod_consts::lobby_stages::STAGES;
-use training_mod_tui::App;
+use training_mod_tui::{stage_menu::{PAGE_COLUMNS as COLUMNS, PAGE_SIZE}, App};
 
-const ROWS: usize = 4;
-const COLUMNS: usize = 4;
-const PAGE_SIZE: usize = ROWS * COLUMNS;
 const ICON_SLOTS: usize = {
     let mut slots = 0;
     let mut index = 0;
@@ -184,6 +181,8 @@ pub unsafe fn draw(root: &Pane, app: &mut App<'_>) -> bool {
         let icon = if index == 0 {
             panes.all_icon
         } else {
+            // Waiting Room 311 and Training 308 remain readable text tiles when
+            // the layout has no portrait pane for that native stage ID.
             STAGES
                 .get(index - 1)
                 .and_then(|(id, _)| panes.icons.get(*id as usize))
@@ -211,7 +210,7 @@ pub unsafe fn draw(root: &Pane, app: &mut App<'_>) -> bool {
         panes.help,
         &format!(
             "{}   Page {}/{}",
-            if direct && selected == 0 { "Choose one named stage   X Lobby Stage Rotation   B Back" } else { help },
+            if direct && selected == 0 { "Choose one named stage   X Lobby Stage Rotation   L/R Page   B Back" } else { help },
             first / PAGE_SIZE + 1,
             (STAGES.len() + 1).div_ceil(PAGE_SIZE)
         ),

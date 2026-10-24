@@ -7,7 +7,8 @@ use training_mod_tui::{
 
 // Owned ui_stage_db.prc: can_select=true, sorted by native disp_order.
 // Labels join name_id to msg_name+us_en.msbt's nam_stg1_* keys; stage IDs
-// join stage_place_id to the native form-0 table. Waiting Room is our default.
+// join stage_place_id to the native form-0 table. Waiting Room is our default;
+// Training is appended separately because it is not a normal selectable stage.
 pub const STAGES: &[(u32, &str)] = &[
     (311, "Waiting Room"),
     (0, "Battlefield"),
@@ -286,5 +287,115 @@ mod tests {
         assert_eq!(selected.stages(), vec![361, 311, 308]);
         let menu = LobbyStageOrder::to_submenu();
         assert_eq!(menu.toggles.get(117 / NX_SUBMENU_COLUMNS, 117 % NX_SUBMENU_COLUMNS).unwrap().title, "Training");
+    }
+
+    fn stage_app(enabled: bool, ordinary_training: bool) -> training_mod_tui::App<'static> {
+        use training_mod_tui::stage_menu::{Mode, Preferences};
+        let mut menu = crate::BASE_MENU;
+        menu.lobby_stages = serde_json::from_str("[0,0,2,1]").unwrap(); // FD, BF.
+        let settings = serde_json::to_string(&menu).unwrap();
+        let mut app = unsafe { crate::create_app() };
+        app.serialized_default_settings = serde_json::to_string(&crate::BASE_MENU).unwrap();
+        app.open_settings_for_player(&settings, Some(9));
+        app.open_stage_menu_in_context(enabled, Preferences {
+            mode: Mode::Direct,
+            direct_stage: 3,
+        }, ordinary_training);
+        let tab = app.tabs.iter().position(|tab| tab.submenus.iter()
+            .any(|submenu| submenu.id == "lobby_stages")).unwrap();
+        app.tabs.state.select(Some(tab));
+        let index = app.selected_tab().submenus.iter()
+            .position(|submenu| submenu.id == "lobby_stages").unwrap();
+        let cols = app.selected_tab().submenus.cols;
+        app.selected_tab().submenus.select(index / cols, index % cols);
+        app.on_a();
+        assert!(app.stage_page_active());
+        app
+    }
+
+    fn stage_cursor(app: &mut training_mod_tui::App<'_>) -> usize {
+        let toggles = &app.selected_submenu().toggles;
+        toggles.state.selected_row().unwrap() * toggles.cols
+            + toggles.state.selected_col().unwrap()
+    }
+
+    #[test]
+    fn stage_shoulders_page_without_editing_rotation_or_direct_preferences() {
+        use training_mod_tui::AppPage;
+        // Rotation-only, lobby Direct/Rotation, and Training Direct/Rotation.
+        for (enabled, ordinary_training) in [(false, false), (true, false), (true, true)] {
+            let mut app = stage_app(enabled, ordinary_training);
+            for _ in 0..if enabled { 2 } else { 1 } {
+                let settings = app.current_settings_to_json();
+                let preferences = app.stage_preferences;
+                let direct = app.stage_is_direct();
+                let tab = app.tabs.state.selected();
+                let cols = app.selected_submenu().toggles.cols;
+                app.selected_submenu().toggles.select(15 / cols, 15 % cols);
+                app.on_r();
+                assert_eq!(stage_cursor(&mut app), 31);
+                app.on_l();
+                assert_eq!(stage_cursor(&mut app), 15);
+                app.on_l(); // Wrap backward, clamp to Training on the short page.
+                assert_eq!(stage_cursor(&mut app), 117);
+                assert_eq!(app.selected_submenu().selected_toggle().title, "Training");
+                app.on_r(); // Wrap forward, keep final-page cell 5.
+                assert_eq!(stage_cursor(&mut app), 5);
+                app.on_l();
+                assert_eq!(stage_cursor(&mut app), 117);
+                assert!(app.page == AppPage::TOGGLE); // Never reset confirmation.
+                assert_eq!(app.tabs.state.selected(), tab);
+                assert_eq!(app.stage_preferences, preferences);
+                assert_eq!(app.stage_is_direct(), direct);
+                assert_eq!(app.current_settings_to_json(), settings);
+                assert!(app.stage_help().contains("L/R Page"));
+                if enabled { app.on_x(); }
+            }
+            app.on_start();
+            assert!(app.take_pending_stage().is_none());
+            let saved: crate::TrainingModpackMenu =
+                serde_json::from_str(&app.current_settings_to_json()).unwrap();
+            assert_eq!(saved.lobby_stages.stages(), vec![3, 0]);
+        }
+    }
+
+    #[test]
+    fn paged_training_direct_request_is_one_shot_and_preserves_rotation() {
+        use training_mod_tui::AppPage;
+        for ordinary_training in [false, true] {
+            let mut app = stage_app(true, ordinary_training);
+            let preferences = app.stage_preferences;
+            let cols = app.selected_submenu().toggles.cols;
+            app.selected_submenu().toggles.select(15 / cols, 15 % cols);
+            app.on_l();
+            assert_eq!(stage_cursor(&mut app), 117);
+            app.on_a();
+            assert!(app.page == AppPage::CLOSE);
+            assert_eq!(app.take_pending_stage(), Some(308));
+            assert_eq!(app.take_pending_stage(), None);
+            let saved: crate::MenuJsonStruct =
+                serde_json::from_str(&app.get_serialized_settings_with_defaults()).unwrap();
+            assert_eq!(saved.menu.lobby_stages.stages(), vec![3, 0]);
+            assert_eq!(saved.defaults_menu.lobby_stages, crate::BASE_MENU.lobby_stages);
+            assert_eq!(saved.stage_preferences.mode, preferences.mode);
+            assert_eq!(saved.stage_preferences.direct_stage,
+                if ordinary_training { preferences.direct_stage } else { 308 });
+        }
+    }
+
+    #[test]
+    fn paged_training_rotation_appends_after_existing_ranks_without_a_request() {
+        let mut app = stage_app(false, false);
+        let cols = app.selected_submenu().toggles.cols;
+        app.selected_submenu().toggles.select(15 / cols, 15 % cols);
+        app.on_l();
+        assert_eq!(stage_cursor(&mut app), 117);
+        app.on_a();
+        app.on_b();
+        app.on_start();
+        assert!(app.take_pending_stage().is_none());
+        let saved: crate::TrainingModpackMenu =
+            serde_json::from_str(&app.current_settings_to_json()).unwrap();
+        assert_eq!(saved.lobby_stages.stages(), vec![3, 0, 308]);
     }
 }

@@ -1,5 +1,6 @@
 //! Shared native saved-original primitives. No hook, request, file IO or diagnostic dispatch.
 //! The caller establishes current native service/INSTALL authority. Stored integers are identities.
+use crate::native_fields;
 #[cfg(any(feature = "mii-cpu-adapter-probe", feature = "mii-saved-alpha"))]
 use skyline::hooks::{getRegionAddress, Region};
 #[cfg(any(feature = "mii-native-adapter-probe", feature = "mii-saved-alpha"))]
@@ -92,12 +93,8 @@ pub(crate) unsafe fn owner_object(base: usize, id: u32) -> Option<usize> {
     if id >= 8 {
         return None;
     }
-    let table: usize = rd(base, OWNER_TABLE);
-    if !aligned(table) {
-        return None;
-    }
-    let o: usize = rd(table, 0xe8 + id as usize * 8);
-    aligned(o).then_some(o)
+    let table = native_fields::child(base, OWNER_TABLE)?;
+    native_fields::child(table, 0xe8 + id as usize * 8)
 }
 
 pub(crate) unsafe fn lookup_row_id(
@@ -110,37 +107,21 @@ pub(crate) unsafe fn lookup_row_id(
         HAT_TABLE => HAT_ROW,
         _ => return Err("unsupported ui table"),
     };
-    let holder: usize = rd(base, UI_DB);
-    if !aligned(holder) {
-        return Err("ui db holder null/misaligned");
-    }
-    let db: usize = rd(holder, 8);
-    if !aligned(db) {
-        return Err("ui db null/misaligned");
-    }
-    let table: usize = rd(db, table_off);
-    if !aligned(table) {
-        return Err("ui table null/misaligned");
-    }
-    let data: usize = rd(table, 8);
-    if !aligned(data) {
-        return Err("ui table data null/misaligned");
-    }
-    let header: usize = rd(data, 0x20);
-    if header == 0 || rd::<u8>(header, 0) != 0xc {
+    let holder = native_fields::child(base, UI_DB).ok_or("ui db holder null/misaligned")?;
+    let db = native_fields::child(holder, 8).ok_or("ui db null/misaligned")?;
+    let table = native_fields::child(db, table_off).ok_or("ui table null/misaligned")?;
+    let data = native_fields::child(table, 8).ok_or("ui table data null/misaligned")?;
+    let header = native_fields::read::<usize>(data, 0x20).unwrap_or(0);
+    if native_fields::read::<u8>(header, 0) != Some(0xc) {
         return Err("ui table header type is not 0xc");
     }
-    let arrays: usize = rd(data, 0x18);
-    if !aligned(arrays) {
-        return Err("ui table arrays null/misaligned");
-    }
-    if !aligned(rd::<usize>(arrays, 0x20)) {
-        return Err("ui table keys null/misaligned");
-    }
-    if rd::<usize>(arrays, 0x28) == 0 {
+    let arrays = native_fields::child(data, 0x18).ok_or("ui table arrays null/misaligned")?;
+    native_fields::child(arrays, 0x20).ok_or("ui table keys null/misaligned")?;
+    if native_fields::read::<usize>(arrays, 0x28).unwrap_or(0) == 0 {
         return Err("ui table offset array null");
     }
-    let lookup: unsafe extern "C" fn(usize, u32) -> u64 = std::mem::transmute(base + getter);
+    let getter = base.checked_add(getter).ok_or("ui lookup address overflow")?;
+    let lookup: unsafe extern "C" fn(usize, u32) -> u64 = std::mem::transmute(getter);
     Ok(lookup(data, u32::from(hint)))
 }
 

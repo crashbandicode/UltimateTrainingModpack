@@ -11,6 +11,7 @@ pub use character_items::CharacterItemChoice;
 pub mod trio;
 pub use trio::*;
 pub mod menu_json;
+pub mod menu_shortcuts;
 pub use training_mod_mii as mii;
 #[cfg(test)]
 mod mii_menu_tests;
@@ -104,6 +105,9 @@ pub struct TrainingModpackMenu {
     pub hitstun_playback: HitstunPlayback,
     pub playback_mash: OnOff,
     pub playback_loop: OnOff,
+    // Retained for old configuration files; opening shortcuts now live in the INI.
+    // The menu no longer emits this retired setting when saving its current state.
+    #[serde(default = "lobby_practice_default")]
     pub menu_open_start_press: OnOff,
     pub save_state_save: ButtonConfig,
     pub save_state_load: ButtonConfig,
@@ -295,7 +299,7 @@ pub static BASE_MENU: TrainingModpackMenu = TrainingModpackMenu {
     hitstun_playback: HitstunPlayback::HITSTUN,
     playback_mash: OnOff::ON,
     playback_loop: OnOff::OFF,
-    menu_open_start_press: OnOff::ON,
+    menu_open_start_press: OnOff::OFF,
     save_state_save: ButtonConfig {
         ZL: 1,
         DPAD_DOWN: 1,
@@ -779,7 +783,7 @@ pub unsafe fn create_app<'a>() -> App<'a> {
 
     // Button Tab
     let mut button_tab_submenus: Vec<SubMenu> = Vec::new();
-    button_tab_submenus.push(OnOff::to_submenu("Menu Open Start Press", "menu_open_start_press", "Hold start or press minus to open the mod menu. To open the original menu, press start.\nThe default menu open option is always available as Hold DPad Up + Press B.", ToggleSingle, false));
+    // Legacy serialized field retained; menu opening now uses button_config.ini.
     button_tab_submenus.push(ButtonConfig::to_submenu(
         "Save State Save",
         "save_state_save",
@@ -1077,7 +1081,7 @@ pub unsafe fn create_app<'a>() -> App<'a> {
                 OnOff::to_submenu(
                     "Solo Popo",
                     "solo_popo_original",
-                    "P1 originally selected Ice Climbers only.\nCycle-grid red S and CPU blue S are independent settings.",
+                    "Solo Popo when P1 originally selected Ice Climbers (slot 0).\nCycle-grid red S and CPU blue S are separate; Ice Climbers greys only if red S matches this.",
                     ToggleSingle,
                     false,
                 ),

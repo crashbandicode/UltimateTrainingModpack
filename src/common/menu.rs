@@ -363,7 +363,17 @@ pub unsafe fn handle_final_input_mapping(
                     app.on_zr();
                     received_input = true;
                 });
-                button_config::button_mapping(ButtonConfig::R, style, button_presses).then(|| {
+                // GameCube's physical L/R normally map to ZL/ZR in this menu.
+                // On the stage page they page just like the named L/R shoulders.
+                let stage_gc = app.stage_page_active() && style == ControllerStyle::GCController;
+                let previous_page = if stage_gc { ButtonConfig::ZL } else { ButtonConfig::L };
+                let next_page = if stage_gc { ButtonConfig::ZR } else { ButtonConfig::R };
+                (app.stage_page_active()
+                    && button_config::button_mapping(previous_page, style, button_presses)).then(|| {
+                    app.on_l();
+                    received_input = true;
+                });
+                button_config::button_mapping(next_page, style, button_presses).then(|| {
                     app.on_r();
                     received_input = true;
                 });

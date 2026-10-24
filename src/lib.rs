@@ -5,10 +5,9 @@ use std::path::PathBuf;
 
 use skyline::nn::oe;
 use skyline::nro::{self, NroInfo};
-use training_mod_consts::{OnOff, LEGACY_TRAINING_MODPACK_ROOT};
+use training_mod_consts::LEGACY_TRAINING_MODPACK_ROOT;
 use training_mod_sync::*;
 
-use crate::common::button_config::DEFAULT_OPEN_MENU_CONFIG;
 use crate::common::*;
 use crate::consts::TRAINING_MODPACK_ROOT;
 use crate::logging::*;
@@ -31,6 +30,8 @@ mod character_roster;
 mod character_items;
 mod turnip_identity;
 pub mod source_lifetime;
+#[cfg(any(test, feature = "native-unlink-guard", feature = "mii-fullconfig-probe", feature = "mii-saved-alpha"))]
+mod native_fields;
 mod kirby_hat_cycle;
 mod kirby_hats;
 #[cfg(any(feature = "mii-identity-probe", feature = "mii-pool-observer", feature="mii-saved-alpha"))]
@@ -241,6 +242,10 @@ fn initialize_training_modpack() {
         });
     }
 
+    // Load menu shortcuts after directory creation and legacy migration, independently
+    // of the lazy writer thread used by optional diagnostics.
+    button_config::init();
+
     // INI seed first, then the optional Deluxe row (it reads the seed and the
     // persistence verdict), then the native adapter, which installs its hooks
     // whenever the INI says on or a host registered the row.
@@ -266,11 +271,7 @@ fn initialize_training_modpack() {
     notification("Training Modpack".to_string(), "Welcome!".to_string(), 60);
     notification(
         "Open Menu".to_string(),
-        if read(&MENU).menu_open_start_press == OnOff::ON {
-            "Hold Start".to_string()
-        } else {
-            DEFAULT_OPEN_MENU_CONFIG.to_string()
-        },
+        button_config::menu_shortcut_description(),
         120,
     );
     notification(

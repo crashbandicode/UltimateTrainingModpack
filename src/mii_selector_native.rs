@@ -51,7 +51,7 @@ impl Snapshot {
         let hat = |id: usize| self.protected[id].map(|p| u16::from_le_bytes([p.e[4], p.e[5]]));
         let [a,b]=self.layout.helpers();Some([hat(a as usize)?, hat(b as usize)?])
     }
-    pub(crate) fn authority(self) -> Authority {
+    pub(crate) fn authority(&self) -> Authority {
         authority(
             self.binding,
             self.thread,

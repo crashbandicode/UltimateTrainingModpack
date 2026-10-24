@@ -174,13 +174,22 @@ impl<'a> App<'a> {
 
     pub fn stage_help(&self) -> &'static str {
         if self.stage_is_direct() && self.stage_training_view.is_some() {
-            "A Apply now (Training only)   X Lobby Stage Rotation   B Back"
+            "A Apply now (Training only)   X Lobby Stage Rotation   L/R Page   B Back"
         } else if self.stage_is_direct() {
-            "A Apply now + save lobby stage   X Lobby Stage Rotation   B Back"
+            "A Apply now + save lobby stage   X Lobby Stage Rotation   L/R Page   B Back"
         } else if self.stage_direct_enabled {
-            "A Add/Remove   X Change Stage Now   B Back   Next lobby entry only"
+            "A Add/Remove   X Change Stage Now   L/R Page   B Back   Next lobby entry only"
         } else {
-            "A Add/Remove   B Back   Next lobby entry only"
+            "A Add/Remove   L/R Page   B Back   Next lobby entry only"
+        }
+    }
+
+    fn page_stage_menu(&mut self, next: bool) {
+        let toggles = &mut self.selected_submenu().toggles;
+        let selected = toggles.state.selected_row().unwrap_or(0) * toggles.cols
+            + toggles.state.selected_col().unwrap_or(0);
+        if let Some(index) = crate::stage_menu::page_cursor(selected, toggles.len(), next) {
+            toggles.select(index / toggles.cols, index % toggles.cols);
         }
     }
 
@@ -543,13 +552,23 @@ impl<'a> App<'a> {
         }
         self.roster_purpose == RosterPurpose::FighterCycles
             && role == Role::Player
-            && self.original_player_kind == Some(crate::roster_grid::group_kind(kind))
+            && self.player_cycle_exclusion() == Some(crate::roster_grid::group_kind(kind))
+    }
+
+    /// Native group the Player cycle skips. An Ice Climbers original is released while its
+    /// Solo Popo preference differs from the cycle's, since those load different bodies.
+    fn player_cycle_exclusion(&self) -> Option<u32> {
+        crate::roster_grid::cycle_exclusion(
+            self.original_player_kind,
+            self.read_id("solo_popo_original").first().is_some_and(|on| *on != 0),
+            self.roster_solo_enabled(Role::Player),
+        )
     }
 
     fn exclude_original_player(&mut self) {
         #[cfg(feature="mii-saved-alpha")]
         if self.original_player_kind.is_some_and(|k| (0x48..=0x4a).contains(&k)){return;}
-        let Some(kind) = self.original_player_kind else {
+        let Some(kind) = self.player_cycle_exclusion() else {
             return;
         };
         let id = Self::list_id(RosterPurpose::FighterCycles, Role::Player);
@@ -1107,10 +1126,16 @@ impl<'a> InputControl for App<'a> {
         self.finish_mii_selection();
         self.page = AppPage::CLOSE;
     }
-    fn on_l(&mut self) {}
+    fn on_l(&mut self) {
+        if self.pending_manual.is_some() { return; }
+        if self.stage_page_active() { self.page_stage_menu(false); }
+    }
     fn on_r(&mut self) {
         if self.pending_manual.is_some() { return; }
-        if self.stage_page_active() && self.stage_is_direct() { return; }
+        if self.stage_page_active() {
+            self.page_stage_menu(true);
+            return;
+        }
         if self.mii_page_active() { return; }
         if self.page == AppPage::TOGGLE && self.selected_submenu().id == "character_item_grant" {
             return; // One-shot actions have no current setting to reset.

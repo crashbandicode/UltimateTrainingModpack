@@ -1,71 +1,85 @@
 # Experimental enhancements alpha — UNSTABLE
 
-This is an opt-in diagnostic alpha for Smash Ultimate 13.0.5. Intermittent
-crashes remain under investigation. Do not treat this release as stable or as
-proof that the underlying native-memory corruption has been fixed.
+This opt-in diagnostic alpha targets Smash Ultimate 13.0.5. Intermittent console
+crashes remain under investigation. It is not a stable release or proof that the
+underlying native-memory corruption has been fixed.
 
 The NRO includes character cycling/manual swapping, Solo Popo, Kirby hats,
-character items, direct practice stages and lobby stage rotation, saved-Mii
-cycling, and guarded native cleanup/garbage-collector paths. The repository
-also contains native Mii-editor and helper experiments; those two feature
-gates are **not enabled in this particular diagnostic NRO**.
+character items, direct practice stages and lobby stage rotation, and saved-Mii
+cycling. Native Mii-editor and managed Mii-helper feature gates remain **disabled
+in this diagnostic NRO**. The source contains those separate experiments.
 
-The newest guard handles an observed exact-null Lua constant during native
-garbage collection. It continues to later constants without rewriting the
-malformed value or disabling collection. Existing exact-null cleanup guards
-remain. Native instruction checks refuse a mismatched patch window. The
-original writer of the malformed reference is unknown; non-null dangling
-pointers are outside this containment.
+## Changes in this alpha
+
+- Original P1 Ice Climbers uses Character Extras → Solo Popo; numbered Ice
+  Climbers uses the independent red S. Opposite configurations can share a cycle,
+  and returning through slot 0 restores the original configuration. The original
+  portrait is grey only when both configurations match. CPU's blue S is unchanged.
+- Practice Stages includes the actual Training stage as well as Waiting Room.
+  L/R changes pages. Direct selection works in Training; rotation remains for
+  lobby practice.
+- Two optional [INI menu shortcuts](menu-shortcuts.md), initially Minus and
+  disabled. B + D-pad Up is permanent. Plus opens normal pause unless explicitly
+  configured as a mod-menu shortcut.
+- Shared native-field checks cover selected cleanup and Mii pointer chains.
+  They check null parents, offsets and alignment; they do not cover every unsafe
+  access or prove that a non-null pointer is alive. Native object lifetime and
+  synchronization still belong to the caller. Mii callbacks also avoid redundant
+  large copies and unnecessary work when inactive.
+
+The existing exact-null cleanup and Lua garbage-collector guards remain. The
+malformed-reference writer is unknown; non-null dangling pointers are outside
+this containment. Native instruction checks refuse mismatched patch windows.
 
 ## Install
 
-Download `libtraining_modpack-UNSTABLE.nro` from this release. Back up the
-currently installed NRO, then rename the download to `libtraining_modpack.nro`
-and place it at
-`atmosphere/contents/01006A800016E000/romfs/skyline/plugins/` on the SD card.
-Retain the existing Skyline, ARCropolis, `libnro_hook.nro`, and
-`libparam_hook.nro` installation. No other mod or configuration is bundled or
-replaced by this download.
+Download `libtraining_modpack-UNSTABLE.nro` from the [experimental release](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-experimental.20261024).
+Back up the current NRO, rename the download to `libtraining_modpack.nro`, and put
+it in `atmosphere/contents/01006A800016E000/romfs/skyline/plugins/` on the SD card.
+Retain Skyline, ARCropolis, `libnro_hook.nro`, and `libparam_hook.nro`. This download
+does not replace other mods or their settings.
 
-Focused diagnostic capture starts automatically and writes
-`ultimate/TrainingModpack/practice-trace-swap.bin` (bounded below 4 GiB), with
-a small native unlink capture and diagnostic log in the same directory.
-Existing Trace Control users can stop/start capture there. This build does
-not write the old broad `practice-trace-controlled.bin` recording.
+Focused diagnostic capture starts automatically in
+`ultimate/TrainingModpack/practice-trace-swap.bin`, bounded below 4 GiB. Small
+native unlink and diagnostic logs are retained alongside it. Existing Trace
+Control users can stop/start capture. This build does not write the former broad
+`practice-trace-controlled.bin` recording.
 
 ## What was checked
 
-- Native all-target Clippy: zero warnings; no-default build and optimized
-  release build passed with source hashes checked before and after.
-- Two exact ARM-loop regressions: valid traversal has identical mark calls
-  and instruction count; the observed null-shaped constant faults in the
-  original loop and advances to later valid objects in the guarded loop.
-  The mark callee is stubbed in this isolated test.
-- One Eden session with retained Switch plugins: Mr. Game & Watch to Ice
-  Climbers, exit Training, then re-enter as Palutena. Both guards installed,
-  normal emulator exit, original profile restored. This is not physical
-  console acceptance or an emulator reproduction of the intermittent fault.
+- Native all-target Clippy: zero warnings; no-default and optimized release builds
+  passed with source identities checked before and after.
+- 18 focused Cargo tests and 8 real-source helper tests passed. Their code is
+  unchanged by the final startup file-I/O correction, so those results were
+  carried forward rather than rerun. Three native controller tests were compile
+  checked only and are not counted as executed.
+- Eden verified original Solo Popo → numbered paired Ice Climbers → original Solo
+  Popo; default Minus and permanent B + D-pad Up; normal Plus pause; L/R stage
+  paging; direct Waiting Room → Training stage changes; normal Training exit.
+- A second Eden session verified creation of the missing shortcut INI, then a
+  normal game stop/relaunch with X configured: X opened the menu, Minus no longer
+  did, and the permanent shortcut still worked. Normal Training exit passed.
+- Both sessions retained the Switch mod set plus trace controls, exited normally,
+  used no swap, and restored their profiles. Observed emulator peaks were about
+  5.41 and 6.16 GiB. These are emulator measurements, not Switch memory usage or
+  proof that the intermittent console fault was reproduced or fixed.
 
-The physical console has not yet accepted this exact candidate. The new
-Solo Popo opposite-configuration cycle behavior, L/R stage paging,
-configurable menu shortcuts, and ownership-helper followups are queued for
-a later build and are not claimed by this release.
+Earlier native ARM-loop regression evidence for the unchanged guard assembly is
+retained. This build has no new physical-console or LDN acceptance claim. The
+updated Solo cycle behavior is not yet represented by the older demonstration GIF.
 
 ## Artifact identity and build options
 
-- NRO size: 5537792 bytes.
-- NRO SHA-256: `97aa5a34282271a36a4d4072377ae5710c0cce366810066e6ede88c15bd77e8a`.
-- Frozen build-input SHA-256: `10b8835a3b9aa18a4ff5e7125895734be12b1c470633bfffcd02cef62723a7ca`.
-- Cargo package version remains 7.1.2; the experimental release tag identifies
-  this opt-in candidate. This is not a replacement stable version.
-- The source commit contains the exact compiled Rust/assets snapshot plus
-  release documentation. README and release notes were edited after build;
-  compiled sources/assets were not changed. Cargo.lock is retained to bind
-  the dependency resolution. The existing optional Deluxe SDK path requires
-  the project's pinned SDK snapshot as documented in `Cargo.toml`.
+- NRO size: 5550080 bytes.
+- NRO SHA-256: `c72fa274f239a3d30a51cc802d8d2088bbd75b342ba084b1e7af02678670b17e`.
+- Frozen build-input SHA-256: `b1a1cff8456cf719b48257a1d9b527c62fc4e47b2200a2c677e467540133f7f0`.
+- Package version remains 7.1.2; the experimental tag identifies this candidate.
+- The source commit preserves the exact compiled Rust/assets and lockfile;
+  listed guide/release documentation was updated after the build. The optional
+  Deluxe SDK requires the pinned snapshot described in `Cargo.toml`.
 
 Enabled local feature closure:
 
 ```text
-automation-results-native console-map-probe console-practice-trace console-swap-trace cpu-pilot-probe deluxe-sdk dep:deluxe-plugin-sdk lobby-stage-probe managed-sources mii-managed-source-coexist-alpha mii-ordinary-cpu-alpha mii-ordinary-player-alpha mii-saved-alpha native-unlink-guard native-unlink-probe practice-stage-observer practice-stage-request-alpha waiting-roster-reload
+automation-results-native console-map-probe console-practice-trace console-swap-trace cpu-pilot-probe deluxe-sdk dep:deluxe-plugin-sdk lobby-stage-probe managed-sources mii-managed-source-coexist-alpha mii-ordinary-cpu-alpha mii-ordinary-player-alpha mii-saved-alpha native-unlink-guard native-unlink-probe practice-stage-observer practice-stage-request-alpha training_mod_consts/mii-saved-alpha training_mod_consts/p1-cpu-control training_mod_tui/mii-ordinary-cpu-alpha training_mod_tui/mii-ordinary-player-alpha training_mod_tui/mii-saved-alpha waiting-roster-reload
 ```

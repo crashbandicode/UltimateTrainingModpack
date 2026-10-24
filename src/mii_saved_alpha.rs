@@ -241,17 +241,16 @@ fn context(s: &Alpha) -> MenuContext {
     });
     let player = s.owner[0].as_ref().map_or(PlayerLive::NotMii, |o| {
         if o.cycled {
-            PlayerLive::Cycled {
-                class: o.state.expected().canonical().class,
-                canonical: o.state.expected().canonical(),
-            }
+            let canonical = o.state.expected().canonical();
+            PlayerLive::Cycled { class: canonical.class, canonical }
         } else {
             PlayerLive::Origin
         }
     });
-    let cpu = s.owner[1]
-        .as_ref()
-        .map(|o| (o.state.expected().canonical().class, o.state.expected().canonical()));
+    let cpu = s.owner[1].as_ref().map(|o| {
+        let canonical = o.state.expected().canonical();
+        (canonical.class, canonical)
+    });
     MenuContext {
         epoch: menu_epoch(),
         original,
@@ -285,6 +284,8 @@ pub(super) unsafe fn service(entry: *mut u8, owner: u32) -> bool {
 
 // Keep native snapshot temporaries off ordinary fighter callbacks. Checking WORK
 // inside this larger body would still reserve its frame before the early return.
+// Settlement, menu capture, and submission each return a by-value native snapshot.
+// Those three stay separate so a reload tick does not reserve their frames.
 #[inline(never)]
 unsafe fn service_work(entry: *mut u8, owner: u32, i: usize) -> bool {
     #[cfg(feature = "console-swap-trace")]
@@ -300,79 +301,7 @@ unsafe fn service_work(entry: *mut u8, owner: u32, i: usize) -> bool {
             && ready_single_mii(entry, owner) == Some(track.after.canonical().class as u32)
             && read::<u8>(entry, 0x5918) == 0
         {
-            // Native readiness ends serialization, separately from accepting our target bytes.
-            // A departed entry still owns this current callback; do not publish its old state.
-            let fresh = if track.departed {
-                None
-            } else {
-                Some(native::current(entry, role(i), track.epoch, track.after))
-            };
-            let mut s = ALPHA.lock().unwrap();
-            let Some(current) = s.track[i].filter(|t| {
-                t.entry == track.entry && t.epoch == track.epoch && t.token == track.token
-            }) else {
-                return true;
-            };
-            // Scene departure advances the owner epoch but retains this exact old track.
-            // Any other generation mismatch has no authority to settle it.
-            if !current.departed && s.epoch[i] != track.epoch {
-                return true;
-            }
-            let done = if let Some(o) = s.owner[i].as_mut() {
-                if current.departed {
-                    let _ = o.state.settle_terminal(track.ticket);
-                    false
-                } else {
-                    let operation = match fresh {
-                        Some(Ok(now)) => o.state.complete(track.ticket, now).ok(),
-                        _ => None,
-                    };
-                    if let Some(operation) = operation {
-                        o.cycled = operation == Operation::Apply;
-                        true
-                    } else {
-                        // A failed current read is terminal too. Keep original/expected and
-                        // intercept protection; settling a receipt never returns it to Ready.
-                        let _ = o.state.refuse(track.ticket);
-                        let _ = o.state.settle_terminal(track.ticket);
-                        false
-                    }
-                }
-            } else {
-                false
-            };
-            s.track[i] = None;
-            s.intent[i] = None;
-            refresh_work(&s);
-            let cycled = s.owner[i].as_ref().is_some_and(|o| o.cycled);
-            drop(s);
-            let reason = if current.departed {
-                "departed saved Mii native reload ready"
-            } else if done {
-                "saved Mii alpha complete"
-            } else {
-                "saved Mii native ready; exact completion refused"
-            };
-            if done {
-                publish_mii_presentation(entry, owner, track.epoch, track.after.canonical().class as u32);
-            }
-            let released = finish_install(track.token, reason);
-            if done {
-                if i == 0 {
-                    state_for(Role::Player).lock().unwrap().cursor = cycled.then_some(0);
-                }
-                notify(
-                    if i == 0 { Role::Player } else { Role::Cpu },
-                    if cycled {
-                        "Saved Mii configuration applied"
-                    } else {
-                        "Original saved Mii restored"
-                    }
-                    .into(),
-                );
-            }
-            trace!("[MiiSavedAlpha] native_ready owner={owner} epoch={} ticks={} accepted={done} departed={} serialization_released={released} saved_files_written=false",track.epoch,track.ticks,current.departed);
-            return true;
+            return settle_saved_track(entry, owner, i, track);
         }
         if track.ticks == 600 {
             notice("native reload readiness pending; INSTALL retained until witnessed readiness or exact destructor");
@@ -384,6 +313,12 @@ unsafe fn service_work(entry: *mut u8, owner: u32, i: usize) -> bool {
         }
         return true;
     }
+    continue_saved_service(entry, owner, i)
+}
+
+// Menu and intent temporaries stay off the reload-tick path above.
+#[inline(never)]
+unsafe fn continue_saved_service(entry: *mut u8, owner: u32, i: usize) -> bool {
     if mii_backend::current().and_then(|l|l.logical(owner))!=Some(i) {return false;}
     // At most one catalog/current capture per menu-open and ready owner. No idle-frame census.
     let capture = {
@@ -402,92 +337,8 @@ unsafe fn service_work(entry: *mut u8, owner: u32, i: usize) -> bool {
         }
     };
     if let Some((epoch, capture_menu_epoch, catalog, expected)) = capture {
-        // The preceding ordinary service may still be waiting for native readiness.
-        #[cfg(feature="mii-ordinary-player-alpha")]
-        if i == 0 && super::mii_ordinary_player::menu_capture_pending(entry) {
-            return false;
-        }
-        #[cfg(feature="mii-ordinary-cpu-alpha")]
-        if i == 1 && super::mii_ordinary_cpu::menu_capture_pending(entry) {return false;}
-        if !mii_backend::ready()
-            || INSTALL.active()
-            || STATES.iter().any(|state| {
-                let s = state.lock().unwrap();
-                s.active.is_some() || s.pending.is_some()
-            })
-        {
-            return false;
-        }
-        if MiiClass::from_kind(read::<u32>(entry, 0x18)).is_some() && ready_single_mii(entry, owner).is_none() {
-            return false;
-        }
-        #[cfg(feature="mii-ordinary-player-alpha")]
-        let ordinary_owned=super::mii_ordinary_player::owns(entry as usize);
-        #[cfg(not(feature="mii-ordinary-player-alpha"))]
-        let ordinary_owned=false;
-        #[cfg(feature="mii-ordinary-cpu-alpha")]
-        let ordinary_owned=ordinary_owned || super::mii_ordinary_cpu::owns(entry as usize);
-        let result = if !unified(i) && !ordinary_owned && MiiClass::from_kind(read::<u32>(entry, 0x18)).is_some() {
-            match expected {
-                Some(c) => native::current(entry, role(i), epoch, c),
-                None => native::original(entry, role(i), epoch, &catalog),
-            }
-        } else {
-            Err("current original is not saved Mii")
-        };
-        let mut s = ALPHA.lock().unwrap();
-        if s.epoch[i] != epoch || menu_epoch() != capture_menu_epoch || !s.menu.needs(role(i)) {
-            return false;
-        }
-        let mut valid = false;
-        if expected.is_none() {
-            if let Ok(current) = result {
-                if let Ok(state) = SavedRole::capture(role(i), current) {
-                    s.owner[i] = Some(Owner {
-                        entry: entry as usize,
-                        state,
-                        cycled: false,
-                    });
-                    valid = true;
-                }
-            }
-        } else if let (Some(o), Ok(current)) = (s.owner[i].as_ref(), result) {
-            valid = o.entry == entry as usize && o.state.menu_current(current).is_ok();
-        }
-        if !valid {
-            s.intent[i] = None;
-        }
-        s.menu.finish(role(i), valid);
-        #[cfg(feature="mii-ordinary-player-alpha")]
-        let ordinary = super::mii_ordinary_player::player_context();
-        #[cfg(not(feature="mii-ordinary-player-alpha"))]
-        let ordinary = None;
-        let mut captured_context = context(&s);
-        if unified(0) && ordinary.is_none()
-            && original_kind(Role::Player).is_some_and(|k|MiiClass::from_kind(k).is_some()) {
-            captured_context.original=PlayerOrigin::Unresolved;
-        }
-        #[cfg(feature="mii-ordinary-cpu-alpha")]
-        let ordinary_cpu=super::mii_ordinary_cpu::menu_qualified();
-        #[cfg(feature="mii-ordinary-cpu-alpha")]
-        let cpu_context=ordinary_cpu.then(super::mii_ordinary_cpu::cpu_context);
-        #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
-        let cpu_context=None;
-        let publish = s.menu.take_owned_context(captured_context,ordinary,cpu_context)
-            .map(|context|((*catalog).clone(),context));
-        refresh_work(&s);
-        drop(s);
-        if let Some((catalog, context)) = publish {
-            // No G/state lock remains; App contains owned values only.
-            let mut app = training_mod_sync::lock_write(&menu::QUICK_MENU_APP);
-            // Check under App: an older capture may have completed before cancellation.
-            let mounted=app.publish_mii_catalog(catalog, context, menu_epoch(), || {
-                training_mod_sync::assign(&menu::MENU_RECEIVED_INPUT, true);
-            });
-            #[cfg(feature="mii-ordinary-cpu-alpha")]
-            if mounted {app.qualify_ordinary_cpu_cycle(ordinary_cpu);}
-            #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
-            let _=mounted;
+        if let Some(stop) = finish_saved_capture(entry, owner, i, epoch, capture_menu_epoch, catalog, expected) {
+            return stop;
         }
     }
     if unified(i) || !permitted(i)
@@ -524,6 +375,201 @@ unsafe fn service_work(entry: *mut u8, owner: u32, i: usize) -> bool {
     let Some(catalog) = catalog else {
         return false;
     };
+    submit_saved_intent(entry, owner, i, (epoch, intent, expected, cycled, original, catalog))
+}
+
+// By-value native::current lives here. The per-tick reload path returns before this call.
+#[inline(never)]
+unsafe fn settle_saved_track(entry: *mut u8, owner: u32, i: usize, track: Track) -> bool {
+    // Native readiness ends serialization, separately from accepting our target bytes.
+    // A departed entry still owns this current callback; do not publish its old state.
+    let fresh = if track.departed {
+        None
+    } else {
+        Some(native::current(entry, role(i), track.epoch, track.after))
+    };
+    let mut s = ALPHA.lock().unwrap();
+    let Some(current) = s.track[i].filter(|t| {
+        t.entry == track.entry && t.epoch == track.epoch && t.token == track.token
+    }) else {
+        return true;
+    };
+    // Scene departure advances the owner epoch but retains this exact old track.
+    // Any other generation mismatch has no authority to settle it.
+    if !current.departed && s.epoch[i] != track.epoch {
+        return true;
+    }
+    let done = if let Some(o) = s.owner[i].as_mut() {
+        if current.departed {
+            let _ = o.state.settle_terminal(track.ticket);
+            false
+        } else {
+            let operation = match fresh {
+                Some(Ok(now)) => o.state.complete(track.ticket, now).ok(),
+                _ => None,
+            };
+            if let Some(operation) = operation {
+                o.cycled = operation == Operation::Apply;
+                true
+            } else {
+                // A failed current read is terminal too. Keep original/expected and
+                // intercept protection; settling a receipt never returns it to Ready.
+                let _ = o.state.refuse(track.ticket);
+                let _ = o.state.settle_terminal(track.ticket);
+                false
+            }
+        }
+    } else {
+        false
+    };
+    s.track[i] = None;
+    s.intent[i] = None;
+    refresh_work(&s);
+    let cycled = s.owner[i].as_ref().is_some_and(|o| o.cycled);
+    drop(s);
+    let reason = if current.departed {
+        "departed saved Mii native reload ready"
+    } else if done {
+        "saved Mii alpha complete"
+    } else {
+        "saved Mii native ready; exact completion refused"
+    };
+    if done {
+        publish_mii_presentation(entry, owner, track.epoch, track.after.canonical().class as u32);
+    }
+    let released = finish_install(track.token, reason);
+    if done {
+        if i == 0 {
+            state_for(Role::Player).lock().unwrap().cursor = cycled.then_some(0);
+        }
+        notify(
+            if i == 0 { Role::Player } else { Role::Cpu },
+            if cycled {
+                "Saved Mii configuration applied"
+            } else {
+                "Original saved Mii restored"
+            }
+            .into(),
+        );
+    }
+    trace!("[MiiSavedAlpha] native_ready owner={owner} epoch={} ticks={} accepted={done} departed={} serialization_released={released} saved_files_written=false",track.epoch,track.ticks,current.departed);
+    true
+}
+
+// native::current / native::original and the owned catalog copy live here.
+// Some(false) is the previous early return; None continues to a saved intent.
+#[inline(never)]
+unsafe fn finish_saved_capture(
+    entry: *mut u8,
+    owner: u32,
+    i: usize,
+    epoch: u64,
+    capture_menu_epoch: u64,
+    catalog: Arc<Snapshot>,
+    expected: Option<Configuration>,
+) -> Option<bool> {
+    // The preceding ordinary service may still be waiting for native readiness.
+    #[cfg(feature="mii-ordinary-player-alpha")]
+    if i == 0 && super::mii_ordinary_player::menu_capture_pending(entry) {
+        return Some(false);
+    }
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    if i == 1 && super::mii_ordinary_cpu::menu_capture_pending(entry) {return Some(false);}
+    if !mii_backend::ready()
+        || INSTALL.active()
+        || STATES.iter().any(|state| {
+            let s = state.lock().unwrap();
+            s.active.is_some() || s.pending.is_some()
+        })
+    {
+        return Some(false);
+    }
+    if MiiClass::from_kind(read::<u32>(entry, 0x18)).is_some() && ready_single_mii(entry, owner).is_none() {
+        return Some(false);
+    }
+    #[cfg(feature="mii-ordinary-player-alpha")]
+    let ordinary_owned=super::mii_ordinary_player::owns(entry as usize);
+    #[cfg(not(feature="mii-ordinary-player-alpha"))]
+    let ordinary_owned=false;
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    let ordinary_owned=ordinary_owned || super::mii_ordinary_cpu::owns(entry as usize);
+    let result = if !unified(i) && !ordinary_owned && MiiClass::from_kind(read::<u32>(entry, 0x18)).is_some() {
+        match expected {
+            Some(c) => native::current(entry, role(i), epoch, c),
+            None => native::original(entry, role(i), epoch, &catalog),
+        }
+    } else {
+        Err("current original is not saved Mii")
+    };
+    let mut s = ALPHA.lock().unwrap();
+    if s.epoch[i] != epoch || menu_epoch() != capture_menu_epoch || !s.menu.needs(role(i)) {
+        return Some(false);
+    }
+    let mut valid = false;
+    if expected.is_none() {
+        if let Ok(current) = result {
+            if let Ok(state) = SavedRole::capture(role(i), current) {
+                s.owner[i] = Some(Owner {
+                    entry: entry as usize,
+                    state,
+                    cycled: false,
+                });
+                valid = true;
+            }
+        }
+    } else if let (Some(o), Ok(current)) = (s.owner[i].as_ref(), result) {
+        valid = o.entry == entry as usize && o.state.menu_current(current).is_ok();
+    }
+    if !valid {
+        s.intent[i] = None;
+    }
+    s.menu.finish(role(i), valid);
+    #[cfg(feature="mii-ordinary-player-alpha")]
+    let ordinary = super::mii_ordinary_player::player_context();
+    #[cfg(not(feature="mii-ordinary-player-alpha"))]
+    let ordinary = None;
+    let mut captured_context = context(&s);
+    if unified(0) && ordinary.is_none()
+        && original_kind(Role::Player).is_some_and(|k|MiiClass::from_kind(k).is_some()) {
+        captured_context.original=PlayerOrigin::Unresolved;
+    }
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    let ordinary_cpu=super::mii_ordinary_cpu::menu_qualified();
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    let cpu_context=ordinary_cpu.then(super::mii_ordinary_cpu::cpu_context);
+    #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
+    let cpu_context=None;
+    // publish_mii_catalog takes an owned Snapshot. ALPHA keeps the Arc, so this
+    // one clone is the menu publish, not a per-tick copy.
+    let publish = s.menu.take_owned_context(captured_context,ordinary,cpu_context)
+        .map(|context|((*catalog).clone(),context));
+    refresh_work(&s);
+    drop(s);
+    if let Some((catalog, context)) = publish {
+        // No G/state lock remains; App contains owned values only.
+        let mut app = training_mod_sync::lock_write(&menu::QUICK_MENU_APP);
+        // Check under App: an older capture may have completed before cancellation.
+        let mounted=app.publish_mii_catalog(catalog, context, menu_epoch(), || {
+            training_mod_sync::assign(&menu::MENU_RECEIVED_INPUT, true);
+        });
+        #[cfg(feature="mii-ordinary-cpu-alpha")]
+        if mounted {app.qualify_ordinary_cpu_cycle(ordinary_cpu);}
+        #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
+        let _=mounted;
+    }
+    None
+}
+
+// By-value native::current, native::apply, and the 0x70 descriptor live here.
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+unsafe fn submit_saved_intent(
+    entry: *mut u8,
+    owner: u32,
+    i: usize,
+    request: (u64, Intent, Configuration, bool, Configuration, Arc<Snapshot>),
+) -> bool {
+    let (epoch, intent, expected, cycled, original, catalog) = request;
     let current = match native::current(entry, role(i), epoch, expected) {
         Ok(v) => v,
         Err(reason) => {
@@ -538,14 +584,17 @@ unsafe fn service_work(entry: *mut u8, owner: u32, i: usize) -> bool {
     let choice = match intent {
         Intent::Select(a) => Some(a),
         Intent::Cycle if cycled => None,
-        Intent::Cycle => selection::resolve(
-            &catalog,
-            &menu::mii_preferences(),
-            MiiRole::Player,
-            original.canonical().class,
-            PlayerOrigin::Mii(Origin(original.canonical())),
-        )
-        .map(Action::ReloadPlayer),
+        Intent::Cycle => {
+            let canonical = original.canonical();
+            selection::resolve(
+                &catalog,
+                &menu::mii_preferences(),
+                MiiRole::Player,
+                canonical.class,
+                PlayerOrigin::Mii(Origin(canonical)),
+            )
+            .map(Action::ReloadPlayer)
+        }
     };
     let target = choice.and_then(|a| {
         let c = match a {

@@ -187,7 +187,7 @@ pub(super) struct Snapshot {
     entries:[usize;8], owners:[Option<Owner>;8], protected:[Option<Protected>;8],
 }
 impl Snapshot {
-    fn authority(self)->Authority {
+    fn authority(&self)->Authority {
         authority(self.binding,self.thread,[self.symbol,self.manager,self.internal],
             self.entries,0,self.owners[0].unwrap())
     }

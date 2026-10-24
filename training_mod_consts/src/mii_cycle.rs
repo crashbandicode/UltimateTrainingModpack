@@ -107,6 +107,15 @@ pub fn next_cycle(
     original: Identity,
     live: Live,
 ) -> Option<Step> {
+    next_cycle_with_ice_climbers(ordered, catalog, preferences, role, original, live, false)
+}
+
+/// The exception is limited to Ice Climbers with different original/cycle Solo
+/// preferences. Saved-Mii identity and every other group keep their existing rule.
+fn next_cycle_with_ice_climbers(
+    ordered: &[TrioFighter], catalog: &Snapshot, preferences: &Preferences,
+    role: Role, original: Identity, live: Live, separate_ice_climbers: bool,
+) -> Option<Step> {
     // A kind-only Mii cannot establish the immutable configuration identity.
     if matches!(original, Identity::Fighter(kind) if MiiClass::from_kind(kind).is_some())
         || matches!(live, Live::Numbered { identity: Identity::Fighter(kind), .. }
@@ -135,7 +144,8 @@ pub fn next_cycle(
         } else {
             let forms = Forms::starting(kind);
             if (role == Role::Player
-                && matches!(original, Identity::Fighter(current) if forms.same_group(current)))
+                && matches!(original, Identity::Fighter(current) if forms.same_group(current))
+                && !(separate_ice_climbers && kind == 0x4b))
                 || choices.iter().any(
                     |target| matches!(target, Target::Fighter(other) if forms.same_group(*other)),
                 )
@@ -196,7 +206,7 @@ pub fn next_qualified_cpu<T>(
     live: Live,
     qualify: impl FnMut(Step) -> Option<T>,
 ) -> Option<(Step, T)> {
-    next_qualified(ordered, catalog, preferences, Role::Cpu, original, live, qualify)
+    next_qualified(ordered, catalog, preferences, Role::Cpu, original, live, false, qualify)
 }
 
 /// Player traversal includes the protected original as its final, unnumbered
@@ -210,9 +220,21 @@ pub fn next_qualified_player<T>(
     live: Live,
     qualify: impl FnMut(Step) -> Option<T>,
 ) -> Option<(Step, T)> {
-    next_qualified(ordered, catalog, preferences, Role::Player, original, live, qualify)
+    next_qualified(ordered, catalog, preferences, Role::Player, original, live, false, qualify)
 }
 
+/// Player traversal with the same opposite-Solo exception as the portrait grid.
+#[allow(clippy::too_many_arguments)]
+pub fn next_qualified_player_with_ice_climbers<T>(
+    ordered: &[TrioFighter], catalog: &Snapshot, preferences: &Preferences,
+    original: Identity, live: Live, separate_ice_climbers: bool,
+    qualify: impl FnMut(Step) -> Option<T>,
+) -> Option<(Step, T)> {
+    next_qualified(ordered, catalog, preferences, Role::Player, original, live,
+        separate_ice_climbers, qualify)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn next_qualified<T>(
     ordered: &[TrioFighter],
     catalog: &Snapshot,
@@ -220,6 +242,7 @@ fn next_qualified<T>(
     role: Role,
     original: Identity,
     live: Live,
+    separate_ice_climbers: bool,
     mut qualify: impl FnMut(Step) -> Option<T>,
 ) -> Option<(Step, T)> {
     let mut lookup = live;
@@ -227,7 +250,8 @@ fn next_qualified<T>(
     // Numbered choices cannot outnumber roster entries. Player also has slot 0.
     let limit = ordered.len().saturating_add(usize::from(role == Role::Player));
     for _ in 0..limit {
-        let step = next_cycle(ordered, catalog, preferences, role, original, lookup)?;
+        let step = next_cycle_with_ice_climbers(ordered, catalog, preferences, role,
+            original, lookup, separate_ice_climbers)?;
         if first == Some(step) {
             break;
         }
@@ -256,6 +280,33 @@ mod tests {
     use super::*;
     use training_mod_mii::inventory::{build_snapshot, RawSlot, TaggedId, CHARINFO_LEN};
     use training_mod_mii::selection::{Fallback, Source};
+
+    #[test]
+    fn opposite_solo_ice_climbers_stays_in_a_mixed_saved_mii_cycle() {
+        let catalog = example();
+        let preferences = Preferences::default();
+        let ordered = roster(&[0x4b, 0x48, 6]);
+        let original = Identity::Fighter(0x4b);
+        let step = |live, different| next_qualified_player_with_ice_climbers(
+            &ordered, &catalog, &preferences, original, live, different, Some,
+        ).unwrap().0;
+        let climbers = step(Live::Original, true);
+        assert_eq!(climbers, Step { target: Target::Fighter(0x4b), cursor: Some(0) });
+        let mii = step(applied(climbers), true);
+        assert!(matches!(mii.target, Target::Saved(_)));
+        let kirby = step(applied(mii), true);
+        assert_eq!(kirby.target, Target::Fighter(6));
+        assert_eq!(step(applied(kirby), true), Step { target: Target::Original, cursor: None });
+        // Matching Solo preferences exclude only the duplicate IC; the saved
+        // Mii is still the first numbered choice and slot 0 remains reachable.
+        assert!(matches!(step(Live::Original, false).target, Target::Saved(_)));
+        // Qualification failures skip only the unavailable Mii, never the IC.
+        let no_mii = next_qualified_player_with_ice_climbers(
+            &ordered, &catalog, &preferences, original, applied(climbers), true,
+            |step| (!matches!(step.target, Target::Saved(_))).then_some(step),
+        ).unwrap().0;
+        assert_eq!(no_mii.target, Target::Fighter(6));
+    }
 
     fn raw(index: usize, id: u32, class: MiiClass, face: u8) -> RawSlot {
         let mut charinfo = [face; CHARINFO_LEN];

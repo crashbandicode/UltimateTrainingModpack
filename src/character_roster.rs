@@ -15,7 +15,9 @@ use crate::common::{
     menu,
 };
 use crate::training::{self, lobby};
-use training_mod_consts::character_forms::{next_cycle, EntryState, Forms};
+use training_mod_consts::character_forms::{
+    configured_forms, cycle_position, next_cycle, next_from_original, EntryState, Forms,
+};
 
 #[path = "native_service.rs"]
 mod native_service;
@@ -335,17 +337,16 @@ pub fn solo_popo_active(cpu: bool) -> bool {
     scope(role).is_some() && SOLO_ACTIVE[role as usize].load(Ordering::Acquire)
 }
 
+/// Forms for a fighter that is not at a known numbered slot: slot 0 or a direct pick.
+#[cfg(feature = "mii-ordinary-cpu-alpha")]
 fn requested_forms(m: &TrainingModpackMenu, role: Role, kind: u32) -> Forms {
-    let solo = match role {
-        Role::Cpu => m.solo_popo_cpu,
-        Role::Player if original_kind(role) == Some(0x4b) => m.solo_popo_original,
-        Role::Player => m.solo_popo_player_cycle,
-    };
-    if kind == 0x4b && solo == OnOff::ON {
-        Forms::solo_popo()
-    } else {
-        Forms::starting(kind)
-    }
+    requested_forms_at(m, role, kind, None)
+}
+
+/// `slot` is the numbered cycle position holding the fighter. The same Ice Climbers kind
+/// takes the original preference at Player slot 0 and the cycle's at a numbered slot.
+fn requested_forms_at(m: &TrainingModpackMenu, role: Role, kind: u32, slot: Option<usize>) -> Forms {
+    configured_forms(m, role == Role::Cpu, original_kind(role), kind, slot.is_some())
 }
 
 fn publish_partners(role: Role, forms: Forms) {
@@ -364,14 +365,19 @@ fn selection_label(role: Role, fighter: TrioFighter, slot: Option<usize>) -> Str
 
 fn roster(m: &TrainingModpackMenu, role: Role) -> Vec<TrioFighter> {
     match role {
-        Role::Player => m.player_roster,
-        Role::Cpu => m.cpu_roster,
-    }
-    .fighters_excluding(if role == Role::Player {
-        original_kind(role)
-    } else {
-        None
-    }).into_iter().filter(|f| !(0x48..=0x4a).contains(&f.kind())).collect()
+        Role::Player => m.player_roster.fighters_excluding(training_mod_tui::roster_grid::cycle_exclusion(
+            original_kind(role),
+            m.solo_popo_original == OnOff::ON,
+            m.solo_popo_player_cycle == OnOff::ON,
+        )),
+        Role::Cpu => m.cpu_roster.fighters(),
+    }.into_iter().filter(|f| !(0x48..=0x4a).contains(&f.kind())).collect()
+}
+
+/// Numbered slot of `kind`'s group in `role`'s current cycle.
+fn locate(m: &TrainingModpackMenu, role: Role, kind: u32) -> Option<usize> {
+    let kinds: Vec<_> = roster(m, role).iter().map(|fighter| fighter.kind()).collect();
+    cycle_position(&kinds, kind)
 }
 
 fn notify(role: Role, message: String) {
@@ -392,7 +398,13 @@ pub fn settings_changed(previous: &TrainingModpackMenu,
         if roster(previous, role) != roster(&current, role) {
             let mut state = state_for(role).lock().unwrap();
             state.revision = state.revision.wrapping_add(1);
-            state.cursor = None;
+            // A numbered fighter keeps its slot intent through an edit (Ice Climbers can be
+            // both slot 0 and numbered). A removed entry keeps a stale hint: the
+            // next cycle validates it by kind, while Solo preference still follows
+            // the numbered origin until an explicit return to slot 0.
+            let live = state.observed.map(|(_, kind)| kind);
+            state.cursor = state.cursor.map(|old|
+                live.and_then(|kind| locate(&current, role, kind)).unwrap_or(old));
             trace!(
                 "[CharacterRoster] settings role={:?} size={} kinds={:x?}",
                 role,
@@ -821,9 +833,10 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
             state.active = None;
             state.loaded = Some((entry as usize, owner, active.target.kind()));
             state.observed = Some((entry as usize, active.target.kind()));
-            if state.revision == active.revision {
-                state.cursor = active.slot;
-            }
+            state.cursor = active.slot.map(|old| {
+                if state.revision == active.revision { old }
+                else { locate(&setting(&MENU), role, active.target.kind()).unwrap_or(old) }
+            });
             if active.scope.waiting() {
                 WAITING_MEMORY
                     .lock()
@@ -927,6 +940,7 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
                         state.epoch
                     );
                 }
+                let slot = state.cursor;
                 drop(state);
                 publish_partners(role, forms);
                 if newly_observed {
@@ -957,7 +971,7 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
                 // match is active; menu changes use the same native boundary.
                 if kind == 0x4b
                     && crate::common::is_ready_go()
-                    && forms != requested_forms(&setting(&MENU), role, kind)
+                    && forms != requested_forms_at(&setting(&MENU), role, kind, slot)
                 {
                     queue(role, Selection::RefreshPartners);
                     return;
@@ -1029,7 +1043,16 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
             } else {
                 None
             };
-            let Some((kind, slot)) = next_cycle(current, state.cursor, &kinds, original) else {
+            // Slot 0 is told apart from a numbered slot of the same group (Ice Climbers whose
+            // Solo preference differs) by the cursor, which a by-group search cannot see.
+            let at_original = state.cursor.is_none()
+                && original.is_some_and(|kind| cycle_position(&[kind], current).is_some());
+            let step = if at_original {
+                next_from_original(&kinds, original)
+            } else {
+                next_cycle(current, state.cursor, &kinds, original)
+            };
+            let Some((kind, slot)) = step else {
                 drop(state);
                 notify(role, "Select a character for this cycle".into());
                 return;
@@ -1042,7 +1065,7 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
     };
     let remembered=if request.restoring {WAITING_MEMORY.lock().unwrap().restore_target(role as usize)}else{None};
     let slot=remembered.map_or(slot,|v|v.cursor);
-    let forms = remembered.map_or_else(||requested_forms(&m, role, target.kind()),|v|v.forms);
+    let forms = remembered.map_or_else(||requested_forms_at(&m, role, target.kind(), slot),|v|v.forms);
     if ready_forms(entry, owner) == Some((forms, target.kind())) {
         state.cursor = slot;
         if request.scope.waiting() {

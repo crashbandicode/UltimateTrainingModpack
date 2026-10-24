@@ -121,6 +121,51 @@ impl EntryState {
     }
 }
 
+/// Ice Climbers body for a slot. Player slot 0 of an Ice Climbers original (`numbered`
+/// false, which includes a direct pick) follows the original-select preference; every
+/// numbered slot, and a direct pick over another original, follows the cycle's. CPU has
+/// one preference for its original and its cycle.
+pub fn configured_forms(
+    menu: &crate::TrainingModpackMenu,
+    cpu: bool,
+    original: Option<u32>,
+    kind: u32,
+    numbered: bool,
+) -> Forms {
+    let solo = if cpu {
+        menu.solo_popo_cpu
+    } else if !numbered && original == Some(0x4b) {
+        menu.solo_popo_original
+    } else {
+        menu.solo_popo_player_cycle
+    };
+    if kind == 0x4b && solo == crate::OnOff::ON {
+        Forms::solo_popo()
+    } else {
+        Forms::starting(kind)
+    }
+}
+
+/// Zero-based numbered slot holding `current`'s native group, if any.
+pub fn cycle_position(choices: &[u32], current: u32) -> Option<usize> {
+    choices
+        .iter()
+        .position(|kind| Forms::starting(*kind).same_group(current))
+}
+
+/// The step after Player slot 0. `next_cycle` finds a live fighter by group, so it cannot
+/// tell slot 0 from a numbered slot of the same group (Ice Climbers, when its Solo Popo
+/// preference differs between the two); the caller knows and asks for this instead.
+pub fn next_from_original(
+    choices: &[u32],
+    original: Option<u32>,
+) -> Option<(u32, Option<usize>)> {
+    choices
+        .first()
+        .map(|kind| (*kind, Some(0)))
+        .or_else(|| original.map(|kind| (kind, None)))
+}
+
 /// Ordered slots are zero-based internally; None is the original CSS slot 0.
 /// A live transformed partner belongs to its group's existing numbered slot.
 pub fn next_cycle(
@@ -131,11 +176,7 @@ pub fn next_cycle(
 ) -> Option<(u32, Option<usize>)> {
     let position = cursor
         .filter(|i| *i < choices.len() && Forms::starting(choices[*i]).same_group(current))
-        .or_else(|| {
-            choices
-                .iter()
-                .position(|kind| Forms::starting(*kind).same_group(current))
-        });
+        .or_else(|| cycle_position(choices, current));
     if let Some(index) = position {
         if index + 1 < choices.len() {
             return Some((choices[index + 1], Some(index + 1)));
@@ -144,10 +185,7 @@ pub fn next_cycle(
             return Some((kind, None));
         }
     }
-    choices
-        .first()
-        .map(|kind| (*kind, Some(0)))
-        .or_else(|| original.map(|kind| (kind, None)))
+    next_from_original(choices, original)
 }
 
 #[cfg(test)]
@@ -389,5 +427,77 @@ mod tests {
         }
         assert_eq!(Forms::starting(0x25).index_of(0x24), Some(2));
         assert_eq!(Forms::starting(0x26).index_of(0x25), Some(2));
+    }
+
+    #[test]
+    fn solo_preference_follows_the_slot_not_just_the_kind() {
+        let (off, on) = (crate::OnOff::OFF, crate::OnOff::ON);
+        const IC: u32 = 0x4b;
+        let menu = |original, cycle, cpu| {
+            let mut saved = crate::BASE_MENU;
+            saved.solo_popo_original = original;
+            saved.solo_popo_player_cycle = cycle;
+            saved.solo_popo_cpu = cpu;
+            saved
+        };
+        let (solo, pair) = (Forms::solo_popo(), Forms::starting(IC));
+        // Solo original, ordinary cycle: slot 0 and a direct pick are Popo alone, numbered are not.
+        let m = menu(on, off, off);
+        assert_eq!(configured_forms(&m, false, Some(IC), IC, false), solo);
+        assert_eq!(configured_forms(&m, false, Some(IC), IC, true), pair);
+        // Ordinary original, Solo cycle: the reverse.
+        let m = menu(off, on, off);
+        assert_eq!(configured_forms(&m, false, Some(IC), IC, false), pair);
+        assert_eq!(configured_forms(&m, false, Some(IC), IC, true), solo);
+        // Another original has no slot-0 Ice Climbers: its cycle preference covers a direct pick too.
+        for numbered in [false, true] {
+            assert_eq!(configured_forms(&m, false, Some(0x00), IC, numbered), solo);
+            assert_eq!(configured_forms(&m, false, None, IC, numbered), solo);
+            let m = menu(on, off, on);
+            assert_eq!(configured_forms(&m, false, Some(0x00), IC, numbered), pair);
+        }
+        // CPU reads its one preference for the original and every numbered slot.
+        for (cpu, expected) in [(on, solo), (off, pair)] {
+            let m = menu(cpu_flip(cpu), cpu_flip(cpu), cpu);
+            for numbered in [false, true] {
+                assert_eq!(configured_forms(&m, true, Some(IC), IC, numbered), expected);
+            }
+        }
+        // Only Ice Climbers is ever solo.
+        let m = menu(on, on, on);
+        for kind in [0x00, 0x24, 0x5a] {
+            for cpu in [false, true] {
+                assert_eq!(configured_forms(&m, cpu, Some(IC), kind, false), Forms::starting(kind));
+            }
+        }
+    }
+
+    fn cpu_flip(value: crate::OnOff) -> crate::OnOff {
+        if value == crate::OnOff::ON { crate::OnOff::OFF } else { crate::OnOff::ON }
+    }
+
+    #[test]
+    fn original_ice_climbers_and_a_numbered_ice_climbers_are_distinct_cycle_positions() {
+        const IC: u32 = 0x4b;
+        // Original Ice Climbers whose Solo preference differs from the cycle's: IC is also numbered slot 2.
+        let choices = [0x00, 0x0b, IC, 0x5d];
+        assert_eq!(cycle_position(&choices, IC), Some(2));
+        assert_eq!(cycle_position(&choices, 0x5a), None);
+        // Slot 0 walks into the numbered order from its first entry, not from the numbered Ice Climbers.
+        assert_eq!(next_from_original(&choices, Some(IC)), Some((0x00, Some(0))));
+        assert_eq!(next_cycle(0x00, Some(0), &choices, Some(IC)), Some((0x0b, Some(1))));
+        assert_eq!(next_cycle(0x0b, Some(1), &choices, Some(IC)), Some((IC, Some(2))));
+        assert_eq!(next_cycle(IC, Some(2), &choices, Some(IC)), Some((0x5d, Some(3))));
+        assert_eq!(next_cycle(0x5d, Some(3), &choices, Some(IC)), Some((IC, None)));
+        // The live numbered Ice Climbers keeps its place even if its hint was lost to a roster edit,
+        // while the caller-known slot 0 does not get mistaken for it.
+        assert_eq!(next_cycle(IC, None, &choices, Some(IC)), Some((0x5d, Some(3))));
+        assert_eq!(next_from_original(&choices, Some(IC)), Some((0x00, Some(0))));
+        // Ice Climbers alone: slot 0 steps into its numbered twin and that returns to slot 0.
+        assert_eq!(next_from_original(&[IC], Some(IC)), Some((IC, Some(0))));
+        assert_eq!(next_cycle(IC, Some(0), &[IC], Some(IC)), Some((IC, None)));
+        // No numbered choices at all leaves only the original.
+        assert_eq!(next_from_original(&[], Some(IC)), Some((IC, None)));
+        assert_eq!(next_from_original(&[], None), None);
     }
 }

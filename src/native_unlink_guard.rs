@@ -5,6 +5,7 @@
 pub const SKIPPED_NULL_STORE: u64 = 1;
 pub const ADVANCED_ROOT: u64 = 2;
 pub const UPDATED_ROOT_LAST: u64 = 4;
+pub const ABSENT_HEADER_FIELD: u64 = 8;
 
 /// Execute one displaced native link store, except a write through null+8/16.
 ///
@@ -14,21 +15,25 @@ pub const UPDATED_ROOT_LAST: u64 = 4;
 /// All non-null store destinations retain the native routine's preconditions.
 pub unsafe fn store(address: u64, value: u64, node: u64, owner: u64, header_first: bool) -> u64 {
     let mut result = 0;
-    if header_first && std::ptr::read_volatile(node as *const u64) == 0 {
-        let root = std::ptr::read_volatile((owner + 0xa0) as *const u64);
+    if header_first && crate::native_fields::read::<u64>(node as usize, 0) == Some(0) {
+        let root = crate::native_fields::child(owner as usize, 0xa0);
         // The native header loop obtains node from root.first. Keep that loop
         // progressing if this one backlink disappeared. No guessed parent and
         // no write through a pointer retrieved from diagnostic history.
-        if root != 0 && std::ptr::read_volatile((root + 8) as *const u64) == node {
-            let next = std::ptr::read_volatile((node + 0x20) as *const u64);
-            let previous = std::ptr::read_volatile((node + 0x18) as *const u64);
-            std::ptr::write_volatile((root + 8) as *mut u64, next);
-            result |= ADVANCED_ROOT;
-            if std::ptr::read_volatile((root + 0x10) as *const u64) == node {
-                std::ptr::write_volatile((root + 0x10) as *mut u64, previous);
-                result |= UPDATED_ROOT_LAST;
+        if let Some(root) = root {
+            if crate::native_fields::read::<u64>(root, 8) == Some(node) {
+                if let (Some(next), Some(previous)) = (
+                    crate::native_fields::read::<u64>(node as usize, 0x20),
+                    crate::native_fields::read::<u64>(node as usize, 0x18),
+                ) {
+                    if crate::native_fields::write(root, 8, next) { result |= ADVANCED_ROOT; }
+                    if crate::native_fields::read::<u64>(root, 0x10) == Some(node)
+                        && crate::native_fields::write(root, 0x10, previous) {
+                        result |= UPDATED_ROOT_LAST;
+                    }
+                } else { result |= ABSENT_HEADER_FIELD; }
             }
-        }
+        } else { result |= ABSENT_HEADER_FIELD; }
     }
     if matches!(address, 8 | 16) {
         result | SKIPPED_NULL_STORE
@@ -60,6 +65,20 @@ mod tests {
             assert_eq!(unsafe { store(address, 91, pointer(&mut node), 0, false) }, SKIPPED_NULL_STORE);
         }
         assert_eq!(node, before);
+    }
+
+    #[test]
+    fn absent_header_owner_or_root_preserves_the_remaining_cleanup() {
+        let mut node = [0u64; 6];
+        let mut owner = [0u64; 0x1f8 / 8];
+        for o in [0, pointer(&mut owner)] {
+            assert_eq!(unsafe { store(8, 0, pointer(&mut node), o, true) },
+                SKIPPED_NULL_STORE | ABSENT_HEADER_FIELD);
+            let mut destination = 3u64;
+            assert_eq!(unsafe { store(pointer(&mut destination), 7, pointer(&mut node), o, true) },
+                ABSENT_HEADER_FIELD);
+            assert_eq!(destination, 7);
+        }
     }
 
     #[test]

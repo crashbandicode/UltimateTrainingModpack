@@ -43,7 +43,6 @@ struct Prepared {
 }
 /// Read-only receipt for an ordinary Player0 load kept on the generic roster path.
 /// It carries no authority; `generic_completed` re-proves everything against `before`.
-#[derive(Clone,Copy)]
 struct Generic {
     token:InstallToken,before:native::Snapshot,expected:native::Snapshot,descriptor:[u8;0x70],
 }
@@ -334,7 +333,16 @@ unsafe fn begin(entry:*mut u8)->bool {
         match step.target {
             mii_cycle::Target::Original=>{
                 if let Some(c)=origin_saved {native::target_rows(c)?;}
-                Ok((step.target.publish(origin_saved,None)?,origin.descriptor))
+                let mut descriptor=origin.descriptor;
+                if origin.original_kind==0x4b {
+                    let forms=requested_forms_at(&menu,Role::Player,0x4b,None);
+                    descriptor[0x14..0x18].copy_from_slice(&forms.count.to_le_bytes());
+                    for (i,k) in forms.kinds.iter().enumerate() {
+                        descriptor[0x18+i*4..0x1c+i*4].copy_from_slice(&k.to_le_bytes());
+                    }
+                    descriptor[0x28..0x2c].copy_from_slice(&forms.actor_count.to_le_bytes());
+                }
+                Ok((step.target.publish(origin_saved,None)?,descriptor))
             },
             mii_cycle::Target::Saved(choice)=>{
                 let target=catalog.configuration(choice)
@@ -347,7 +355,7 @@ unsafe fn begin(entry:*mut u8)->bool {
                     origin.descriptor,Some(target))))
             }
             mii_cycle::Target::Fighter(kind)=>{
-                let forms=restore.map_or_else(||requested_forms(&menu,Role::Player,kind),|v|v.forms);
+                let forms=restore.map_or_else(||requested_forms_at(&menu,Role::Player,kind,step.cursor),|v|v.forms);
                 let mut descriptor=origin.descriptor;
                 descriptor[0x14..0x18].copy_from_slice(&forms.count.to_le_bytes());
                 for (i,k) in forms.kinds.iter().enumerate() {
@@ -396,11 +404,13 @@ unsafe fn begin(entry:*mut u8)->bool {
     } else {
         let identity=active.map_or(Identity::Fighter(descriptor_kind(&expected.descriptor)),
             |c|Identity::Saved(c.canonical()));
-        let live=if cursor.is_none() && active==origin_saved && expected.descriptor==origin.descriptor {
+        let live=if cursor.is_none() && active==origin_saved && (expected.descriptor==origin.descriptor
+            || (origin.original_kind==0x4b && descriptor_kind(&expected.descriptor)==0x4b)) {
             Live::Original
         } else {Live::Numbered{identity,cursor}};
-        mii_cycle::next_qualified_player(&menu.player_roster.fighters(),&catalog,&menu::mii_preferences(),
-            origin_saved.map_or(Identity::Fighter(origin.original_kind),|c|Identity::Saved(c.canonical())),live,|step|match qualify(step) {
+        mii_cycle::next_qualified_player_with_ice_climbers(&menu.player_roster.fighters(),&catalog,&menu::mii_preferences(),
+            origin_saved.map_or(Identity::Fighter(origin.original_kind),|c|Identity::Saved(c.canonical())),live,
+            menu.solo_popo_original!=menu.solo_popo_player_cycle,|step|match qualify(step) {
                 Ok(value)=>Some(value),
                 Err(reason)=>{
                     if let mii_cycle::Target::Saved(choice)=step.target {
@@ -596,7 +606,7 @@ pub(super) unsafe fn complete_generic(entry:*mut u8,token:InstallToken,kind:u32)
     if !enabled() {return;}
     let generic={
         let mut s=STATE.lock().unwrap();
-        if s.generic.is_some_and(|g|g.token==token && g.before.binding.entry==entry as usize) {
+        if s.generic.as_ref().is_some_and(|g|g.token==token && g.before.binding.entry==entry as usize) {
             s.generic.take()
         } else {None}
     };
@@ -615,7 +625,7 @@ pub(super) fn scene_changed() {
 pub(super) fn on_destroy(entry:*const u8) {
     let token={
         let mut s=STATE.lock().unwrap();
-        if s.generic.is_some_and(|g|g.before.binding.entry==entry as usize) {s.generic=None;}
+        if s.generic.as_ref().is_some_and(|g|g.before.binding.entry==entry as usize) {s.generic=None;}
         if s.owner.as_ref().is_some_and(|o|o.origin.binding.entry==entry as usize) {
             s.owner=None;s.request=None;s.restore=None;s.capture=false;s.menu_valid=false;
         }

@@ -2,7 +2,7 @@
 >
 > Anyone, including the original developers, may reuse, analyze, redistribute, and otherwise use anything and everything in this repository as they see fit.
 
-**UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-experimental.20261023). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
+**UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-experimental.20261024). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
 
 [Download this fork from Forgejo](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases). Version 7.1.2 reduces input-display work in Training; see the [performance checks](docs/input-display-performance.md).
 
@@ -22,7 +22,7 @@ Change either fighter during Training without going back to the character select
 
 [Hot-swap guide](docs/fighter-hotswap.md), including a GIF recorded in Training. Waiting-room behavior is in [Lobby Practice](docs/lobby-practice.md).
 
-The enhancements development build has one shared portrait grid: red P1 order at top-left, blue CPU order at top-right, **ZR** to switch roles, and **Y** on Ice Climbers for Solo Popo. P1 cycles through the numbered choices and back through its grey original **slot 0**; the CPU's original fighter remains selectable. Pyra/Mythra and Pokémon Trainer each occupy one slot with a chosen starting form, and normal transformations remain available. Ice Climbers and saved-Mii cycling are available in the experimental build; consult its feature limits above. See the [hot-swap controls](docs/fighter-hotswap.md) and [development checks and limitations](docs/character-cycles-validation.md).
+The enhancements development build has one shared portrait grid: red P1 order at top-left, blue CPU order at top-right, **ZR** to switch roles, and **Y** on Ice Climbers for Solo Popo. P1 cycles through the numbered choices and back through its original **slot 0**; Ice Climbers can have a numbered slot with the opposite Solo Popo setting in the enhancements alpha; the CPU's original fighter remains selectable. Pyra/Mythra and Pokémon Trainer each occupy one slot with a chosen starting form, and normal transformations remain available. Ice Climbers and saved-Mii cycling are available in the experimental build; consult its feature limits above. See the [hot-swap controls](docs/fighter-hotswap.md) and [development checks and limitations](docs/character-cycles-validation.md).
 
 ![Player 1 and the CPU changing fighters during Training.](docs/fighter-hotswap/hotswap.gif)
 
