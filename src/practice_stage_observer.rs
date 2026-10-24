@@ -139,41 +139,47 @@ unsafe fn stage_update(ctx: &mut InlineCtx) {
         return;
     }
     let Some(core) = ptr(wrapper) else { return };
-    let base = getRegionAddress(Region::Text) as usize;
-    let resources = ptr(base + 0x532a9d0).map(|owner| resource_slots(owner));
     let active = word(core + 0x17c) as i32;
     let stage_slots = std::array::from_fn(|slot| ptr(core + 0x110 + slot * 8).unwrap_or(0));
-    let active_kind = if (0..3).contains(&active) && stage_slots[active as usize] != 0 {
-        Some(word(stage_slots[active as usize] + 8))
-    } else {
-        None
-    };
-    let snapshot = Snapshot {
-        mode: mode.mode,
-        melee: mode.melee,
-        waiting_ui_ready: crate::training::lobby::active(),
-        native_ui_busy: crate::training::lobby::native_ui_busy(),
-        roster_busy: crate::character_roster::busy(),
-        core,
-        disabled: std::ptr::read_volatile((core + 0x178) as *const u8),
-        stop_mask: word(core + 0x250) & word(core + 0x254),
-        state: word(core + 0xbc),
-        active,
-        incoming: word(core + 0xb0) as i32,
-        outgoing: word(core + 0xb4) as i32,
-        stage_slots,
-        active_kind,
-        native_next_slot: resources
-            .map(|slots| u32::from(slots[0].is_some_and(|r| (r.state | 2) == 3))),
-        resources: resources.unwrap_or([None; 4]),
-        item_gate: item_gate(base),
-        task_state: ptr(base + 0x532f488)
-            .and_then(|owner| ptr(owner))
-            .map(|at| word(at)),
-    };
+    // The budget is process-lifetime. Once its final notice has been emitted,
+    // no consumer needs these diagnostic reads or LAST's comparison. Keep the
+    // request service below running on every update, including after the budget.
+    let snapshot = (UPDATE_LINES.load(Ordering::Relaxed) <= LIMIT).then(|| {
+        let base = getRegionAddress(Region::Text) as usize;
+        let resources = ptr(base + 0x532a9d0).map(|owner| resource_slots(owner));
+        let active_kind = if (0..3).contains(&active) && stage_slots[active as usize] != 0 {
+            Some(word(stage_slots[active as usize] + 8))
+        } else {
+            None
+        };
+        Snapshot {
+            mode: mode.mode,
+            melee: mode.melee,
+            waiting_ui_ready: crate::training::lobby::active(),
+            native_ui_busy: crate::training::lobby::native_ui_busy(),
+            roster_busy: crate::character_roster::busy(),
+            core,
+            disabled: std::ptr::read_volatile((core + 0x178) as *const u8),
+            stop_mask: word(core + 0x250) & word(core + 0x254),
+            state: word(core + 0xbc),
+            active,
+            incoming: word(core + 0xb0) as i32,
+            outgoing: word(core + 0xb4) as i32,
+            stage_slots,
+            active_kind,
+            native_next_slot: resources
+                .map(|slots| u32::from(slots[0].is_some_and(|r| (r.state | 2) == 3))),
+            resources: resources.unwrap_or([None; 4]),
+            item_gate: item_gate(base),
+            task_state: ptr(base + 0x532f488)
+                .and_then(|owner| ptr(owner))
+                .map(|at| word(at)),
+        }
+    });
     #[cfg(feature = "practice-stage-request-alpha")]
     crate::practice_stage_request::update(wrapper, core, mode.mode, mode.melee,
         stage_slots.get(active as usize).copied().unwrap_or(0));
+    let Some(snapshot) = snapshot else { return };
     if let Ok(mut last) = LAST.try_lock() {
         if last.as_ref() != Some(&snapshot) {
             *last = Some(snapshot);

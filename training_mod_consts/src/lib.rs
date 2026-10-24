@@ -766,7 +766,7 @@ pub unsafe fn create_app<'a>() -> App<'a> {
     input_recording_tab_submenus.push(OnOff::to_submenu(
         "Replay Window",
         "named_macro_replay",
-        "Play a saved replay in Vault, then return here to select a fighter and exact input window.",
+        "Choose a saved match capture, then select a fighter and exact input window. Vault playback is unnecessary.",
         ToggleSingle,
         false,
     ));
