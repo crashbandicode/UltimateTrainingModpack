@@ -182,10 +182,15 @@ pub(super) fn intercept(role:Role,selection:Selection,user_request:bool)->Option
     let handles=owner.origin_saved.is_some() || owner.active.is_some() || owner.cursor.is_some() || has_mii
         || matches!(selection,Selection::Direct(f) if MiiClass::from_kind(f.kind()).is_some());
     if !handles {return None;}
+    // The roster reconciles partner count every frame. Coalesce that automatic
+    // request while an owned operation is pending; do not sync a refusal to SD.
+    if matches!(selection,Selection::RefreshPartners) && (s.request.is_some() || s.track.is_some()) {
+        return Some(true);
+    }
     let request=match selection {
         Selection::Cycle=>Some(Request::CYCLE),
         Selection::Direct(f)=>Request::direct(mii_saved_alpha::menu_epoch(),f.kind()),
-        Selection::RefreshPartners=>None,
+        Selection::RefreshPartners=>Some(Request::REFRESH_PARTNERS),
     };
     let manual_direct=user_request && matches!(selection,Selection::Direct(_));
     // Before INSTALL begins, an explicit pick supersedes a pending lobby restore.
@@ -380,6 +385,16 @@ unsafe fn begin(entry:*mut u8)->bool {
             else {native::target_rows(c).map(|_|(Some(c),training_mod_consts::mii::ordinary_player::staged_descriptor(origin.descriptor,Some(c))))}
         } else {qualify(step)};
         match result {Ok(value)=>Some((step,value)),Err(reason)=>{clear_request(request);note(reason);return false;}}
+    } else if request.refresh_partners() {
+        // A completed generic ordinary swap updates the roster slot, but does
+        // not grant this adapter a cursor. Use the same proven live slot as the
+        // refresh trigger; the normal snapshot/INSTALL checks still gate commit.
+        let slot=state_for(Role::Player).lock().unwrap().cursor;
+        mii_cycle::refresh_partners(descriptor_kind(&expected.descriptor),origin.original_kind,slot,true)
+            .and_then(|step|match qualify(step) {
+                Ok(value)=>Some((step,value)),
+                Err(reason)=>{note(reason);None}
+            })
     } else if let Some(kind)=request.direct_kind() {
         let result=mii_cycle::direct(kind,&catalog,&menu::mii_preferences(),
             training_mod_consts::mii::selection::Role::Player,
@@ -423,7 +438,9 @@ unsafe fn begin(entry:*mut u8)->bool {
             })
     };
     let Some((destination,(publish,descriptor)))=resolved else {
-        clear_request(request);note("Player cycle has no qualified choice");return false;
+        clear_request(request);
+        if !request.refresh_partners() {note("Player cycle has no qualified choice");}
+        return false;
     };
     let current=match native::snapshot(entry as usize,epoch(),origin.original_kind) {
         Ok(now) if native::same_owned(&now,&expected)=>now,
@@ -449,7 +466,7 @@ unsafe fn begin(entry:*mut u8)->bool {
                 if let Some(fighter)=TrioFighter::from_kind(descriptor_kind(&descriptor)) {
                     Role::Player.sync_selection(fighter);
                 }
-                notify(Role::Player,"Player choice already active".into());
+                if !request.refresh_partners() {notify(Role::Player,"Player choice already active".into());}
             }
         }
         return false;

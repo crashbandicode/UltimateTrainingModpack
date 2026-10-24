@@ -201,7 +201,7 @@ pub(crate) unsafe fn current_locked(
         )?;
         if id == own_id {
             check(
-                i64::from(rd::<i8>(e, 8)) == i64::from(original_kind),
+                role_owner::original_row_matches(original_kind,rd(e,8)),
                 "CPU original row kind changed",
             )?;
         }

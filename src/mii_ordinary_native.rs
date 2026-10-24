@@ -260,7 +260,7 @@ unsafe fn current_locked(base:usize, m:Map, locked:Binding,
             && rd::<u32>(fe,4)==u32::from(rd::<u8>(e,0xa7))
             && rd::<u16>(fe,0x46)==index && rd::<u16>(d,0x72)==index,
             "owner/index mirror changed")?;
-        if id==0 {check(i64::from(rd::<i8>(e,8))==i64::from(original_kind),
+        if id==0 {check(role_owner::original_row_matches(original_kind,rd(e,8)),
             "original row identity changed")?;}
         if !(id==0 && staged.is_some()) {
             check(rd::<u16>(o,0x68)==index,"owner object index mismatch")?;

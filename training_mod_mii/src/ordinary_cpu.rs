@@ -31,11 +31,13 @@ pub struct Destination {pub target:Target,pub cursor:Option<usize>}
 
 /// Epoch-bound same-class menu intent. CPU original identity remains outside SavedRole.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Request {selection:Option<MenuSelection>,replay:Option<crate::replay::Selection>,receipt_only:bool,direct:Option<(u64,u32)>}
+pub struct Request {selection:Option<MenuSelection>,replay:Option<crate::replay::Selection>,receipt_only:bool,direct:Option<(u64,u32)>,refresh_partners:bool}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct MenuSelection {epoch:u64,active:crate::inventory::Canonical,choice:crate::selection::Choice}
 impl Request {
-    pub const CYCLE:Self=Self {selection:None,replay:None,receipt_only:false,direct:None};
+    pub const CYCLE:Self=Self {selection:None,replay:None,receipt_only:false,direct:None,refresh_partners:false};
+    pub const REFRESH_PARTNERS:Self=Self {refresh_partners:true,..Self::CYCLE};
+    pub fn refresh_partners(self)->bool {self.refresh_partners}
     pub fn direct(epoch:u64,kind:u32)->Option<Self> {
         (epoch!=0).then_some(Self {direct:Some((epoch,kind)),..Self::CYCLE})
     }
@@ -44,7 +46,7 @@ impl Request {
         if selection.target.configuration().is_none()
             && crate::inventory::MiiClass::from_kind(selection.target.kind()).is_some() {return None;}
         selection.current(selection.generation,selection.revision)
-            .then_some(Self {selection:None,replay:Some(selection),receipt_only:false,direct:None})
+            .then_some(Self {replay:Some(selection),..Self::CYCLE})
     }
     /// Renew an already-active exact Mii receipt; this intent never authorizes INSTALL.
     pub fn acknowledge_replay(selection:crate::replay::Selection)->Option<Self> {
@@ -62,7 +64,7 @@ impl Request {
             (live,current,action) else {return None};
         (epoch!=0 && epoch==context_epoch && canonical==active && class==active.class
             && choice.canonical.class==class && choice.canonical!=active)
-            .then_some(Self {selection:Some(MenuSelection {epoch,active,choice}),replay:None,receipt_only:false,direct:None})
+            .then_some(Self {selection:Some(MenuSelection {epoch,active,choice}),..Self::CYCLE})
     }
     pub fn current(self,epoch:u64,active:Option<crate::inventory::Canonical>)->bool {
         self.direct.is_none_or(|(opening,_)|opening==epoch)

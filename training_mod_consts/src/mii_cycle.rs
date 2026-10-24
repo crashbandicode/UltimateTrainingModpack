@@ -56,6 +56,14 @@ pub struct Step {
     pub cursor: Option<usize>,
 }
 
+/// Partner refresh retains the current slot; it is never a cycle or saved-Mii choice.
+/// Player slot 0 keeps its original setting, while CPU uses its shared Solo setting.
+pub fn refresh_partners(kind:u32, original_kind:u32, cursor:Option<usize>, player:bool)->Option<Step> {
+    (kind==0x4b).then_some(Step {cursor,target:
+        if player && original_kind==0x4b && cursor.is_none() {Target::Original}
+        else {Target::Fighter(kind)}})
+}
+
 /// A manual pick has no numbered cursor and never edits/traverses the cycle.
 /// Mii class tiles use the same per-role saved identity resolver as cycling;
 /// the protected Player original remains the separate slot-0 cycle target.
@@ -280,6 +288,27 @@ mod tests {
     use super::*;
     use training_mod_mii::inventory::{build_snapshot, RawSlot, TaggedId, CHARINFO_LEN};
     use training_mod_mii::selection::{Fallback, Source};
+
+    #[test]
+    fn partner_refresh_preserves_the_slot_before_the_next_mii() {
+        let catalog=example();
+        let ordered=roster(&[0x4b,0x48,6]);
+        let preferences=Preferences::default();
+        let refreshed=refresh_partners(0x4b,0x4b,Some(0),true).unwrap();
+        assert_eq!(refreshed,Step {target:Target::Fighter(0x4b),cursor:Some(0)});
+        let next=next_qualified_player_with_ice_climbers(&ordered,&catalog,&preferences,
+            Identity::Fighter(0x4b),applied(refreshed),true,Some).unwrap().0;
+        assert!(matches!(next.target,Target::Saved(choice) if choice.canonical.class==MiiClass::Brawler));
+        assert_eq!(next.cursor,Some(1));
+        assert_eq!(refresh_partners(0x4b,0x4b,None,true),Some(Step {target:Target::Original,cursor:None}));
+        assert_eq!(refresh_partners(0x4b,9,Some(4),true),Some(Step {target:Target::Fighter(0x4b),cursor:Some(4)}));
+        assert_eq!(refresh_partners(0x4b,0x4b,None,false),Some(Step {target:Target::Fighter(0x4b),cursor:None}));
+        assert!(refresh_partners(0x48,0x4b,Some(1),true).is_none());
+        assert_ne!(training_mod_mii::ordinary_player::Request::REFRESH_PARTNERS,training_mod_mii::ordinary_player::Request::CYCLE);
+        assert_ne!(training_mod_mii::ordinary_cpu::Request::REFRESH_PARTNERS,training_mod_mii::ordinary_cpu::Request::CYCLE);
+        assert!(training_mod_mii::ordinary_player::Request::REFRESH_PARTNERS.refresh_partners());
+        assert!(training_mod_mii::ordinary_cpu::Request::REFRESH_PARTNERS.refresh_partners());
+    }
 
     #[test]
     fn opposite_solo_ice_climbers_stays_in_a_mixed_saved_mii_cycle() {

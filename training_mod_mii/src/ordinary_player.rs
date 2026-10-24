@@ -208,6 +208,7 @@ impl SameClass {
 pub struct Request {
     selection: Option<MenuSelection>,
     direct: Option<(u64, u32)>,
+    refresh_partners: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct MenuSelection {
@@ -216,11 +217,14 @@ struct MenuSelection {
     choice: crate::selection::Choice,
 }
 impl Request {
-    pub const CYCLE: Self = Self { selection: None, direct: None };
+    pub const CYCLE: Self = Self { selection: None, direct: None, refresh_partners: false };
+    /// Reapply the live grouped fighter's setting without advancing its cycle.
+    pub const REFRESH_PARTNERS: Self = Self { refresh_partners: true, ..Self::CYCLE };
+    pub fn refresh_partners(self) -> bool { self.refresh_partners }
     /// Explicit character pick, resolved through the owned catalog at preparation.
     /// It never becomes a cycle when the requested class is unavailable.
     pub fn direct(menu_epoch: u64, kind: u32) -> Option<Self> {
-        (menu_epoch != 0).then_some(Self { selection: None, direct: Some((menu_epoch, kind)) })
+        (menu_epoch != 0).then_some(Self { direct: Some((menu_epoch, kind)), ..Self::CYCLE })
     }
     pub fn direct_kind(self) -> Option<u32> { self.direct.map(|(_, kind)| kind) }
     /// Menu context is comparison evidence only; current comes from the ordinary owner.
@@ -243,6 +247,7 @@ impl Request {
             && !matches!(original, PlayerOrigin::Mii(origin) if choice.canonical == origin.0 || active == origin.0)).then_some(Self {
                 selection: Some(MenuSelection { menu_epoch, active, choice }),
                 direct: None,
+                refresh_partners: false,
             })
     }
     /// Rechecked before preparation and again when INSTALL ownership is converted into a ticket.

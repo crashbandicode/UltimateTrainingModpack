@@ -88,6 +88,14 @@ impl Committed {
 /// its native original identity. Ordinary kinds never read G in the native builder
 /// or companion; changed Mii kinds need exact authority. Registration is additive.
 /// The caller still checks O/header/mirrors/claims and all per-ticket protected bytes.
+/// Native 13.0.5 CSS Ice Climbers keeps the paired kind 0x6e in E+8, while
+/// the ready FighterEntry's first actor is Popo (0x4b). Preserve the exact
+/// original anchor; do not accept an unrelated row merely because FE is ordinary.
+pub fn original_row_matches(original_kind:u32,row_kind:i8)->bool {
+    i64::from(row_kind)==i64::from(original_kind)
+        || (original_kind==0x4b && row_kind==0x6e)
+}
+
 pub fn foreign_kind(
     now: Authority,
     original_kind: u32,
@@ -95,7 +103,7 @@ pub fn foreign_kind(
     kind: u32,
     committed: Option<Committed>,
 ) -> bool {
-    i64::from(row_kind) == i64::from(original_kind)
+    original_row_matches(original_kind,row_kind)
         && (kind == original_kind
             || MiiClass::from_kind(kind).is_none()
             || committed.is_some_and(|c| c.permits(now, original_kind, kind)))
@@ -283,6 +291,26 @@ mod tests {
         stale = authority;
         stale.entries[2] += 8;
         assert!(!foreign_kind(stale, 9, 9, 0x4a, Some(committed)));
+    }
+
+    #[test]
+    fn css_ice_climbers_row_keeps_exact_ownership_for_mii_cycles() {
+        // Native13.0.5 trace: CSS IC E+8=0x6e, FE first actor0x4b/count2.
+        assert!(original_row_matches(0x4b,0x6e));
+        assert!(original_row_matches(0x4b,0x4b));
+        assert!(!original_row_matches(0x4b,0x6d));
+        assert!(!original_row_matches(0x48,0x6e));
+        assert!(!original_row_matches(0x4b,-1));
+        for id in [0,1] {
+            let now=authority(id);
+            assert!(foreign_kind(now,0x4b,0x6e,0x4b,None));
+            assert!(!foreign_kind(now,0x4b,0x6e,0x48,None));
+            let committed=Committed {authority:now,original_kind:0x4b,kind:0x48};
+            assert!(foreign_kind(now,0x4b,0x6e,0x48,Some(committed)));
+            let mut stale=now;stale.binding.epoch+=1;
+            assert!(!foreign_kind(stale,0x4b,0x6e,0x48,Some(committed)));
+            assert!(!foreign_kind(now,0x4b,0x6d,0x48,Some(committed)));
+        }
     }
 
     #[test]

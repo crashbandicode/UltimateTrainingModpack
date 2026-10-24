@@ -14,6 +14,8 @@ native Mii editor and Test screen.
 - Original P1 Ice Climbers uses **Character Extras → Solo Popo**. Numbered
   Ice Climbers uses the independent red S; CPU uses blue S. Opposite Player
   configurations can share a cycle, with the original restored at slot 0.
+  Changing the currently cycled form applies when the menu closes; starting
+  as Ice Climbers no longer prevents saved-Mii entries from joining the cycle.
 - Practice Stages includes Training and Waiting Room. **L/R** pages; direct
   selection changes the current Training stage. **X** edits lobby rotation,
   which advances only on lobby-practice entry.
@@ -41,15 +43,23 @@ Retain Skyline, ARCropolis, `libnro_hook.nro`, `libparam_hook.nro`, other mods,
 settings and saves. Never keep two Training Modpack NROs installed.
 
 Small diagnostics remain in `ultimate/TrainingModpack/`: two practice logs of
-at most 128 KiB each, a bounded console-map record, and bounded boot/load records.
+at most 128 KiB each, plus bounded feature diagnostics. The continuous trace,
+console-map and boot/load probes are not enabled in this candidate.
 This build does **not** create a multi-gigabyte trace. Keep those small logs and
 Atmosphère crash reports if a fault occurs.
 
 ## Validation and limits
 
-Native all-target Clippy produced zero warnings. The no-default build, combined
-guard/probe build, full release and seven focused Cargo tests passed. Earlier
-unchanged guard and functional tests were carried forward.
+Native all-target Clippy produced zero warnings; no-default and full release
+builds passed. Five focused ownership/cycle regressions passed. Earlier
+unchanged guard, functional and resource tests were carried forward.
+
+The corrected candidate completed five Player and two CPU swaps in Eden,
+including immediate Solo/normal partner refresh, the next Brawler cycle entry,
+original-fighter return, and fresh Training exit/reentry. Both settings on the
+new Deluxe **Stages + Counterpick** plugin page saved successfully while
+preserving fighter rankings. Gameplay settled near 60 FPS; the sampled emulator
+host usage was about 5.5 GiB, not a console-heap measurement.
 
 The full-alpha integration session observed first-shortcut Mii initialization,
 managed Mii Brawler hat and Shot Put, ordinary native editor/Test/discard,
@@ -77,19 +87,20 @@ run exited normally, with helper cleanup recording zero tracked leases. These
 are host samples, not console frame-time percentiles or a long-term leak test.
 
 Custom Mii HUD portraits remain deferred: the body and moves change, but the
-small portrait can retain the previous Mii. The separate standalone counterpick's paired
-accepted-rematch check and physical-console acceptance remain pending. No claim is made for online arenas or every possible
+small portrait can retain the previous Mii. The separate standalone counterpick has passed four accepted-rematch cases
+against an unmodded peer. Its both-modded check is tracked in that repository.
+Physical-console acceptance of this corrected full candidate remains pending. No claim is made for online arenas or every possible
 fighter/costume/move/stage combination.
 
 ## Artifact identity
 
-- NRO: 4276224 bytes.
-- SHA-256: `3412c7505cf7b50625daa6c23f47d48748b4c37d900a5efcc2947d0e7217b0d1`.
-- Frozen compiled-input SHA-256: `146fdea8cea99d46d70f0f989aafddb00825dd8be20bda9679af09ef726e802b`.
+- NRO: 4268032 bytes.
+- SHA-256: `85cca7efd2d9acd6955f9d05367e3919bca43532ed96463061361065852a7f62`.
+- Frozen compiled-input SHA-256: `1450c450358f47e212f9e843511030a7ce739a30fa7f88f8d5c153edf1803298`.
 - Package version: 7.1.2; the experimental release tag distinguishes the candidate.
 
 Enabled local feature closure:
 
 ```text
-console-map-probe cpu-pilot-probe deluxe-sdk dep:deluxe-plugin-sdk enhancements-alpha lobby-stage-probe managed-sources mii-editor-alpha mii-managed-helper-alpha mii-managed-source-coexist-alpha mii-ordinary-cpu-alpha mii-ordinary-player-alpha mii-saved-alpha native-unlink-guard practice-stage-observer practice-stage-request-alpha training_mod_consts/mii-managed-helper-alpha training_mod_consts/mii-saved-alpha training_mod_consts/p1-cpu-control training_mod_tui/mii-editor-alpha training_mod_tui/mii-ordinary-cpu-alpha training_mod_tui/mii-ordinary-player-alpha training_mod_tui/mii-saved-alpha waiting-roster-reload
+cpu-pilot-probe deluxe-sdk dep:deluxe-plugin-sdk enhancements-alpha lobby-stage-probe managed-sources mii-editor-alpha mii-managed-helper-alpha mii-managed-source-coexist-alpha mii-ordinary-cpu-alpha mii-ordinary-player-alpha mii-saved-alpha native-unlink-guard practice-stage-observer practice-stage-request-alpha training_mod_consts/mii-managed-helper-alpha training_mod_consts/mii-saved-alpha training_mod_consts/p1-cpu-control training_mod_tui/mii-editor-alpha training_mod_tui/mii-ordinary-cpu-alpha training_mod_tui/mii-ordinary-player-alpha training_mod_tui/mii-saved-alpha waiting-roster-reload
 ```

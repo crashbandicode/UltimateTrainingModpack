@@ -241,11 +241,15 @@ pub(super) fn intercept(role:Role,selection:Selection,user_request:bool)->Option
         .any(|f|MiiClass::from_kind(f.kind()).is_some())
         || matches!(selection,Selection::Direct(f) if MiiClass::from_kind(f.kind()).is_some());
     if !s.reservation.routes(requested,owner.origin_saved.is_some() || owner.live.target.saved().is_some()) {return None;}
+    // Automatic partner reconciliation may repeat while an owned operation
+    // waits. Coalesce it without a per-frame synchronous diagnostic write.
+    if matches!(selection,Selection::RefreshPartners)
+        && (s.departed || s.request.is_some() || s.track.is_some()) {return Some(true);}
     // Reservation starts at the INSTALL ticket, never at this menu/catalog capture.
     let request=match selection {
         Selection::Cycle=>Some(Request::CYCLE),
         Selection::Direct(f)=>Request::direct(mii_saved_alpha::menu_epoch(),f.kind()),
-        Selection::RefreshPartners=>None,
+        Selection::RefreshPartners=>Some(Request::REFRESH_PARTNERS),
     };
     let manual_direct=user_request && matches!(selection,Selection::Direct(_));
     // Before INSTALL begins, an explicit pick supersedes a pending lobby restore.
@@ -450,6 +454,12 @@ unsafe fn begin(entry:*mut u8)->bool {
             else {mii_cycle::Target::Fighter(value.fighter.kind())}};
         let result=if original {qualify(step)} else if let Some(c)=value.configuration {mii_target(c)}else{qualify(step)};
         match result {Ok(value)=>Some((step,value)),Err(reason)=>{refuse_request(request,reason);note(reason);return false;}}
+    } else if request.refresh_partners() {
+        mii_cycle::refresh_partners(descriptor_kind(&expected.descriptor),origin.original_kind,live.cursor,false)
+            .and_then(|step|match qualify(step) {
+                Ok(value)=>Some((step,value)),
+                Err(reason)=>{note(reason);None}
+            })
     } else if let Some(replay)=request.replay() {
         let step=mii_cycle::Step {target:mii_cycle::Target::Fighter(replay.target.kind()),cursor:live.cursor};
         let result=match replay.target.configuration() {Some(c)=>mii_target(c),None=>qualify(step)};
@@ -498,8 +508,12 @@ unsafe fn begin(entry:*mut u8)->bool {
             })
     };
     let Some((step,(target,descriptor)))=resolved else {
-        clear_request(request);note("CPU cycle has no qualified choice");
-        notify(Role::Cpu,"No available CPU cycle characters".into());return false;
+        clear_request(request);
+        if !request.refresh_partners() {
+            note("CPU cycle has no qualified choice");
+            notify(Role::Cpu,"No available CPU cycle characters".into());
+        }
+        return false;
     };
     let destination=Destination{target,cursor:step.cursor};
     let publish=target.publish(origin_saved);
@@ -532,7 +546,7 @@ unsafe fn begin(entry:*mut u8)->bool {
                 if let Some(fighter)=TrioFighter::from_kind(descriptor_kind(&descriptor)).filter(|_|request.replay().is_none()) {
                     Role::Cpu.sync_selection(fighter);
                 }
-                notify(Role::Cpu,"CPU choice already active".into());
+                if !request.refresh_partners() {notify(Role::Cpu,"CPU choice already active".into());}
             }
         }
         return false;
