@@ -1,7 +1,7 @@
 # Revision27 capture source and build inputs
 
 This development source is on main. The illustrated walkthrough is
-[named-macros/README.md](named-macros/README.md). The revision 27 qualification
+[named-macros.md](named-macros.md). The revision 27 qualification
 archive remains in commit
 [`86a1426`](https://github.com/crashbandicode/UltimateTrainingModpack/commit/86a1426597246a2d0b36e9e652878053efea38a0).
 

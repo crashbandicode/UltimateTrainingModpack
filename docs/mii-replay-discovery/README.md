@@ -2,7 +2,7 @@
 
 **[Unstable enhancements alpha](../experimental-release.md).** Save the match, then enter Training: the opponent's Mii becomes available automatically. You do not need to watch the replay. Physical-console acceptance is pending.
 
-Before starting Smash, enable [replay capture](../named-macros/README.md):
+Before starting Smash, enable [replay capture](../named-macros.md):
 
 ```ini
 # sd:/ultimate/TrainingModpack/replay_capture.ini
@@ -30,4 +30,4 @@ The red Brawler matches the saved **格斗 [1111]**. Saving this match reuses th
 
 If the Mii does not appear—for example, you closed Smash first—choose its track in **Input Recording → Replay Window** to retry from the saved capture. Playback is still unnecessary.
 
-Next: [choose that Mii for a character cycle](../mii-fighters.md#use-it-in-a-cycle), or [turn its captured inputs into a CPU macro](../named-macros/README.md).
+Next: [choose that Mii for a character cycle](../mii-fighters.md#use-it-in-a-cycle), or [turn its captured inputs into a CPU macro](../named-macros.md).

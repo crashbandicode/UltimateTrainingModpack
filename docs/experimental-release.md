@@ -1,7 +1,7 @@
 # Full enhancements alpha — UNSTABLE
 
-This opt-in alpha targets Smash Ultimate 13.0.5. Console stability remains under
-review. Cleanup guards contain observed null-reference faults; the writer that
+This opt-in alpha targets Smash Ultimate 13.0.5. Intermittent pre-title console crashes remain unresolved;
+physical-console acceptance is pending. Cleanup guards contain observed null-reference faults; the writer that
 corrupts those references is still unknown. This is not a stable release.
 
 The full alpha includes character cycles and manual portrait selection, Solo
@@ -59,11 +59,14 @@ fighter/costume/move/stage combination, Switch frame time or guest-heap use.
 | Check | Result |
 | --- | --- |
 | Builds | Strict native all-target Clippy with zero warnings; no-default and full release builds |
-| Host regressions | 14 saved-Mii catalog/auto-init; 5 focused ownership/cycle. Earlier unchanged guard, functional and resource tests carried forward |
-| Current candidate, one Eden session | Saved-Mii catalog reads and writer waits run as bounded background work, off the menu-opening path. The reported G&W → Brawler → quit → original Ice Climbers sequence now starts with both Climbers when original Solo is Off, even with the cycle red S On. Return through slot 0, quick menu close/reopen, saved Brawler selection, Quickplay Add New/cancel, and the matched Deluxe/Elite passive status table and save also passed. Normal exit; owned profile changes restored |
+| Host regressions | 16 native-field/descriptor; 14 saved-Mii catalog/auto-init; 5 focused ownership/cycle. Earlier unchanged guard, functional and resource tests carried forward |
+| Saved-Mii catalog candidate, one Eden session | Saved-Mii catalog reads and writer waits run as bounded background work, off the menu-opening path. The reported G&W → Brawler → quit → original Ice Climbers sequence now starts with both Climbers when original Solo is Off, even with the cycle red S On. Return through slot 0, quick menu close/reopen, saved Brawler selection, Quickplay Add New/cancel, and the matched Deluxe/Elite passive status table and save also passed. Normal exit; owned profile changes restored |
 | Corrected candidate | Five Player and two CPU swaps: immediate Solo/normal partner refresh, the next Brawler cycle entry, original-fighter return, fresh Training exit/re-entry. Both **Stages + Counterpick** settings saved with fighter rankings preserved. About 60 FPS; about 5.5 GiB sampled emulator host memory |
 | Full-alpha integration | First-shortcut Mii initialization, managed Mii Brawler hat and Shot Put, native editor/Test/discard, Training quit/re-entry, Quickplay disabled-cosmetics navigation and cancel back to waiting practice. Normal exit; profile restored; host peak about 5.7 GiB under an 8 GiB/no-swap limit |
 | Resource review, all seven plans | Complete within its documented scope. Eight 20-second windows (baseline/full idle, hat helper, native editor, held item, settled stage) stayed near 60 FPS without memory-pressure events; idle CPU about 0.945/0.951 cores; helper cleanup recorded zero tracked leases. Latest whole-emulator peak about 6.7 GiB across two game loads under 8 GiB/no-swap |
+| Native-access refactor | Field/pointer and specialized call helpers preserve existing guards and ownership; targeted swaps, hat/item, editor cancel, stage change and clean exit passed. No universal memory-safety or crash-fix claim |
+| Diagnostic efficiency | After exactly 64 snapshots and one notice, a new native stage request completed. Stops redundant diagnostic reads and two lock pairs after the limit. Same-process idle samples stayed near 60 FPS; CPU difference was too small to claim a speedup. No allocations added; NRO size unchanged |
+| Direct Mii discovery | Saved two live LAN Online matches: unknown opponent Mii imported, already-owned Mii reused without a duplicate. No Vault playback or capture selection; both emulators exited normally |
 | Earlier coverage, not repeated | 85 selectable hats in both roles; 38 item grant/restore cases; saved-Mii swaps and replay discovery/dedup/restart; editor interruptions; local-wireless match/return/helper reconstruction |
 | Stages + Counterpick (separate plugin) | Four accepted rematches against an unmodded peer; the both-modded check is tracked in that repository |
 
@@ -80,8 +83,8 @@ fighter/costume/move/stage combination, Switch frame time or guest-heap use.
 ## Artifact identity
 
 - NRO: 4272128 bytes.
-- SHA-256: `97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6`.
-- Frozen compiled-input SHA-256: `8a43e10a61c2b0a7183c6e9e7ef3015357c455b585be1014838d1d7d34206701`.
+- SHA-256: `15b8215a1bfcb204a88af3377d6d43f7291620e371a0545435ecb1d683beb1cd`.
+- Frozen compiled-input SHA-256: `af993af3548acce8dee22f8300243a10652be4ae8d71630006f53a1e3b5d8c87`.
 - Package version: 7.1.2; the experimental release tag distinguishes the candidate.
 
 Enabled local feature closure:

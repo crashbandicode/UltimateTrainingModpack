@@ -2,7 +2,7 @@
 
 ## Current walkthrough
 
-The [walkthrough](README.md) embeds seven verified game captures added on
+The [walkthrough](../named-macros.md) embeds seven verified game captures added on
 2026-10-14 (commits `d3f2ae1` and `6fd5b3a`): `match.gif`, `replay-list.png`,
 `fighter.gif`, `crop.gif`, `playback.gif`, `playback-p2.gif` and `naming.gif`.
 They show one saved Kirby (P1) versus Hero (P2) match, its capture, and the
@@ -14,7 +14,7 @@ messages are the in-repository record.
 
 The sixteen numbered PNGs are real native game captures from the October 10–12,
 2026 acceptance tests. None is embedded in the current walkthrough;
-`08-placement-controls.png` illustrates the [macro reference](../named-macros.md#placement).
+`08-placement-controls.png` illustrates the [macro reference](../reference/named-macros.md#placement).
 Several show superseded numeric-editor, pose-preview and custom-keyboard
 screens. They come from separate test moments, not one continuous recording.
 
@@ -55,4 +55,4 @@ is not a screenshot of the later eight-input preview or export. All earlier
 images were preserved byte-for-byte when later ones were added, using the same
 viewport crop and pixel-equality check.
 
-[Back to the walkthrough](README.md)
+[Back to the walkthrough](../named-macros.md)
