@@ -14,7 +14,7 @@ The [hot-swap](fighter-hotswap.md) controls work here too. Press **ZL + D-pad Ri
 
 ![Player and CPU swaps during local-wireless waiting-room practice.](lobby-practice/waiting-room.gif)
 
-*Local-wireless demonstration: both practice fighters change; the lower card keeps the original match pick.*
+*Emulator local-wireless room: Player 1 cycles from Solo Popo to Mario and Donkey Kong; the CPU changes from Solo Popo to Sheik and its icon updates. The lower card still shows Ice Climbers, the real match pick.*
 
 ## After a match
 

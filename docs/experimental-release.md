@@ -52,64 +52,30 @@ Atmosphère crash reports if a fault occurs.
 
 ## Validation and limits
 
-The current candidate moves saved-Mii catalog reads and writer waits off the
-menu-opening path into bounded background work. Fourteen catalog/auto-init
-regressions, strict native Clippy, no-default and full release builds pass.
-The reported G&W → Brawler → quit → original Ice Climbers sequence now starts
-with both Climbers when original Solo is Off, even with the cycle red S On.
-Return through slot 0, quick menu close/reopen, saved Brawler selection, and
-Quickplay Add New/cancel passed in the same emulator session. The matched
-Deluxe/Elite pair also passed compact passive status-table navigation and save.
-The session exited normally and all owned profile changes were restored.
+Emulator and host checks only; physical-console acceptance of this corrected
+full candidate is pending. Not claimed: online arenas, every
+fighter/costume/move/stage combination, Switch frame time or guest-heap use.
 
-The all-seven-plan resource review is complete within its documented scope.
-The latest whole-emulator peak was about 6.7 GiB across two game loads under
-an 8 GiB/no-swap limit, without memory-pressure events. This includes native
-asset caches; no isolated catalog speedup or long-term leak proof is claimed.
-The earlier measurements below remain evidence for unchanged features.
+| Check | Result |
+| --- | --- |
+| Builds | Strict native all-target Clippy with zero warnings; no-default and full release builds |
+| Host regressions | 14 saved-Mii catalog/auto-init; 5 focused ownership/cycle. Earlier unchanged guard, functional and resource tests carried forward |
+| Current candidate, one Eden session | Saved-Mii catalog reads and writer waits run as bounded background work, off the menu-opening path. The reported G&W → Brawler → quit → original Ice Climbers sequence now starts with both Climbers when original Solo is Off, even with the cycle red S On. Return through slot 0, quick menu close/reopen, saved Brawler selection, Quickplay Add New/cancel, and the matched Deluxe/Elite passive status table and save also passed. Normal exit; owned profile changes restored |
+| Corrected candidate | Five Player and two CPU swaps: immediate Solo/normal partner refresh, the next Brawler cycle entry, original-fighter return, fresh Training exit/re-entry. Both **Stages + Counterpick** settings saved with fighter rankings preserved. About 60 FPS; about 5.5 GiB sampled emulator host memory |
+| Full-alpha integration | First-shortcut Mii initialization, managed Mii Brawler hat and Shot Put, native editor/Test/discard, Training quit/re-entry, Quickplay disabled-cosmetics navigation and cancel back to waiting practice. Normal exit; profile restored; host peak about 5.7 GiB under an 8 GiB/no-swap limit |
+| Resource review, all seven plans | Complete within its documented scope. Eight 20-second windows (baseline/full idle, hat helper, native editor, held item, settled stage) stayed near 60 FPS without memory-pressure events; idle CPU about 0.945/0.951 cores; helper cleanup recorded zero tracked leases. Latest whole-emulator peak about 6.7 GiB across two game loads under 8 GiB/no-swap |
+| Earlier coverage, not repeated | 85 selectable hats in both roles; 38 item grant/restore cases; saved-Mii swaps and replay discovery/dedup/restart; editor interruptions; local-wireless match/return/helper reconstruction |
+| Stages + Counterpick (separate plugin) | Four accepted rematches against an unmodded peer; the both-modded check is tracked in that repository |
 
-
-Native all-target Clippy produced zero warnings; no-default and full release
-builds passed. Five focused ownership/cycle regressions passed. Earlier
-unchanged guard, functional and resource tests were carried forward.
-
-The corrected candidate completed five Player and two CPU swaps in Eden,
-including immediate Solo/normal partner refresh, the next Brawler cycle entry,
-original-fighter return, and fresh Training exit/reentry. Both settings on the
-new Deluxe **Stages + Counterpick** plugin page saved successfully while
-preserving fighter rankings. Gameplay settled near 60 FPS; the sampled emulator
-host usage was about 5.5 GiB, not a console-heap measurement.
-
-The full-alpha integration session observed first-shortcut Mii initialization,
-managed Mii Brawler hat and Shot Put, ordinary native editor/Test/discard,
-Training Quit and reentry, and Quickplay's disabled-cosmetics navigation with
-normal cancellation back to waiting practice. Eden exited normally and the
-test profile was restored. Its sampled host peak was about 5.7 GiB under an
-8 GiB/no-swap limit; this is not Switch or guest-heap accounting.
-
-Earlier coverage includes 85 selectable hats in both roles, 38 item grant and
-restore cases, saved-Mii swaps and replay discovery/dedup/restart, editor
-interruptions, and local-wireless match/return/helper reconstruction. Those
-matrices were not repeated for this integration.
-
-The later GIF session completed the manual selector, opposite Solo cycle and
-direct stage change, but Eden's Closing software overlay stalled on shutdown.
-The owned process was stopped and its profile restored. That observation is
-kept separate from the earlier clean lifecycle pass.
-
-The bounded resource pass compared baseline/full idle activity and sampled the
-hat helper, native editor, held item and settled stage. All eight 20-second
-windows stayed near 60 FPS without memory-pressure events. Idle CPU use was
-about 0.945/0.951 cores. Absolute host-memory comparison includes different
-native cache warmup and is not an isolated feature-memory measurement. The full
-run exited normally, with helper cleanup recording zero tracked leases. These
-are host samples, not console frame-time percentiles or a long-term leak test.
-
-Custom Mii HUD portraits remain deferred: the body and moves change, but the
-small portrait can retain the previous Mii. The separate standalone counterpick has passed four accepted-rematch cases
-against an unmodded peer. Its both-modded check is tracked in that repository.
-Physical-console acceptance of this corrected full candidate remains pending. No claim is made for online arenas or every possible
-fighter/costume/move/stage combination.
+- Memory figures are emulator host samples that include native asset caches and
+  different cache warmup. No isolated catalog speedup, feature-memory figure or
+  long-term leak proof is claimed.
+- A later GIF session (manual selector, opposite Solo cycle, direct stage change)
+  completed, but Eden's Closing software overlay stalled on shutdown. The owned
+  process was stopped and its profile restored; this is kept separate from the
+  clean lifecycle passes above.
+- Custom Mii HUD portraits remain deferred: the body and moves change, but the
+  small portrait can keep the previous Mii.
 
 ## Artifact identity
 

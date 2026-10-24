@@ -1,3 +1,5 @@
+# Roster grid builder
+
 Native roster panel builder. Uses the external `nx-layout-toolbox` library at
 `../../../../eden-gnw/toolbox-cli` (relative to this Cargo manifest); its own lockfile
 pins dependencies. No game archive or executable is downloaded by the builder.

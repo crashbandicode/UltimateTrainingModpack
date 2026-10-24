@@ -1,5 +1,9 @@
 # Revision 32 — smaller release profile (2026-10-13)
 
+The release profile uses `opt-level = "z"` and `codegen-units = 1`,
+shrinking the NRO from 3,379,200 to 2,174,976 bytes with no source change. The
+profile is still in `Cargo.toml` as of 2026-10-24.
+
 The console freezes of 2026-10-13 are read by the Deluxe author as the game heap running out: the crash reports
 fault at address zero in unrelated game threads with no plugin on any stack, and every plugin hook sits idle while
 the game never produces a frame. Skyline plugins live in that heap, and Skyline takes the whole NRO file plus the

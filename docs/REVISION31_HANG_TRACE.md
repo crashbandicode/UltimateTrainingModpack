@@ -1,5 +1,11 @@
 # Revision 31 — hang tracing for the console (2026-10-13)
 
+This revision adds lock-free probes on the scene-load hooks plus a five-second
+heartbeat in `practice-diagnostics.log`, so a frozen console shows which thread
+stopped and which modpack hook never returned. [Reading a hang](#reading-a-hang)
+is the procedure. This is a dated record; see the current
+[release notes](experimental-release.md) for which diagnostics a build enables.
+
 Revision 30 (hook-proof UI-manager locator) booted on the operator's Switch beside Deluxe 0.3.1 but froze on a
 loading screen when a scene with fighters loaded (Training mode; a Local Wireless entry stopped at the same point).
 No panic, no Atmosphere crash report; the diagnostics file ended at the four `[TrioBoundary] allocation` rows. The

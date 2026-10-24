@@ -10,6 +10,14 @@ Baseline repeated on the same binary and the pane dumps matched.
 
 Candidate label: candidate-worktree
 
+Every per-step row reports `match` for visible state except
+`reregister/after_invalidate`, which reports `history restored`. Pane visits, native calls,
+visibility/text writes and Rust allocations per step are collapsed below; the
+per-scenario timing table follows. The plain-language summary is in
+[input display performance](input-display-performance.md).
+
+<details><summary>Per-step pane and allocation counts (63 rows)</summary>
+
 | scenario | step | visits base | visits cand | calls base | calls cand | vis base | vis cand | text base | text cand | allocs base | allocs cand | visible |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | steady_repeat | draw1 | 24468 | 2 | 212 | 1 | 203 | 1 | 2 | 0 | 25 | 0 | match |
@@ -75,6 +83,8 @@ Candidate label: candidate-worktree
 | reset | cleared | 24417 | 20453 | 208 | 23 | 201 | 4 | 2 | 1 | 22 | 1 | match |
 | reregister | established | 24483 | 2 | 212 | 1 | 203 | 1 | 2 | 0 | 25 | 0 | match |
 | reregister | after_invalidate | 24483 | 81969 | 212 | 2912 | 203 | 2807 | 2 | 30 | 25 | 30 | history restored |
+
+</details>
 
 | scenario | baseline ns/iter | candidate ns/iter | candidate/baseline |
 | --- | ---: | ---: | ---: |

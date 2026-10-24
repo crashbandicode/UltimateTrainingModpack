@@ -2,50 +2,42 @@
 
 **Unstable enhancements alpha.** This page explains, in plain terms, what the
 modpack does when you swap fighters, give Kirby a hat, hand Player 1 another
-fighter's item, or use a Mii. It describes the current alpha only; see
-[Release status](experimental-release.md) for what has been tested and where.
+fighter's item, or use a Mii. See [Release status](experimental-release.md) for
+what has been tested and where.
 
 ## Swapping a fighter
 
 Every fighter in a match sits in a player "entry" that the game fills by loading
-that fighter's files. A swap does not add anything to character select. It asks
-the game's own loader to refill the entry that is already there with a different
-fighter. Your controller, team and costume settings stay as they were.
+that fighter's files. A swap asks the game's own loader to refill the existing
+entry with a different fighter. Nothing is added to character select, and your
+controller, team and costume settings stay as they were.
 
-Loading takes a moment. While another action owns practice, the swap is refused
-with **Character swap unavailable during this action**: for example while the
-menu is still closing, a save state is loading, a recording is playing, another
-fighter is loading, or a lobby dialog is open. Press the shortcut again when
-practice is idle.
+The new fighter starts fresh: practice extras that belonged to the old fighter,
+such as a pending hat or item request, are cancelled. Save states keep position
+and damage for whoever is standing there now; they do not bring back the fighter
+you saved with. In a lobby, swaps change only your **practice** fighter; the real
+match always uses your character-select pick.
 
-A swap starts the new fighter fresh. Practice extras that belonged to the old
-fighter, such as a pending hat or item request, are cancelled. Save states keep
-position and damage for whoever is standing there now; they do not bring back
-the fighter you saved with.
-
-In a lobby, swaps only change your **practice** fighter. The real match always
-uses the fighter you picked on character select.
+While another action owns practice, a swap is refused with **Character swap
+unavailable during this action**: for example while the menu is still closing, a
+save state is loading, a recording is playing, another fighter is loading, or a
+lobby dialog is open. Press the shortcut again when practice is idle.
 
 ## Slot 0: your original pick
 
-Player 1's numbered cycle (1, 2, 3 …) is followed by **slot 0**: the fighter you
-picked on character select. After the last numbered fighter the shortcut returns
-to slot 0, then starts again at 1. Going back to slot 0 reloads your original
-pick exactly as you chose it: its starting form, its Solo Popo setting and, for a
-Mii, the same Mii.
+Player 1's numbered cycle (1, 2, 3 …) is followed by **slot 0**, the fighter you
+picked on character select, and then starts again at 1. Slot 0 reloads your pick
+exactly as chosen: its starting form, its Solo Popo setting and, for a Mii, the
+same Mii.
 
-The CPU has no slot 0. It cycles only through its own list. If the CPU is
-currently a fighter outside that list, the next press starts at the CPU's first
-choice.
-
-Pyra/Mythra and Pokémon Trainer each take one slot and start in the form you
-chose. Normal Down+B changes still work; the next swap moves on to the next
-slot rather than to another form.
+The CPU has no slot 0; it cycles only through its own list, and a CPU outside
+that list starts at its first choice. Pyra/Mythra and Pokémon Trainer take one
+slot each and start in the form you chose. Down+B still changes form; the next
+swap moves to the next slot rather than to another form.
 
 ## Ice Climbers and the three Solo Popo settings
 
-Solo Popo plays Popo without Nana. There are three separate settings, so each
-situation can be different:
+Solo Popo plays Popo without Nana. Three separate settings cover each situation:
 
 | Setting | Applies to |
 | --- | --- |
@@ -53,11 +45,11 @@ situation can be different:
 | Red **S** on the Ice Climbers portrait | Player 1's numbered Ice Climbers slot |
 | Blue **S** on the Ice Climbers portrait | The CPU's Ice Climbers, original or cycled in |
 
-Because slot 0 and a numbered slot have separate settings, Player 1 can practice
-both versions in one cycle: for example original Solo Popo at slot 0 and the
-pair in a numbered slot. The original portrait is grey (not addable) only when
-both Player settings ask for the same version. Changing a setting switches
-between Popo alone and the pair when you close the menu.
+Because slot 0 and a numbered slot have separate settings, one Player cycle can
+hold both versions, such as original Solo Popo at slot 0 and the pair in a
+numbered slot. The original portrait is grey (not addable) only when both Player
+settings ask for the same version. Changes apply when you close the menu. See the
+[Solo Popo guide](solo-popo.md).
 
 ## Kirby hats and character items: a borrowed fighter
 
@@ -68,49 +60,49 @@ fighter has to be in the match.
 
 The modpack borrows the data instead. The game keeps spare player entries that
 practice does not use: two in Training and two in a local-wireless waiting room.
-The modpack loads the needed fighter into one of those spare entries **without
-bringing it into the match**, so you never see or fight it. This temporary,
-parked fighter is the hat's or item's *source*.
+The modpack loads the needed fighter into one of them **without bringing it into
+the match**, so you never see or fight it. This parked fighter is the hat's or
+item's *source*.
 
-- **Kirby hat:** once the source has loaded, the modpack asks the game's own
-  copy-ability setup to give Kirby that fighter's hat and neutral special, as if
-  Kirby had swallowed it.
-- **Character item:** the game's own item code then creates the item in Player
-  1's hand, replacing any item Player 1 was holding.
+![Kirby equips Mario's hat and throws a fireball, then Link's hat and fires an arrow.](feature-walkthroughs/kirby-hats.gif)
+
+*Neither Mario nor Link is in the match: each hat comes from a source fighter loaded out of sight.*
+
+- **Kirby hat:** once the source has loaded, the game's own copy-ability setup
+  gives Kirby that fighter's hat and neutral special, as if Kirby had swallowed it.
+- **Character item:** the game's own item code creates the item in Player 1's
+  hand, replacing anything Player 1 was holding.
 
 A source stays loaded while something uses it: a hat Kirby is wearing, or an
-item that still exists, even after it has been thrown. When nothing uses it, it
-can be reused for the next request or replaced by another fighter. Leaving
-Training or the lobby removes it. Bob-omb, Mr. Saturn and the Banana Peel are
-ordinary items and need no source.
+item that still exists, even after it has been thrown. Otherwise it can be reused
+for the next request or replaced by another fighter. Leaving Training or the
+lobby removes it. Bob-omb, Mr. Saturn and the Banana Peel are ordinary items and
+need no source.
 
-Sources can be loaded in ordinary Training with exactly one CPU, and in a
-local-wireless waiting room with Lobby Practice on. Elsewhere, including online
-lobbies, hats and items that need a source report that loading is not available
-in this scene.
+Sources load in ordinary Training with exactly one CPU, and in a local-wireless
+waiting room with Lobby Practice on. Elsewhere, including online lobbies, hats
+and items that need a source report that loading is not available in this scene.
 
 ### Mii hats
 
-For a Mii hat, the parked source is a Mii loaded with the Mii you selected for
-that role in **Character Extras → Mii Brawler / Mii Swordfighter / Mii Gunner**.
-Kirby then performs that class's standard copied neutral special (Shot Put,
-Gale Strike or Charge Blast), following the game's normal copy rules.
+For a Mii hat, the source is a Mii loaded with the Mii you selected for that role
+in **Character Extras → Mii Brawler / Mii Swordfighter / Mii Gunner**. Kirby then
+performs that class's standard copied neutral special (Shot Put, Gale Strike or
+Charge Blast), following the game's normal copy rules.
 
 ## Hats, items and save states
 
-Loading a save state gives Kirby back the hat that was saved, using the same
-source loading as the shortcut. Loading a save state also gives Player 1 the
-exact item that was held when the state was saved, including the turnip's face.
+Loading a save state gives Kirby back the saved hat, using the same source
+loading as the shortcut, and gives Player 1 the exact item held when the state
+was saved, including a turnip's face.
 
 ## Returning to the same lobby after a match
 
 A match tears down practice. When you come back to the **same** local-wireless
 lobby, the modpack reloads each role's last practice fighter (Player 1's needs
-Player Swapping to stay on) and puts back the
-hat that Kirby was actually wearing when the match started, for Player 1 and
-the CPU separately. A hat that was knocked off before the match stays lost.
-Nothing from the old practice session is reused: sources are loaded again from
-scratch. A new lobby, or a new Training visit, starts fresh.
+Player Swapping to stay on) and puts back the hat each Kirby was actually wearing
+when the match started. A hat knocked off before the match stays lost. Sources
+are loaded again from scratch. A new lobby, or a new Training visit, starts fresh.
 
 ## Miis
 
@@ -121,40 +113,35 @@ not matter.
 
 ### Your saved Miis
 
-These are the Mii Fighters in Smash's own Mii list. The modpack reads them and
-does not edit or rename them.
+The modpack reads the Mii Fighters in Smash's own Mii list and never edits or
+renames them. Each role chooses its own Mii per class, and a cycle loads that Mii
+when it reaches the class portrait (steps are in the [Mii guide](mii-fighters.md)).
 
-- Open **Character Extras → Mii Brawler** (or Swordfighter, Gunner) and choose
-  a Mii separately for **Player** and **CPU**. The list shows each Mii's special
-  moves, such as `[2111]`.
-- Add the class's portrait to a cycle in **Characters → Character Cycles**. When
-  the cycle reaches it, the fighter loads with the Mii you chose for that role.
 - Player 1's original character-select Mii stays at slot 0 and is greyed in the
   Player list.
-- If you change the choice for the Mii class that is currently on screen, it
-  reloads when you close the menu. Other choices apply on the next cycle.
-- The saved-Mii list is read automatically the first time it is needed, so the
+- Changing the choice for the class on screen reloads it when you close the
+  menu; other choices apply on the next cycle.
+- The saved-Mii list loads automatically the first time it is needed, so the
   first shortcut works without opening the menu.
 
 ### Add New: making a Mii with the game's editor
 
-**Add New** on a Mii class page opens Smash's own Mii Fighter editor. It starts
-from a copy of your Player choice for that class (or your first saved Mii of
-that class), or from the game's default when you have none. The saved Mii it
-copies is not changed. **Test** works as usual.
+**Add New** opens Smash's own Mii Fighter editor. It starts from a copy of your
+Player choice for that class, or your first saved Mii of that class, or the
+game's default when you have none. The copied Mii is not changed, and **Test**
+works as usual.
 
-- Saving with the editor's own Save creates a normal Smash Mii. It appears in
-  Smash's Mii list outside Training and in both modpack lists.
+- The editor's own Save creates a normal Smash Mii. It appears in Smash's Mii
+  list outside Training and in both modpack lists.
 - Saving an identical Mii again reuses the existing one instead of adding a copy.
 - Leaving without saving discards the draft and creates nothing.
 
 In an online (Quickplay) waiting room with Lobby Practice on, the class pages
-offer only Add New. Name, Special Moves,
-Settings and Test stay available; the Headgear, Outfit, Color, Voice and Random
-choices are greyed and work in Training only. If a match
-starts while you are editing, your unsaved changes are kept and the same editor
-screen opens again when you return to waiting practice. Only the editor's Save
-keeps a new Mii.
+offer only Add New. Name, Special Moves, Settings and Test stay available;
+Headgear, Outfit, Color, Voice and Random are greyed and work in Training only.
+If a match starts while you are editing, your unsaved changes are kept and the
+same editor screen opens again when you return to waiting practice. Only the
+editor's Save keeps a new Mii.
 
 ### Opponent Miis from your matches
 
@@ -166,8 +153,7 @@ Training, the CPU loads that exact Mii, with its look and moves.
 - Otherwise it is added once to the modpack's own library
   (`sd:/ultimate/TrainingModpack/mii-presets.json`) as, for example,
   **Replay Brawler**. It then appears beside your saved Miis in the modpack
-  lists, including after a restart. Choosing the same capture again does not add
-  another copy.
+  lists, including after a restart. Choosing the same capture again adds no copy.
 - Discovered opponents are never added to Smash's own Mii list.
 
 ### Known limit

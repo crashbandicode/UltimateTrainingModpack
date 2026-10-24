@@ -1,5 +1,17 @@
 # Revision 29: the Training Modpack without a `Layout::draw` hook
 
+The old hook at main+0x4b620 is really the layout's *Calculate*.
+Revision 29 removes it and runs the modpack's UI work from two pinned inline
+anchors inside Smash's UI manager, at the same instruction position and cadence.
+Any mismatch panics at boot with the version report; there is no fallback. The
+pass-entry needle was later replaced by
+[revision 30](REVISION30_HOOKPROOF_PROLOGUE.md). Sections: [what the hook was](#1-what-the-removed-hook-was),
+[layout registry](#2-the-games-layout-registry-plan-2-option-1),
+[anchors](#3-anchors-plan-2-anchors-the-modpack-owns),
+[timing](#4-why-the-anchors-run-per-layout-not-once-per-frame),
+[verification](#5-verification-and-evidence), [risks](#6-risks),
+[build record](#7-build-record-and-helper-lines).
+
 Revision 29 removes the hook on the function the modpack called `nn::ui2d::Layout::draw`
 (`OFFSET_DRAW`, main+0x4b620). It has no fallback mode and no feature gate. The modpack now
 reaches its layouts through two inline anchors inside Smash's own UI manager. Both are

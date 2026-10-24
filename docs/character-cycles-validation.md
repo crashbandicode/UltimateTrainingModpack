@@ -92,24 +92,26 @@ this change makes no hot-swap latency claim.
 The portrait grid matches the tested all-unlocked save's character-select
 layout. It does not dynamically read other save layouts. Ice Climbers is now
 supported, with independent original-P1 Character Extras, cycled-P1 red S and
-CPU blue S settings. Miis remain unavailable pending the separate Plan 2.
+CPU blue S settings. Miis were unavailable in this build; they arrived later in
+the [full alpha](experimental-release.md).
 Loading a Pyra/Mythra save currently restores position without switching back to
 the saved form. Physical Switch acceptance remains pending for these changes.
 
 ## Refreshed demonstrations
 
-These Linux Eden clips contain real UI frames captured at 10 fps. Only emulator
-window margins were removed. Start, action and completion frames were visually
-reviewed. All four use the validated development NRO identified above.
+These Linux Eden clips contain real UI frames captured at 10 fps, cropped to the
+game viewport. Start, action and completion frames were visually reviewed. The
+two 2026-10-16 clips use the development NRO identified above (`2c81ac2…`); the
+four 2026-10-24 clips were re-recorded on Yoga with NRO `3412c75…`.
 
-| Clip | Recorded behavior | Size / duration |
-| --- | --- | --- |
-| [Character cycles](fighter-hotswap/character-cycles.gif) | Original Solo Popo slot 0, adding paired Ice Climbers slot 2, then Kirby → pair → original | 960×541 / 26 seconds |
-| [Solo Popo](fighter-hotswap/solo-popo.gif) | Original P1 pair → Solo via Character Extras; CPU Young Link unchanged | 960×541 / 11 seconds |
-| [Manual hot-swap](fighter-hotswap/manual-hotswap.gif) | Portrait grid selects Bowser; CPU Young Link unchanged | 960×541 / 12 seconds |
-| [Practice Stages](lobby-practice/stage-menu.gif) | L/R paging, rotation view, and complete direct change to Battlefield | 960×541 / 29.8 seconds |
-| [Training hot-swap](fighter-hotswap/hotswap.gif) | Earlier footage: Mario → Solo Popo → Mythra; CPU Solo Popo → Kirby | 800×450 / 16 seconds |
-| [Waiting-room practice](lobby-practice/waiting-room.gif) | P1 Solo Popo → Mario → Donkey Kong; CPU Solo Popo → Sheik; CPU icon updates | 960×540 / 16 seconds |
+| Clip | Recorded | Behavior | Size / duration |
+| --- | --- | --- | --- |
+| [Training hot-swap](fighter-hotswap/hotswap.gif) | 2026-10-16 | Mario → Solo Popo → Mythra; CPU Solo Popo → Kirby | 800×450 / 16 seconds |
+| [Waiting-room practice](lobby-practice/waiting-room.gif) | 2026-10-16 | P1 Solo Popo → Mario → Donkey Kong; CPU Solo Popo → Sheik; CPU icon updates | 960×540 / 16 seconds |
+| [Character cycles](fighter-hotswap/character-cycles.gif) | 2026-10-24 | Original Solo Popo slot 0, adding paired Ice Climbers slot 2, then Kirby → pair → original | 960×541 / 26 seconds |
+| [Solo Popo](fighter-hotswap/solo-popo.gif) | 2026-10-24 | Original P1 pair → Solo via Character Extras; CPU Young Link unchanged | 960×541 / 11 seconds |
+| [Manual hot-swap](fighter-hotswap/manual-hotswap.gif) | 2026-10-24 | Portrait grid selects Bowser; CPU Young Link unchanged | 960×541 / 12 seconds |
+| [Practice Stages](lobby-practice/stage-menu.gif) | 2026-10-24 | L/R paging, rotation view, and complete direct change to Battlefield; loading pause held, not sped up | 960×541 / 29.8 seconds |
 
 The waiting GIF uses the complete 16-second capture. The existing opponent-input macro GIF is
 unchanged, preserving its verified match-source alignment.

@@ -1,5 +1,13 @@
 # Revision 33 — startup memory (2026-10-13)
 
+This revision removes the upstream analytics and auto-update threads, gives the
+config writer an explicit 64 KiB stack, and inflates the embedded layout archives
+per load, releasing them about five seconds after the game copies them.
+
+> **Update (2026-10-24):** the `0xA5` overwrite before freeing described below
+> now runs only with the development feature `archive-poison-probe`; ordinary
+> builds release without it (`src/training/ui/mod.rs`).
+
 Revision 32 made the plugin image small (2,174,976 B). This revision goes after what the plugin takes from
 the game heap *after* it is loaded. The Switch standard library gives a thread spawned without an explicit
 size a 2 MiB stack (`library/std/src/sys/thread/switch.rs`, `DEFAULT_MIN_STACK_SIZE`), and Skyline carves

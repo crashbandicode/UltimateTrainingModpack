@@ -1,205 +1,166 @@
 # Named CPU macros
 
-This local implementation has passed scoped native acceptance testing.
-
-For a screenshot walkthrough, see the [illustrated guide](named-macros/README.md).
-
-## Implemented scope and current verification
-
-Implemented: named CPU recording/library, native keyboard naming, latest/previous
-replay capture, native-input crop preview with independent In/Out handles,
-relative placement, recorded/at-rest momentum, facing mirroring and guarded
-restore-before-input-zero playback. Optional live-match capture also persists a
-companion when its associated native replay is successfully saved. Revision27
-verifies that saved capture across a process restart, with capture disabled, through
-an eight-input Pikachu preview and named export. Revision21 verifies the native-preview backend;
-revision20's earlier acceptance applies to the pose-preview backend it replaced.
-The sections below give the current controls.
-
-Historical checks of the earlier pose-preview backend covered loading input
-isolation, B cancellation, grounded CPU acquisition, HUD/statistics hiding,
-selection restart, anchor restoration and closed-editor Training leave/reentry.
-Earlier native runs also cover manual recording, naming cancellation/validation/
-retry, library operations and the scoped placement/momentum cases described below.
-
-Revision21 passed a full 1,862-input native preview with a visible Dr. Mario capsule,
-attacks/effects, restart, explicit stop/restore, two eight-input selection runs,
-held-B close/restore and native-menu exit. Deliberately enabled legacy loop and
-record/playback-on-load options did not interfere. Strict host/native checks pass.
-See the parent's `research/named-macros/revision21-findings.md` for exact evidence.
-Broader airborne/roster/controller behavior, forced timeout recovery and physical
-Switch remain unverified. Getter observations cover every emitted input, but repeated
-callbacks prevent a universal one-callback-per-gameplay-tick claim.
+Controls, files and limits behind the [illustrated guide](named-macros/README.md).
+Build inputs are in [named-macros-build.md](named-macros-build.md). This local
+implementation passed scoped emulator acceptance; physical Switch and online
+behavior are unverified.
 
 ## Record and load
 
 1. In **Input Recording → Macro Source**, select **Named Library**. The default
-   remains numbered slots so existing settings keep their previous behavior.
-2. Use the configured **Input Record** button combination to possess the CPU and
-   record. Press the same combination again to finish. Named recordings use a
-   ten-minute safety limit rather than the numbered-slot duration setting.
-3. The **Save Recording** panel shows the frame count and duration. **A: Name and
-   save** opens the system keyboard. Confirm a name to save; cancelling or entering
-   an invalid name keeps the draft so you can retry. **Y** opens placement controls.
-   **Recording Crop** optionally trims trailing neutral input.
-4. **Named Library** lists saved files. Selecting a recording requests its CPU
-   fighter; close the menu and allow the character change to finish.
-5. Enable save states and save the desired Training setup. The configured
-   **Input Playback** combination restores that setup before starting the loaded
-   macro. Numbered recordings remain available by switching Macro Source back.
+   stays numbered slots, so existing settings behave as before.
+2. Press the **Input Record** chord (default **ZR + D-pad Down**) to possess the CPU and record; press it again
+   to finish. Named recordings use a ten-minute safety limit instead of the
+   numbered-slot duration setting.
+3. The **Save Recording** panel shows the frame count and duration. **A** opens
+   the system keyboard to name and save; cancelling or an invalid name keeps the
+   draft for a retry. **Y** opens placement. **Recording Crop** optionally trims
+   trailing neutral input.
+4. **Named Library** lists saved files. Selecting one requests its CPU fighter;
+   close the menu and let the change finish.
+5. Enable save states and save your Training setup. The **Input Playback** chord
+   (default **ZR + D-pad Up**) restores that setup, then starts the macro.
 
-Files live in `sd:/ultimate/TrainingModpack/macros/`. They are versioned JSON with
-mapped buttons/sticks, a start-state summary and placement metadata. The library
-has no five-slot restriction. Selecting a recording persists its ID across game
-restarts. A macro is an input sequence, not a complete simulation save state.
+Files are versioned JSON in `sd:/ultimate/TrainingModpack/macros/`, with mapped
+buttons and sticks, a start-state summary and placement metadata. There is no
+five-slot limit, and the selected ID persists across restarts. A macro is an
+input sequence, not a full simulation save state.
 
 ## Placement
 
 After loading a macro and restoring a Training state, open **Edit Placement**.
-The anchor is the CPU's restored position. **X-/X+/Y-/Y+** move the target one
-unit; lowercase controls move it a quarter unit. The crosshair previews the
-target without moving the real CPU while editing.
+The anchor is the CPU's restored position; a crosshair previews the target
+without moving the real CPU.
 
-- **Keep** applies an in-memory edit without changing the file.
-- **Write** explicitly overwrites the loaded file's placement metadata.
-- **New** opens naming and writes a separate recording.
-- **Back** cancels the edit.
-- **Momentum** switches between **Keep recorded speed** and **Start at rest**.
+![The Placement page: X/Y nudges, Momentum, Keep, Write, New and Back, with a zero offset.](named-macros/images/08-placement-controls.png)
 
-Placement does not rewrite recorded inputs. The XY offset is in world units from
-the restored reference, including when the save-state anchor is mirrored. The
-recorded absolute position is not restored. Repeated restores use that reference
-instead of adding the offset to the CPU's current position.
+*Earlier test build; the current source uses the same controls and footer. At zero offset no displaced target is shown.*
 
-Recorded momentum is applied immediately before named playback input zero, after
-both fighters finish restoring. Horizontal speed follows input-facing mirroring;
-an airborne start requests normal falling physics, including at zero Y offset.
-**Start at rest** clears
-starting velocity, then ordinary physics resumes; it does not hold the CPU in the
-air. A plain load or recording start does not apply the selected macro's momentum.
-Native Dr. Mario checks cover rising/falling momentum, starting at rest, mirrored
-controls and speed, and repeated noncompounding restores. See the parent test
-record for the exact cases and remaining acceptance limits.
+| Control | Effect |
+| --- | --- |
+| **X- / X+ / Y- / Y+** | Move the target one unit (lowercase controls: a quarter unit) |
+| **Keep** | Apply the edit in memory; the file is unchanged |
+| **Write** | Overwrite the loaded file's placement metadata |
+| **New** | Name and write a separate recording |
+| **Back** | Cancel the edit |
+| **Momentum** | Switch between **Keep recorded speed** and **Start at rest** |
 
-Use an idle/fall setup for named restore-playback. An unshifted ledge save is
-rejected rather than silently releasing the ledge. An aerial target on the floor
-can land before playback is ready, including with recorded upward momentum. The
-macro then stops without consuming input 0 and asks you to adjust the placement.
-Raise the placement or save an airborne setup to practice the aerial.
+- Placement never rewrites inputs. The offset is in world units from the restored
+  reference, including a mirrored save-state anchor. Repeated restores reuse that
+  reference rather than adding to the CPU's current position; the recorded
+  absolute position is not restored.
+- Recorded momentum is applied just before input zero, after both fighters
+  restore. Horizontal speed follows facing mirroring, and an airborne start
+  requests normal falling physics even at zero Y offset. **Start at rest** clears
+  the starting velocity, then ordinary physics resumes; it does not hold the CPU
+  in the air. A plain load or recording start applies no momentum.
+- Use an idle or falling setup. An unshifted ledge save is rejected rather than
+  silently releasing the ledge. An aerial target on the floor can land before
+  playback is ready; the macro then stops without consuming input 0 and asks you
+  to adjust. Raise the placement or save an airborne setup.
 
-## Export from a saved replay
+## Capture a match (optional)
 
-### Optional live-match capture across restarts
-
-1. Start the mod once to create
-   `sd:/ultimate/TrainingModpack/replay_capture.ini`. Capture defaults **off**.
-   To enable it, edit the file while the game is closed, then restart:
+1. Start the mod once to create `sd:/ultimate/TrainingModpack/replay_capture.ini`.
+   Capture defaults **off**. With the game closed, set:
 
    ```ini
    [capture]
    enabled=on
    ```
 
-2. Play a match and use the game's **Save Replay** action on the results screen.
-   The companion is published only after the matching native replay save succeeds.
-   Cancelling the save creates no companion. An unsaved RAM capture is not a
-   persistent replay choice.
-3. Enter Training, including after a complete game restart. Open **Input Recording
-   → Replay Captures**, choose the native replay name and press **A** to load it.
-   These saved choices remain accessible after setting `enabled=off` and restarting.
-4. Choose the fighter, save a matching Training setup, crop, preview and name/save
-   using the controls below. Selecting a different fighter requests the CPU reload;
-   save the matching setup after that change finishes.
+2. After a match, use the game's **Save Replay** on the results screen. The
+   companion is written only after that native save succeeds; cancelling writes
+   nothing, and an unsaved in-memory capture is not offered later.
+3. In Training, even after a full restart or with capture turned back off, open
+   **Input Recording → Replay Captures**, choose the replay name and press **A**.
+4. Choose the fighter, wait for the CPU reload, save a matching Training setup,
+   then crop, preview and name it in the [Replay Window](#replay-window-controls).
 
-Companions live in `sd:/ultimate/TrainingModpack/replay_captures/`. Each shared
-`.smd` bundle contains `manifest.json`, `timeline.jsonl` and a Training `.tmrc` cache.
-The shared timeline retains native floating-point observations; rounding to the
-Training input format happens only in the cache/export projection. Keep the whole
-bundle together. A capture is bounded to36,000samples per track, up to8tracks; partial
-captures remain explicitly marked rather than being presented as a complete match.
+Companions live in `sd:/ultimate/TrainingModpack/replay_captures/`. Each `.smd`
+bundle holds `manifest.json`, `timeline.jsonl` and a Training `.tmrc` cache; keep
+the bundle together. The timeline keeps native floating-point observations, and
+rounding to the Training input format happens only in the cache/export projection.
+A capture holds at most 36,000 samples per track and 8 tracks; a partial capture
+is marked as partial, not presented as a complete match.
 
-Normal revision27 also passed a scoped emulator coexistence check with Deluxe
-`6c396f10` in active manual LessLag mode: native match/save, cold Training access
-with capture off, CPU reload, eight-input preview, and exact named export.
+## Vault fallback
 
-Observed native-buffer completion and exact export do not establish first/last
-simulation-tick coverage or every input/state sampling phase. Controlled performance
-and deliberate frame-drop checks are still pending; capture remains opt-in.
-Physical Switch and online behavior are unverified.
+Use this for older or imported replays, matches recorded with capture off, or a
+replay without a companion. It observes the CPU while the native replay runs.
 
-### Vault fallback
-
-For older/imported replays, matches recorded with capture off, or a replay without
-a companion, use the existing Vault route. It also observes CPU behavior while the
-native replay simulation runs:
-
-1. Play the replay through **Vault → Replays → Replay Data → Play**. You only need
-   to play through the end of the section you want, not the whole match. Include
-   enough lead-in for a supported idle/fall start.
-2. End playback using the game's displayed quit combination, then enter Training
-   **without restarting the game**. The latest two observed timelines are held in memory.
+1. Play the replay through **Vault → Replays → Replay Data → Play**, only through
+   the section you want plus enough lead-in for an idle or falling start.
+2. Quit with the game's displayed combination and enter Training **without
+   restarting**. The latest two observed timelines stay in memory for that game
+   process, so they can be reused without replaying.
 3. Open **Input Recording → Replay Window** while the CPU is idle or falling.
-   **D-pad Up/Down** selects the previous/next fighter; changing kind reloads the CPU and
-   retains the crop. During loading, P1 input is isolated and the CPU must settle
-   to grounded idle. **B** closes the editor while an already-started install finishes.
-   Before previewing, enable save states and save a setup with the current pair of
-   fighters. If selecting a different CPU, close the editor, save the new setup,
-   and reopen it. Preview uses the explicitly selected saved slot, its original
-   facing and saved damage, independently of random-slot/mirroring/damage options.
-4. **L** selects In and **R** selects Out. **Left/Right** then edits that boundary.
-   Holding speeds up, from one frame to three minutes of the replay per second.
-   Hold **ZL or ZR** (Z on a GameCube controller) to start at the fast rate. A
-   diagonal D-pad still edits the boundary; only a clean **D-pad Up/Down** changes
-   fighter. Handles cannot cross: `[In, Out)` includes In, excludes Out, and contains
-   at least one input.
-   Editing a boundary stops preview and restores the saved setup; it does not seek
-   the game to an arbitrary recorded pose.
-5. **X** plays the selected inputs from the saved setup, or stops and restores it.
-   **Y** restarts from that setup. The playhead reports emitted inputs, independently
-   of rendering. At the end, input injection stops while native attacks/effects
-   continue normally. Restart, edit or close to restore the setup. **ZL+X** switches
-   latest/previous capture if Vault looped. On a GameCube controller, use Z as the
-   modifier instead of ZL/ZR. Preview is transient and does not replace the loaded
-   library entry or change loop/record/playback-on-load settings.
-6. Choose an idle/fall start, or explicitly press **ZL+Y** to include the previous
-   clean-start lead-in. An unsupported start is rejected without silently moving
-   In. **A** opens the system keyboard to name/save; cancellation retains the crop.
 
-Preview runs inputs through the native CPU simulation so attacks, articles and
-effects happen normally, with both fighters free to react. P1's controls remain
-owned by the editor. Stop/restart/close use the existing native death/rebirth
-save-state cleanup; they restore the saved Training setup, not the world present
-when the editor opened. This is one fighter's input sequence, not exact whole-match
-reconstruction. Pause, arbitrary backward seeking and frame-step are not offered.
-Use a suitable airborne saved setup for aerial starts. Starting in an arbitrary
-animation is not supported. AI analog values can lie
-between controller steps; the editor reports when these were rounded. Replay
-capture observes the game's native simulation rather than treating the replay
-file's `FRAM` records as gameplay frames. A 120-frame writer/native-getter comparison
-passed exactly. All 1,862 inputs of the longer fixture were written once in order
-and matched native getter values, with three extra observations of one sequence;
-strict callback-to-gameplay-tick timing and general C-stick/remapping coverage
-remain unverified. Do not write the upstream `clamped_rstick` fields: native review
-identified those bytes as rumble state.
+## Replay Window controls
 
-The native non-ready loading timeout preserved the selection and returned the
-editor. Revision 20 passed six short closes and holds up to three seconds without
-leaking B into gameplay, plus a fresh-press positive control and held-B loading
-cancellation. The fix preserves the physical B level between repeated mappings
-while consuming gameplay input. These checks used a default single-controller
-King Dedede setup with Dr. Mario/Lucario; broader mappings and hardware remain
-unverified.
+| Control | Effect |
+| --- | --- |
+| **D-pad Up / Down** | Previous / next captured fighter. Changing kind reloads the CPU and keeps the crop; only a clean Up/Down changes fighter |
+| **L** / **R** | Select the In / Out handle |
+| **Left / Right** | Move the selected handle. Holding speeds up from one frame to three minutes of replay per second; a diagonal still moves the handle |
+| Hold **ZL** or **ZR** (Z on GameCube) | Start moving at the fast rate |
+| **X** | Play the selection from the saved setup, or stop and restore it |
+| **Y** | Restart from the saved setup |
+| **ZL + X** | Switch latest / previous capture if Vault looped (Z as modifier on GameCube) |
+| **ZL + Y** | Include the previous clean-start lead-in |
+| **A** | Name and save with the system keyboard; cancelling keeps the crop |
+| **B** | Close; an already-started fighter install finishes |
 
-### Direct file import
+- The crop is `[In, Out)`: it includes In, excludes Out and holds at least one
+  input. Handles cannot cross. An unsupported start is rejected without moving In.
+- During a fighter load, P1 input is isolated and the CPU must settle to grounded
+  idle. Before previewing, save a setup with the current pair of fighters; after
+  choosing a different CPU, close the editor, save a new setup and reopen.
+- Preview uses the explicitly selected save slot with its original facing and
+  saved damage, ignoring random-slot, mirroring and damage options. It is
+  transient: it does not replace the loaded library entry or change loop,
+  record or playback-on-load settings.
+- Editing a handle stops the preview and restores the setup; it never seeks the
+  game to a recorded pose. The playhead counts emitted inputs, independent of
+  rendering. At the end, input stops while attacks and effects finish normally.
 
-Direct import without native replay playback is not yet integrated. An existing
-file-only decoder reads the researched human-controller packets. The remaining
-adapter must establish general record-to-gameplay timing and fighter/controller
-ownership before supplying the macro editor. Recorded poses are not required by
-native input preview. In the tested CPU replays, original AI decisions are not stored
-controller packets; absence must not be treated as a neutral recording. Human
-inputs imported from a file could still drive a Training CPU.
+Preview runs the inputs through the native CPU simulation, so attacks, articles
+and effects happen normally and both fighters react; P1's controls stay with the
+editor. Stop, restart and close use the native death/rebirth save-state cleanup
+and restore the saved setup, not the world as it was when the editor opened.
+This is one fighter's input sequence, not a whole-match reconstruction: there is
+no pause, backward seek or frame-step, and starting mid-animation is not
+supported. AI analog values can fall between controller steps; the editor
+reports when it rounded them. Capture reads the game's native simulation rather
+than treating the replay file's `FRAM` records as gameplay frames. Never write
+the upstream `clamped_rstick` fields: native review identified those bytes as
+rumble state.
 
-For the Vault route, play only through the desired section, then crop the observed timeline. The latest
-and previous captures can be reused without replaying that material while the same
-game process remains open.
+## Direct file import
+
+Not integrated yet. A file-only decoder reads the researched human-controller
+packets, but the adapter must still establish record-to-gameplay timing and
+fighter/controller ownership before feeding the editor. In the tested CPU
+replays, the original AI decisions are not stored as controller packets; their
+absence must not be read as neutral input. Human inputs imported from a file
+could still drive a Training CPU.
+
+## Test record
+
+| Revision | Passed | Notes |
+| --- | --- | --- |
+| 27 | Saved capture reopened after a process restart with capture off; eight-input Pikachu preview; named export. With Deluxe `6c396f10` in active manual LessLag: native match/save, cold Training with capture off, CPU reload, eight-input preview, exact named export | Current capture route |
+| 21 | Native-preview backend: full 1,862-input preview with a visible Dr. Mario capsule, attacks/effects, restart, explicit stop/restore, two eight-input selection runs, held-B close/restore, native-menu exit. Deliberately enabled legacy loop and record/playback-on-load options did not interfere. Strict host/native checks | Evidence: the parent's `research/named-macros/revision21-findings.md` |
+| 20 | Earlier pose-preview backend (since replaced): loading input isolation, B cancellation, grounded CPU acquisition, HUD/statistics hiding, selection restart, anchor restoration, closed-editor Training leave/re-entry. Six short closes and holds up to three seconds without B leaking into gameplay, a fresh-press positive control, held-B loading cancellation; the non-ready loading timeout kept the selection | The fix preserves the physical B level between repeated mappings while consuming gameplay input. Default single-controller King Dedede with Dr. Mario/Lucario |
+| Earlier | Manual recording, naming cancel/validation/retry, library operations. Dr. Mario placement: rising/falling momentum, start at rest, mirrored controls and speed, repeated non-compounding restores | — |
+
+Capture accuracy: a 120-frame writer/native-getter comparison matched exactly.
+All 1,862 inputs of the longer fixture were written once, in order, and matched
+native getter values, with three extra observations of one sequence. Repeated
+callbacks prevent a universal one-callback-per-gameplay-tick claim.
+
+Not yet verified: broader airborne, roster and controller behavior; forced
+timeout recovery; strict callback-to-tick timing, first/last simulation-tick
+coverage and every sampling phase; general C-stick/remapping coverage;
+controlled performance and deliberate frame-drop checks (capture stays opt-in);
+physical Switch and online play.

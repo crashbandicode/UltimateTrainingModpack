@@ -1,108 +1,161 @@
 # Lobby Practice reference
 
-Mechanics, installation, diagnostics and validation behind the
-[Lobby Practice guide](../lobby-practice.md). Everyday controls are in the
-[hot-swap guide](../fighter-hotswap.md) and [Practice Stages](../practice-stages.md).
+Install, troubleshooting, lifecycle rules and test record behind the
+[Lobby Practice guide](../lobby-practice.md). Controls are in the
+[hot-swap guide](../fighter-hotswap.md), [Solo Popo](../solo-popo.md) and
+[Practice Stages](../practice-stages.md); grid and cycle details are in the
+[hot-swap reference](fighter-hotswap.md).
 
-This independent experimental fork targets Smash Ultimate 13.0.5. It uses the native asynchronous fighter loader to replace one existing practice entry per role. It adds no CSS slots or custom fighter IDs. P1 and CPU use the same mechanism with separate settings. Physical Switch validation remains pending.
+This is the [unstable enhancements alpha](../experimental-release.md) for Smash
+Ultimate 13.0.5. Physical-Switch validation is pending.
 
-## Configure and swap characters
+![Player and CPU character swaps in waiting practice](../lobby-practice/waiting-room.gif)
 
-1. Enter ordinary Training. Press **Minus** to open the Modpack Menu. **B + D-pad Up** remains available; the two optional [INI shortcuts](../menu-shortcuts.md) default to Minus and disabled. Plus opens the native pause menu unless explicitly configured otherwise.
-2. In the development build, open **Characters → Player Swapping** and enable P1 replacement.
-3. Use **Player Character** or **CPU Character** in that same tab for a one-time replacement.
-4. Open **Character Cycles** for the shared portrait grid. Both orders stay visible: red P1 numbers at top-left and blue CPU numbers at top-right. **ZR** switches the role being edited (**R** on GameCube). **A** adds or updates a group, **R** removes (**Z** on GameCube), and **ZL** selects All (**L** on GameCube). **X** previews the starting form for Pyra/Mythra or Pokémon Trainer; **A** commits it. **Y** on Ice Climbers toggles Solo Popo for the active role, even on P1's grey original portrait.
-5. Close with **B** to commit. Fighters load without leaving practice; no matching first CSS choice or re-entry is needed.
+Practice fighters change; the lower waiting card keeps the character selected
+for the real match. [Controls and walkthrough](../lobby-practice.md).
 
-Defaults: **P1 G&W → Palutena → Pikachu**; **CPU Pikachu → Kirby → Bowser → Bayonetta**. Existing ordered rosters and older fixed-slot selections migrate when loaded. New saves write only ordered rosters, which earlier ordered-roster builds can also read. Earlier fixed-slot-only development builds cannot recover edited rosters from the new file; keep a backup if downgrading to those builds.
+## What changes where
 
-All follows the character-select rows, left to right and top to bottom, with each transforming group once and its configured starting form preserved (defaults: Pyra and Squirtle). P1's original character-select group is **slot 0**, visited after the last numbered fighter and before slot 1. It is normally grey and excluded from the numbered list and All. The enhancements alpha permits an Ice Climbers numbered entry when its red S differs from Character Extras → Solo Popo; identical configurations remain grey. The CPU's original fighter stays selectable, including in CPU All. Cycle selections show numbered order; remove and add a group to move it to the end. Selecting a fighter while All is active starts a custom sequence. Directional inputs move the marker across the portrait grid. There is no eight-character limit.
+A swap asks the game's own asynchronous fighter loader to refill one existing
+practice entry per role. It adds no character-select slots or custom fighter IDs.
+Player 1 and the CPU use the same mechanism with separate settings. Lobby
+Practice needs a build with the `waiting-roster-reload` feature, as in the alpha
+release; ordinary Training works without it. In the waiting room the menu is
+titled **Lobby Practice**.
 
-Default mappings are **ZL + Right** for P1 and **ZL + Left** for CPU. Configure them under **Button Config → Cycle Player Character / Cycle CPU Character**. Holding a mapping advances only once. P1 wraps through the original slot 0 and its original starting form. The CPU wraps its own list, starting at its first choice if its current fighter is outside it.
+| Situation | Behavior |
+| --- | --- |
+| Waiting-room practice | P1 and CPU swap as in Training. The CPU's small icon updates (default-costume image) |
+| The real match | Always uses your character-select pick. The lower waiting card shows that pick. CPU swaps only change the local practice dummy. Practice shortcuts and hooks are off |
+| Back in the same lobby | Each role's last *completed* practice fighter returns once fresh waiting entries are ready. P1 needs **Player Swapping** On |
+| A new lobby | Both remembered fighters are cleared. This is in-memory session state, not a saved character-select override |
+| Ordinary Training | Keeps its own selections. Portrait and name update at once; native **L + R + A** reset keeps the current fighter |
+| Training-only tools | Save/load (default **ZL + D-pad Down / Up**), recording/playback, native Training reset and some stage options. The waiting menu labels them |
+| Stage rotation | Advances on the next lobby-practice entry, including after a match or a return through character select. Never rotates ordinary Training |
 
-Pyra/Mythra occupies one cycle slot, and Pokémon Trainer occupies one slot. Each starts in the chosen form; normal Down+B transformations remain available. The next hot-swap advances to the next group regardless of the current form, and returning restores the configured starting form. Ice Climbers is supported; Saved-Mii cycling, the native Mii editor and managed Mii hats are available in the full alpha. See the [release limits](../experimental-release.md). The portrait layout matches the all-unlocked save used for testing; it does not read arbitrary save layouts. These are plugin roster settings, not new game slots. Coverage is representative, not every character/costume/move combination. The [portrait asset manifest](../../scripts/roster-grid/assets/sources.json) records the stock icons supplied by SmashWiki.
+Restoration after a match waits for native dialogs, another load or pending
+practice actions. A new explicit character request takes priority, and an
+interrupted load never replaces the last completed choice. Lobby dialogs always
+take input priority over practice.
 
-Solo Popo has three independent saved settings. **Character Extras → Solo Popo** controls only P1's original character-select Ice Climbers. **Red S, bottom-left** controls cycled-in P1 Ice Climbers; **blue S, bottom-right** controls CPU Ice Climbers of either origin. An S is shown only when enabled. Y still edits the red S on P1's grey slot-0 portrait without changing the current original P1 or Character Extras. Changing the applicable setting switches the pair/Solo state when the menu closes. See the [Solo Popo guide](../solo-popo.md). These settings passed the Training and solo local-wireless checks described below.
+## Swap safety
 
-## Lobby Practice and presentation
+| Rule | Detail |
+| --- | --- |
+| Refused while busy | Save loading, recording/playback, native UI, another replacement or a pending training action. A notification reads **Character swap unavailable during this action** |
+| Fresh start | A replacement clears per-session training state |
+| Bound requests | Each request is tied to the observed entry identity and scene epoch |
+| Teardown | Native destruction invalidates queued and active references before the original destructor runs. There is no manual loader pumping or forced cancellation |
+| Save states | Restore position and damage onto the current fighter, not the saved fighter kind. Character-specific charge restores only for a matching kind |
 
-Enable **Misc Settings → Lobby Practice → On**, close the editor, and enter the waiting practice area. The editor appears as Lobby Practice. The waiting-enabled build uses the waiting-roster-reload feature; ordinary Training remains available without it.
+## Install
 
-The guide's `lobby-practice/waiting-room.gif` was recorded with the enhancements
-development build in an emulator's local-wireless waiting room. P1 cycles from
-Solo Popo through Mario to Donkey Kong; the CPU changes from Solo Popo to Sheik
-and its icon updates. The lower player card retains the original Ice Climbers
-match selection.
+1. Stop the game.
+2. Replace the existing Training Modpack NRO. Never load two copies:
 
-Actual matches use the original character-select choice, regardless of P1's practice replacement. The lower waiting roster card intentionally shows that match selection. CPU replacements affect the local practice dummy. Practice shortcuts and hooks are disabled in an actual match.
+       sd:/atmosphere/contents/01006A800016E000/romfs/skyline/plugins/libtraining_modpack.nro
 
-The current development build remembers each role's last successfully loaded practice
-character for the lobby. After a match, it restores those choices when fresh waiting
-entries are ready. Native dialogs, another load and pending practice actions defer
-restoration; a new explicit character request takes priority. P1 restoration requires
-Player Swapping to remain enabled. An interrupted load does not replace the last
-completed choice. Creating a fresh lobby clears both choices; ordinary Training has
-its own live selections. This is in-memory session state, not a saved CSS override.
-An earlier development build passed a two-peer local-wireless match/return and fresh-room
-reset test. Online-arena and physical Switch runtime remain unverified for this change.
+3. Keep `training_modpack_menu.conf`, saves, other plugins and emulator settings.
+   This is a single-file update inside an existing Skyline installation.
+4. Fully restart the game.
 
-The waiting CPU's small character icon is refreshed after replacement. Waiting HUD resource callbacks preload the supported stock icons before the game's normal load barrier. The refresh obtains the current generation-checked UI, maps its presentation ID to the visible partner, and calls the native texture setter. It retains no pane pointers and changes no partner or matchmaking descriptor. The icon uses the character's default-costume image.
+No separate `info_waiting.arc` is needed; an old copy is ignored. On each
+waiting-room load, the NRO rebuilds the waiting UI from the game's loaded stock
+archive, its embedded Training UI and a small compiled patch. Input and output
+fingerprints must match before injection. The rebuilt archive is released about
+five seconds after the game copies it.
 
-Ordinary Training portrait and name update immediately. Native **L + R + A** reset retains the current fighter there. Save/load, recording/playback, native Training reset and some stage options remain ordinary-Training features; the waiting menu labels their scope. Native lobby dialogs take input priority.
+**Downgrading:** existing ordered rosters and older fixed-slot selections migrate
+when loaded. New saves write only ordered rosters, which earlier ordered-roster
+builds can read. Earlier fixed-slot-only development builds cannot recover
+edited rosters from the new file, so keep a backup of
+`training_modpack_menu.conf` before going back to one.
 
-## Practice stages
+## Troubleshooting
 
-Direct selection and lobby rotation are now described in
-[Practice Stages](../practice-stages.md). Rotation advances on the next
-lobby-practice entry, including after a match or a return through character
-select; it does not rotate an ordinary Training session. The guide's
-`lobby-practice/stage-menu.gif` was recorded in ordinary Training: L/R paging,
-the separate rotation view, and the complete direct stage transition, with the
-loading pause retained.
+| Symptom | Check |
+| --- | --- |
+| No practice controls in the waiting room | **Misc Settings → Lobby Practice** must be On; leave and re-enter the practice area. Then look for `[LobbyPractice] embedded waiting UI disabled: …` in the log: a fingerprint mismatch keeps Lobby Practice inactive |
+| Player 1 does not swap or return after a match | Turn on **Characters → Player Swapping** |
+| A swap is refused | Another action owns practice; see [Swap safety](#swap-safety) and try again when idle |
+| Save states or recording do nothing in the lobby | They need ordinary Training; the waiting menu labels them |
+| Crash or freeze | Keep both logs below, any Atmosphère crash report, the exact NRO hashes, game version, fighter/costume choices and your last action |
 
-## Save states, recording and lifecycle
-
-Default save/load shortcuts are **ZL + Down / ZL + Up**. A save restores generic position/damage into the current fighter; it does not restore the saved fighter kind. Character-specific charge restores only for matching kinds.
-
-Save loading, recording/playback, native UI, another character replacement and pending training actions block conflicting swaps. A replacement clears per-session training state. Requests are bound to the observed entry identity and scene epoch. Native destruction invalidates queued/active references before the original destructor runs. No manual loader pumping or forced cancellation is used.
-
-## Installation and diagnostics
-
-With the game stopped, replace the existing Training Modpack NRO; never load two copies. The waiting editor is packaged in the NRO:
-
-    sd:/atmosphere/contents/01006A800016E000/romfs/skyline/plugins/libtraining_modpack.nro
-
-Preserve the existing training_modpack_menu.conf, saves, other plugins and emulator settings. No separate info_waiting.arc installation is needed; any old copy is ignored. The NRO reconstructs the accepted waiting UI from the game's loaded stock archive, its existing embedded Training UI and a small compiled patch. Input and output fingerprints must match before injection; a mismatch leaves Lobby Practice inactive and logs the reason. The first reconstruction result and its owned allocation are cached for the process lifetime. Fully restart the game after replacing the NRO.
-
-This is a single-file Training Modpack update within an existing Skyline installation; it does not replace Skyline or unrelated plugins. The player and CPU share one ordered-roster implementation. The retired fixed-three P1 implementation is absent; three defaults are just an initial selection.
-
-Persistent logs are sd:/ultimate/TrainingModpack/practice-diagnostics.log and practice-diagnostics.previous.log. Rotation keeps two files of at most 128 KiB each. Records include build/version, scene, request/entry identity, loader phase, completion, HUD/icon refresh, destruction, save/record events and Rust panics. Preserve both files and Atmosphère crash reports after a fault, along with exact NRO hashes, game version, fighter/costume choices and last action. A native fault can prevent the final record.
+Logs are `sd:/ultimate/TrainingModpack/practice-diagnostics.log` and
+`practice-diagnostics.previous.log`: two rotating files of at most 128 KiB each.
+They record build/version, scene, request/entry identity, loader phase,
+completion, HUD/icon refresh, destruction, save/record events and Rust panics.
+A native fault can prevent the final record.
 
 ## Rebuilding the waiting UI patch
 
-The shipped patch is src/static/waiting_ui.patch. It is a bounded copy/literal recipe, not a second full archive. Regenerate it only against a validated target when the embedded Training UI or supported stock archive changes:
+The shipped patch is `src/static/waiting_ui.patch`: a bounded copy/literal
+recipe, not a second full archive. Regenerate it only against a validated target,
+when the embedded Training UI or the supported stock archive changes:
 
     python3 scripts/make_waiting_patch.py STOCK.arc src/static/layout.arc ACCEPTED-WAITING.arc src/static/waiting_ui.patch --report PATCH-REPORT.json
 
-The generator checks reconstruction and records SHA-256 hashes; scripts/waiting_patch_manifest.json pins the accepted inputs and output. Compare the new report before committing a regenerated patch. The runtime separately checks source lengths/fingerprints, copy ranges, maximum output size, and exact output length/fingerprint. The private validation inputs remain outside the repository. The development-only layout_arc_from_file feature affects ordinary Training; waiting reconstruction always uses the pinned embedded donor. The decoder unit tests use synthetic data; the private fixture check also runs the actual Rust decoder against the accepted archive.
+- The generator checks the reconstruction and records SHA-256 hashes.
+  `scripts/waiting_patch_manifest.json` pins the accepted inputs and output;
+  compare the new report before committing a regenerated patch.
+- At runtime the NRO separately checks source lengths and fingerprints, copy
+  ranges, maximum output size, and the exact output length and fingerprint.
+- The private validation inputs stay outside the repository. Decoder unit tests
+  use synthetic data; the private fixture check runs the real Rust decoder
+  against the accepted archive.
+- The development-only `layout_arc_from_file` feature affects ordinary Training
+  only. The waiting rebuild always uses the pinned embedded donor.
+- To rebuild the portrait-grid layout and this patch together, see the
+  [roster grid builder](../../scripts/roster-grid/README.md).
 
-## Validation
+## Test record
 
-The earlier native-reload build passed ordinary P1/CPU reload, ordered/All menus, representative moves, save/record conflicts, reset and re-entry. Both native LDN host roles versus a vanilla peer produced matching combat and results. A separate test destroyed the waiting CPU during an active Bayonetta load; references were invalidated and the actual match retained original CSS G&W.
+Emulator and local-wireless (LDN) checks passed for P1/CPU swaps, menus, the CPU
+icon, the embedded waiting UI and a two-peer match/return. They do not establish
+Nintendo online-service or ban safety; one controller per peer is the exercised
+scope. Still required: physical-Switch repeated swaps, transitions, restarts and
+vanilla-peer desync checks.
 
-The subsequent CPU-icon correction updates the waiting portrait after a swap. Current reproduction evidence is linked in the development validation page below. Physical Switch repeated swaps, transitions, restarts and vanilla-peer desync checks remain required. Emulator/LDN passes do not establish Nintendo online-service or ban safety. One controller per peer is the exercised scope.
+<details><summary>Results by build</summary>
 
-The embedded waiting-UI build passed with the external waiting archive removed: ordinary Training editor and P1/CPU swaps; waiting editor, P1/CPU swaps and CPU icon; native LDN against a vanilla guest with original G&W selection and matching combat/results; and a second waiting load that reused the cached UI and reopened the editor. The actual Rust decoder also reproduced the accepted archive byte-for-byte. Three decoder tests, warning-free all-target NRO Clippy and the no-default-features release build passed. Save/record and actual mid-load interruption evidence remained the earlier regression checks; those cases were not repeated for the embedded waiting-UI build.
+| Build | Passed | Not repeated or not claimed |
+| --- | --- | --- |
+| Earlier native-reload build | P1/CPU reload, ordered/All menus, representative moves, save/record conflicts, reset and re-entry. Both LDN host roles against a vanilla peer: matching combat and results. Destroying the waiting CPU during an active Bayonetta load invalidated references; the match kept the original G&W pick | — |
+| CPU-icon correction | Waiting portrait updates after a swap | — |
+| Embedded waiting UI (external archive removed) | Training editor and P1/CPU swaps; waiting editor, swaps and CPU icon; LDN against a vanilla guest with original G&W, matching combat/results; a second waiting load reopened the editor (then from a cached UI; per-load since [revision 33](../REVISION33_STARTUP_MEMORY.md)). Rust decoder reproduced the accepted archive byte for byte. Three decoder tests, warning-free all-target NRO Clippy, no-default-features release build | Save/record and mid-load interruption (earlier regression checks only) |
+| Same-lobby restore (earlier development build) | Two-peer LDN match/return and fresh-room reset | Online arenas, physical Switch |
+| Enhancements development build, 2026-10-16 | Strict all-target Clippy, release and no-default builds; 150 host suite tests and 5 probes. Native Training and solo local-wireless Solo Popo, dual cycle orders, All, P1/CPU swaps, CPU form and CPU icon — see [development validation](../character-cycles-validation.md#enhancements-development-build--2026-10-16) | New two-peer match/return, online arenas, physical Switch |
 
-The enhancements development build passed strict root all-target Clippy with warnings denied, release and no-default-features builds, plus 150 host suite tests and 5 independent probes. Native Training passed the original-P1/red-S distinction, immediate Character Extras pair/Solo toggles, independent CPU blue S, automatic Solo after readiness, Solo save/load, actual P1 and CPU KO/Solo respawn, native Mario → cycled Solo Ice Climbers, and Mythra → Pyra → next Charizard → Squirtle → next original Mario 0. See [development validation](../character-cycles-validation.md#enhancements-development-build--2026-10-16). The same build also passed solo local-wireless checks for independent Solo settings, dual cycle orders, All, P1/CPU swaps, CPU form selection and CPU-icon updates. Earlier two-peer LDN results above retain their original scope; a new two-peer match/return, online-arena and physical Switch pass is not claimed.
+</details>
 
-## Earlier hardware hardening
+## Implementation notes
 
-The native Training-menu object is no longer cached for later HUD access. Version-checked hooks copy the game's combo-display setting into an atomic boolean at the native read sites; HUD drawing consumes only that scalar. The stale-moves setting write now uses the game's byte width. This removes an inherited lifetime hazard without claiming it caused any particular earlier crash. The rest of the fighter/module/scene lifetime assumptions still require physical Switch testing.
+<details><summary>Hardening, hooks, CPU icon and roster storage</summary>
 
-The corrected separate G&W plugin is v0.1.1-experimental. Its earlier 0.1.0 binary has a known hardware SVC-clobber defect and must not be deployed. See the separate plugin's validation notes; the corrected release still needs physical confirmation.
+- **CPU icon.** The waiting HUD resource callbacks preload supported stock icons
+  before the game's load barrier. After a swap, the refresh looks up the current
+  generation-checked UI, maps its presentation ID to the visible partner and
+  calls the native texture setter. No pane pointers are kept, and no partner or
+  matchmaking descriptor changes.
+- **Hardening.** The native Training-menu object is no longer cached for later
+  HUD use. Version-checked hooks copy the combo-display setting into an atomic
+  boolean at its native read sites, and the HUD reads only that value. The
+  stale-moves write uses the game's byte width. This removes an inherited
+  lifetime hazard; it is not claimed as the cause of any earlier crash. Other
+  fighter/module/scene lifetime assumptions still need physical-Switch testing.
+- **G&W plugin.** The separate G&W plugin's corrected release is
+  v0.1.1-experimental. Never deploy 0.1.0: it has a known hardware SVC-clobber
+  defect. The correction still needs physical confirmation.
+- **Hooks kept.** The normal NRO keeps the five entry lifecycle and portrait hooks
+  in `src/character_lifecycle.rs`, plus persistent diagnostics. Scene, entry
+  identity, destruction, ABI/version and conflicting-action checks remain. The
+  superseded lobby/trio investigation plugins are only in repository history and
+  the local research archive.
+- **Roster settings.** Each player has one stored ordered roster. A shared JSON
+  importer validates retired fixed-slot values and converts them once. Invalid
+  legacy values still reject the file even when a modern roster is present.
+  Required upstream fields stay required, and duplicate menu keys are rejected.
+  The retired fixed-three P1 implementation is gone; the three defaults are only
+  an initial selection.
 
-## Source cleanup
-
-The superseded lobby/trio investigation plugins remain in repository history and the local research archive. The normal NRO retains the five entry lifecycle and portrait hooks it needs in character_lifecycle.rs, along with persistent crash diagnostics. Scene, entry identity, destruction, ABI/version and conflicting-action checks remain in place.
-Roster settings now have one stored representation per player. A shared JSON importer validates the retired fixed-slot values and converts them once; the editor and runtime then use the same ordered roster. Invalid legacy values still reject the file even when a modern roster is present. Required upstream fields remain required, and duplicate menu keys are rejected.
+</details>

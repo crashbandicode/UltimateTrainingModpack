@@ -20,7 +20,7 @@ The 38 items come from Banjo & Kazooie, Bowser Jr., Daisy, Diddy Kong, King K. R
 
 ## Save states
 
-A save keeps the exact item Player 1 is holding, including a turnip's face, and loading gives it back. **Save States → Character Item** is only a fallback for saves made without that record.
+Save with **ZL + D-pad Down** and load with **ZL + D-pad Up** (the defaults). A save keeps the exact item Player 1 is holding, including a turnip's face, and loading gives it back. **Save States → Character Item** is only a fallback for saves made without that record.
 
 ## Where it works
 

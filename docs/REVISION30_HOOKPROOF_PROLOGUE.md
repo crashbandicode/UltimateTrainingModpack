@@ -1,5 +1,10 @@
 # Revision 30 — hook-proof UI-manager locator (2026-10-13)
 
+Deluxe 0.3.1 function-hooks the UI pass entry, which broke
+revision 29's prologue needle at boot on the Switch. The locator now starts
+0x14 bytes into the function, past any 16-byte hook stub, and the entry words
+are reported rather than required. The two anchor pins are unchanged.
+
 Revision 29 (`docs/REVISION29_DRAW_DECOUPLING.md`) drives the modpack UI from two inline anchors inside
 Smash 13.0.5's UI manager and reads the manager global from the `adrp`/`ldr` pair at main+0x375e280. It
 found that pair by searching for the ten-word prologue of the per-frame UI pass `0x375e260`, a needle
