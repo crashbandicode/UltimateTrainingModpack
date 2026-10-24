@@ -22,15 +22,11 @@ pub(crate) const HAT_ROW: usize = 0x32870b0;
 pub(crate) const LOCK: usize = 0x39c19c0;
 #[cfg(any(feature = "mii-native-adapter-probe", feature = "mii-saved-alpha"))]
 pub(crate) const UNLOCK: usize = 0x39c19d0;
-pub(crate) unsafe fn rd<T: Copy>(p: usize, o: usize) -> T {
-    std::ptr::read_volatile((p + o) as *const T)
-}
-pub(crate) unsafe fn wr<T: Copy>(p: usize, o: usize, v: T) {
-    std::ptr::write_volatile((p + o) as *mut T, v);
-}
-pub(crate) fn aligned(p: usize) -> bool {
-    p != 0 && p.is_multiple_of(8)
-}
+// Required fields are qualified by the current callback/PoolLock and the
+// binding/owner checks below. Never use these aliases to bypass a failed bind.
+pub(crate) use crate::native_fields::{
+    object as aligned, read_unchecked as rd, write_unchecked as wr,
+};
 #[cfg(any(feature = "mii-native-adapter-probe", feature = "mii-saved-alpha"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Context {

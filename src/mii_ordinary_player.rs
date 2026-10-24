@@ -509,13 +509,11 @@ unsafe fn begin(entry:*mut u8)->bool {
         s.next=next;s.request=None;s.track=Some(t.clone());drop(registry);t
     };
     // Outgoing FE is still untouched. INSTALL copies the separately staged 0x70-byte descriptor.
-    let mut aligned_descriptor=[0u64;14];
-    std::ptr::copy_nonoverlapping(track.descriptor.as_ptr(),aligned_descriptor.as_mut_ptr().cast(),0x70);
+    let staged=native_fighter_install::Descriptor::from_bytes(&track.descriptor);
     training::clear_session_state();
     trace!("[MiiOrdinaryPlayer] submit ticket={:?} outgoing={:#x} target={:#x} index={} resource_before={:02x?} saved_files_written=false",
         track.ticket,descriptor_kind(&current.descriptor),descriptor_kind(&track.descriptor),current.binding.record_index,&current.record[88..104]);
-    let install:unsafe extern "C" fn(*mut u8,*const u64,*const u8)=std::mem::transmute(base()+0x653240);
-    install(entry,aligned_descriptor.as_ptr(),[1u8,0,0].as_ptr());
+    native_fighter_install::install(base(),entry,&staged,native_fighter_install::Flags::Reload);
     if let Some(current)=STATE.lock().unwrap().track.as_mut().filter(|t|t.ticket==track.ticket) {
         current.installing=false;
     }

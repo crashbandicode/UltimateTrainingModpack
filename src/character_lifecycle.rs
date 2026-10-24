@@ -71,11 +71,14 @@ fn bounded_log(counter: &AtomicUsize, limit: usize) -> bool {
 }
 
 fn aligned(pointer: *const u8) -> bool {
-    !pointer.is_null() && (pointer as usize).is_multiple_of(8)
+    crate::native_fields::object(pointer as usize)
 }
 
+// Descriptor storage belongs to the current allocation/reload/destruction
+// callback. Keep the pre-destruction notification before the native teardown.
+#[inline]
 unsafe fn read<T: Copy>(pointer: *const u8, offset: usize) -> T {
-    std::ptr::read_volatile(pointer.add(offset) as *const T)
+    crate::native_fields::read_unchecked(pointer as usize, offset)
 }
 
 unsafe fn descriptor(raw: *const u8) -> (u32, [u32; 3], u32, u8) {

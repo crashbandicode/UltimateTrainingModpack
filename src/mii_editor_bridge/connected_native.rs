@@ -58,9 +58,23 @@ pub(super) unsafe fn service(base: usize) -> Option<usize> {
 /// input, it initializes every scratch register and returns through the common
 /// RET. The complete 16bb300..16bb470 body is fingerprinted before installation.
 /// Entering that branch changes neither the service's selector flag nor its deque.
-pub(super) unsafe fn pending_match(base: usize) -> Option<u64> {
+#[inline]
+unsafe fn peek_match(base: usize, service: usize) -> u64 {
+    // Caller supplies this bridge's fingerprint-verified base and a service
+    // freshly rebound on the current scene callback. No queue is consumed.
     let peek_match: unsafe extern "C" fn(usize) -> u64 = transmute(base + 0x16bb310);
-    service(base).map(|service| peek_match(service))
+    peek_match(service)
+}
+
+#[inline]
+unsafe fn peek_front(base: usize, service: usize) -> u64 {
+    // Same ownership/verification contract as peek_match; includes flag dispatch.
+    let peek_front: unsafe extern "C" fn(usize) -> u64 = transmute(base + 0x16bb300);
+    peek_front(service)
+}
+
+pub(super) unsafe fn pending_match(base: usize) -> Option<u64> {
+    service(base).map(|service| peek_match(base, service))
 }
 
 /// Compare the message's sender slot with the native, mode-aware self slot.
@@ -97,12 +111,10 @@ unsafe fn local_join(base: usize, service: usize, event: u64) -> Option<bool> {
 /// network block still pops and delivers it normally.
 pub(super) unsafe fn pending_interruption(base: usize) -> Option<u64> {
     let service = service(base)?;
-    let peek_match: unsafe extern "C" fn(usize) -> u64 = transmute(base + 0x16bb310);
-    let event = peek_match(service);
+    let event = peek_match(base, service);
     if event != 0 { return Some(event); }
     if read::<u8>(service, 0x26a62) != 0 { return Some(0); }
-    let peek_front: unsafe extern "C" fn(usize) -> u64 = transmute(base + 0x16bb300);
-    let event = peek_front(service);
+    let event = peek_front(base, service);
     Some(if passive_notification(base, service, event) { 0 } else { event })
 }
 
@@ -116,10 +128,8 @@ unsafe fn passive_notification(base: usize, service: usize, event: u64) -> bool 
 pub(super) unsafe fn can_deliver_notification(base: usize) -> bool {
     let Some(service) = service(base) else { return false; };
     if read::<u8>(service, 0x26a62) != 0 { return false; }
-    let peek_match: unsafe extern "C" fn(usize) -> u64 = transmute(base + 0x16bb310);
-    if peek_match(service) != 0 { return false; }
-    let peek_front: unsafe extern "C" fn(usize) -> u64 = transmute(base + 0x16bb300);
-    passive_notification(base, service, peek_front(service))
+    if peek_match(base, service) != 0 { return false; }
+    passive_notification(base, service, peek_front(base, service))
 }
 
 pub(super) struct Practice { scene: usize, context: usize }

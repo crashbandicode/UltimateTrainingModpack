@@ -4,6 +4,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use skyline::hooks::{getRegionAddress, Region};
 use skyline::nn::ro::LookupSymbol;
+// Globals are pinned by the verified main image; popup objects are borrowed on
+// the UI callback. Preserve the existing nonzero-only child checks below.
+use crate::native_fields::read_unchecked as read;
 
 static BASE: AtomicUsize = AtomicUsize::new(0);
 
@@ -54,9 +57,9 @@ pub fn current() -> Option<Mode> {
     }
     unsafe {
         Some(Mode {
-            initialized: std::ptr::read_volatile((base + 0x53144d8) as *const u8) & 1 != 0,
-            melee: std::ptr::read_volatile((base + 0x52c51b0) as *const u8),
-            mode: std::ptr::read_volatile((base + 0x53050f0) as *const u32),
+            initialized: read::<u8>(base, 0x53144d8) & 1 != 0,
+            melee: read(base, 0x52c51b0),
+            mode: read(base, 0x53050f0),
         })
     }
 }
@@ -69,13 +72,13 @@ pub unsafe fn popup_busy() -> Option<bool> {
         return None;
     }
     unsafe fn pointer(at: usize) -> Option<usize> {
-        let value = std::ptr::read_volatile(at as *const usize);
+        let value: usize = read(at, 0);
         (value != 0).then_some(value)
     }
     let manager = pointer(base + 0x532f820)?;
     let state = pointer(manager + 8)?;
-    if std::ptr::read_volatile((state + 0xf8) as *const u32) != 0
-        || std::ptr::read_volatile((state + 0x142) as *const u8) != 0
+    if read::<u32>(state, 0xf8) != 0
+        || read::<u8>(state, 0x142) != 0
     {
         return Some(true);
     }

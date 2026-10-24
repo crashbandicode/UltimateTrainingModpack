@@ -30,7 +30,6 @@ mod character_roster;
 mod character_items;
 mod turnip_identity;
 pub mod source_lifetime;
-#[cfg(any(test, feature = "native-unlink-guard", feature = "mii-fullconfig-probe", feature = "mii-saved-alpha"))]
 mod native_fields;
 mod kirby_hat_cycle;
 mod kirby_hats;

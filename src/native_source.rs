@@ -1,7 +1,7 @@
 //! Native source-owner operations shared by copy abilities and character items.
 //! Callers establish slot ownership and retain leases. This module neither picks
 //! arbitrary spare entries nor changes native fighter quantities/active counts.
-use super::{aligned, pointer_chain, read, setting, Forms, BASE};
+use super::{aligned, native_fighter_install, pointer_chain, read, setting, Forms, BASE};
 use std::sync::atomic::Ordering;
 use smash::app::{self, lua_bind::*};
 use training_mod_consts::{character_forms::typed_record_kind, TrioFighter};
@@ -175,16 +175,16 @@ pub unsafe fn ready(current: *const u8, slot: u32, kind: u32) -> Option<ReadySou
 /// acquired the shared install gate and proven this source is not leased.
 pub unsafe fn install(current: *mut u8, kind: u32) {
     let forms = Forms::starting(kind);
-    let mut descriptor = [0u64; 14];
-    std::ptr::copy_nonoverlapping(current, descriptor.as_mut_ptr().cast::<u8>(), 0x70);
-    let raw = descriptor.as_mut_ptr().cast::<u8>();
-    std::ptr::write(raw.add(0x14).cast::<u32>(), forms.count);
-    for (index, member) in forms.kinds.iter().copied().enumerate() {
-        std::ptr::write(raw.add(0x18 + index * 4).cast::<u32>(), member);
-    }
-    std::ptr::write(raw.add(0x28).cast::<u32>(), forms.actor_count);
-    std::ptr::write(raw.add(0x43), 0);
-    let install: unsafe extern "C" fn(*mut u8, *const u64, *const u8) =
-        std::mem::transmute(BASE.load(Ordering::Acquire) + 0x653240);
-    install(current, descriptor.as_ptr(), [0u8, 0, 0].as_ptr());
+    let mut descriptor = native_fighter_install::Descriptor::copy_from(current);
+    descriptor.request_group(native_fighter_install::Group {
+        count: forms.count,
+        kinds: forms.kinds,
+        actor_count: forms.actor_count,
+    });
+    native_fighter_install::install(
+        BASE.load(Ordering::Acquire),
+        current,
+        &descriptor,
+        native_fighter_install::Flags::Parked,
+    );
 }

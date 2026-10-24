@@ -27,6 +27,9 @@ use native_service::ServiceEntryContext;
 mod native_install;
 use native_install::{InstallGate, InstallToken};
 
+#[path = "native_fighter_install.rs"]
+mod native_fighter_install;
+
 #[path = "native_source.rs"]
 mod native_source;
 #[cfg(any(
@@ -617,12 +620,16 @@ pub fn scene_changed(mode: game_mode::Mode) {
     }
 }
 
+#[inline]
 fn aligned(ptr: *const u8) -> bool {
-    !ptr.is_null() && (ptr as usize).is_multiple_of(8)
+    crate::native_fields::object(ptr as usize)
 }
 
+// Required entry fields are borrowed only inside the qualified roster callback
+// or install transaction. This helper neither owns nor extends their lifetime.
+#[inline]
 unsafe fn read<T: Copy>(entry: *const u8, offset: usize) -> T {
-    std::ptr::read_volatile(entry.add(offset).cast::<T>())
+    crate::native_fields::read_unchecked(entry as usize, offset)
 }
 
 unsafe fn active_body(entry: *const u8, owner: u32, kind: u32) -> bool {
@@ -1112,15 +1119,12 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
     drop(state);
     // 653240 synchronously copies this descriptor. Preserve all native role,
     // controller/team/costume options; replace the complete canonical group.
-    let mut descriptor = [0u64; 14];
-    std::ptr::copy_nonoverlapping(entry, descriptor.as_mut_ptr().cast::<u8>(), 0x70);
-    let raw = descriptor.as_mut_ptr().cast::<u8>();
-    std::ptr::write(raw.add(0x14).cast::<u32>(), forms.count);
-    for (index, kind) in forms.kinds.iter().copied().enumerate() {
-        std::ptr::write(raw.add(0x18 + index * 4).cast::<u32>(), kind);
-    }
-    std::ptr::write(raw.add(0x28).cast::<u32>(), forms.actor_count);
-    std::ptr::write(raw.add(0x43), 0); // Requested starting form is kinds[0].
+    let mut descriptor = native_fighter_install::Descriptor::copy_from(entry);
+    descriptor.request_group(native_fighter_install::Group {
+        count: forms.count,
+        kinds: forms.kinds,
+        actor_count: forms.actor_count,
+    });
     training::clear_session_state();
     trace!("[CharacterRoster] install owner={} entry=0x{:x} from=0x{:x} to=0x{:x} slot={:?} epoch={} mode=0x{:x}",
         owner, entry as usize, current, target.kind(), slot.map(|i| i+1), active.epoch, active.scope.mode);
@@ -1128,19 +1132,18 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
     crate::practice_trace::checkpoint(901, [entry as u64, u64::from(owner), u64::from(current), u64::from(target.kind()), active.epoch as u64]);
     #[cfg(feature = "mii-ordinary-player-alpha")]
     if owner == 0 {
-        mii_ordinary_player::begin_generic(entry, install_token, &*(raw as *const [u8; 0x70]));
+        mii_ordinary_player::begin_generic(entry, install_token, descriptor.bytes());
     }
     #[cfg(feature = "mii-ordinary-cpu-alpha")]
     if role == Role::Cpu {
-        mii_ordinary_cpu::begin_generic(entry, install_token, &*(raw as *const [u8; 0x70]));
+        mii_ordinary_cpu::begin_generic(entry, install_token, descriptor.bytes());
     }
     #[cfg(feature = "console-swap-trace")]
     crate::practice_trace::checkpoint(902, [entry as u64, u64::from(owner), u64::from(current), u64::from(target.kind()), active.epoch as u64]);
-    let install: unsafe extern "C" fn(*mut u8, *const u64, *const u8) =
-        std::mem::transmute(BASE.load(Ordering::Acquire) + 0x653240);
+    let base = BASE.load(Ordering::Acquire);
     #[cfg(feature = "native-unlink-probe")]
     crate::native_unlink_probe::arm(entry as usize, owner, current, target.kind());
-    install(entry, descriptor.as_ptr(), [1u8, 0, 0].as_ptr());
+    native_fighter_install::install(base, entry, &descriptor, native_fighter_install::Flags::Reload);
     #[cfg(feature = "console-swap-trace")]
     crate::practice_trace::checkpoint(903, [entry as u64, u64::from(owner), u64::from(current), u64::from(target.kind()), active.epoch as u64]);
 }
@@ -1410,7 +1413,7 @@ unsafe fn refresh_hud(entry: *const u8, owner: u32, kind: u32) {
         trace!("[CharacterRoster] HUD skipped: invalid dispatch depth");
         return;
     }
-    std::ptr::write_volatile(manager.add(0x18).cast::<u32>(), depth + 1);
+    crate::native_fields::write_unchecked(manager as usize, 0x18, depth + 1);
     let mut node = read::<*const u8>(sentinel, 0);
     let mut delivered = 0;
     let mut visited = 0;
@@ -1444,7 +1447,7 @@ unsafe fn refresh_hud(entry: *const u8, owner: u32, kind: u32) {
         node = read::<*const u8>(node, 0);
     }
     let remaining = read::<u32>(manager, 0x18) - 1;
-    std::ptr::write_volatile(manager.add(0x18).cast::<u32>(), remaining);
+    crate::native_fields::write_unchecked(manager as usize, 0x18, remaining);
     if remaining == 0 && read::<u32>(manager, 0x1c) != 0 {
         let flush: unsafe extern "C" fn(*mut u8) = std::mem::transmute(base + 0x37ae770);
         flush(manager);
@@ -1578,11 +1581,10 @@ unsafe fn waiting_icon(listener: *const u8, owner: u32, kind: u32, base: usize) 
     let Some(cache) = pointer_chain(ui, &[0, 0x78]) else {
         return false;
     };
-    let kind_hash: unsafe extern "C" fn(u32) -> u64 = std::mem::transmute(base + 0x138c9b0);
     let texture: unsafe extern "C" fn(*const u8, u64, u32, u32) -> *const u8 =
         std::mem::transmute(base + 0x323f330);
     let assign: unsafe extern "C" fn(*const u8, *const u8) = std::mem::transmute(base + 0x3778b80);
-    let image = texture(cache, kind_hash(kind), 0, 0);
+    let image = texture(cache, fighter_kind_hash(base, kind), 0, 0);
     let Some(image_data) = pointer_chain(image, &[8]) else {
         return false;
     };
@@ -1628,14 +1630,13 @@ unsafe fn preload_waiting_icons(context: *const u8) {
         return;
     };
     let base = BASE.load(Ordering::Acquire);
-    let kind_hash: unsafe extern "C" fn(u32) -> u64 = std::mem::transmute(base + 0x138c9b0);
     let icon_hash: unsafe extern "C" fn(u64, u32, u32) -> u64 =
         std::mem::transmute(base + 0x3238a70);
     let request: unsafe extern "C" fn(*const u8, *const u64, i64, u32) =
         std::mem::transmute(base + 0x323c4e0);
     let mut count = 0;
     for fighter in TrioFighter::available() {
-        let hash = icon_hash(kind_hash(fighter.kind()), 0, 0);
+        let hash = icon_hash(fighter_kind_hash(base, fighter.kind()), 0, 0);
         if hash & 0xffffffffff != 0 {
             request(
                 loader,
@@ -1649,14 +1650,17 @@ unsafe fn preload_waiting_icons(context: *const u8) {
     trace!("[CharacterRoster] waiting icon preload requested={} loader=0x{:x}; native load barrier retained", count, loader as usize);
 }
 
-unsafe fn pointer_chain(mut object: *const u8, offsets: &[usize]) -> Option<*const u8> {
-    for &offset in offsets {
-        if !aligned(object) {
-            return None;
-        }
-        object = read(object, offset);
-    }
-    aligned(object).then_some(object)
+// Both icon paths use this roster module's published, verified text base.
+// The conversion borrows no native object and retains no address.
+#[inline]
+unsafe fn fighter_kind_hash(base: usize, kind: u32) -> u64 {
+    let convert: unsafe extern "C" fn(u32) -> u64 = std::mem::transmute(base + 0x138c9b0);
+    convert(kind)
+}
+
+#[inline]
+unsafe fn pointer_chain(object: *const u8, offsets: &[usize]) -> Option<*const u8> {
+    crate::native_fields::chain(object as usize, offsets).map(|address| address as *const u8)
 }
 
 pub fn init() {

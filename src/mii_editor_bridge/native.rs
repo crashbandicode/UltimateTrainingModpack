@@ -7,17 +7,12 @@ use std::{convert::TryInto, mem::transmute};
 pub(super) const MODE: usize = 0x53050f0;
 pub(super) const DRAFT: usize = 0x5307b78;
 
-pub(super) unsafe fn read<T: Copy>(p: usize, offset: usize) -> T {
-    std::ptr::read_volatile((p + offset) as *const T)
-}
-
-pub(super) unsafe fn write<T>(p: usize, offset: usize, value: T) {
-    std::ptr::write_volatile((p + offset) as *mut T, value);
-}
-
-pub(super) fn aligned(p: usize) -> bool {
-    p != 0 && p.is_multiple_of(8)
-}
+// Required fields belong to the freshly rebound scene callback. Writes below
+// are native transactions; a late optional-field refusal could leave one half
+// published. Keep their qualification and state checks ahead of the mutation.
+pub(super) use crate::native_fields::{
+    object as aligned, read_unchecked as read, write_unchecked as write,
+};
 
 /// Native FixedString<64>, copied synchronously by the queue. Its hash uses
 /// multiply-137 then xor, as shown at 37262f4; this is not standard FNV-1a.
@@ -231,8 +226,7 @@ pub(super) unsafe fn save_progress(base: usize) -> Option<SaveProgress> {
     let service: usize = read(outer, 0);
     if !aligned(service) { return None; }
     // Mirrors the native LDAR X8 at 180cc8c (64-bit, acquire).
-    let busy = (&*((service + 0x50) as *const std::sync::atomic::AtomicU64))
-        .load(std::sync::atomic::Ordering::Acquire);
+    let busy = crate::native_fields::load_acquire_u64(service + 0x50);
     Some(SaveProgress {
         current,
         desired,

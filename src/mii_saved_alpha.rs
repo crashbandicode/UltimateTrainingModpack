@@ -681,13 +681,15 @@ unsafe fn submit_saved_intent(
         notice(reason);
         return false;
     }
-    let mut descriptor = [0u64; 14];
-    std::ptr::copy_nonoverlapping(entry, descriptor.as_mut_ptr().cast::<u8>(), 0x70);
+    let descriptor = native_fighter_install::Descriptor::copy_from(entry);
     trace!("[MiiSavedAlpha] install owner={owner} epoch={epoch} operation={:?} kind={:#x} saved_files_written=false",tx.operation(),tx.after().canonical().class as u32);
     training::clear_session_state();
-    let install: unsafe extern "C" fn(*mut u8, *const u64, *const u8) =
-        std::mem::transmute(BASE.load(Ordering::Acquire) + 0x653240);
-    install(entry, descriptor.as_ptr(), [1u8, 0, 0].as_ptr());
+    native_fighter_install::install(
+        BASE.load(Ordering::Acquire),
+        entry,
+        &descriptor,
+        native_fighter_install::Flags::Reload,
+    );
     true
 }
 

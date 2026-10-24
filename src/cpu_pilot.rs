@@ -243,11 +243,15 @@ struct Native {
     slot: u8,
 }
 
+// Required fields are rebound from the current controller/AI callback. The
+// native() checks qualify each owner before use; do not retain these addresses.
+#[inline]
 unsafe fn read<T: Copy>(address: usize) -> T {
-    (address as *const T).read_volatile()
+    crate::native_fields::read_unchecked(address, 0)
 }
-unsafe fn write<T>(address: usize, value: T) {
-    (address as *mut T).write_volatile(value);
+#[inline]
+unsafe fn write<T: Copy>(address: usize, value: T) {
+    crate::native_fields::write_unchecked(address, 0, value);
 }
 unsafe fn ptr(address: usize) -> Option<usize> {
     let value: usize = read(address);

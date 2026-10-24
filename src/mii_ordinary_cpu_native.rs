@@ -22,8 +22,7 @@ unsafe fn same_class_values(now:&Snapshot)->Result<SameClassValues,&'static str>
     check(span(o.object,0xb0,true),"CPU same-class writable O span")?;
     let task:usize=rd(o.object,0xa8);
     let task_idle=task==0 || (aligned(task)&&span(task,0x14,false)
-        && (&*((task+0x10) as *const std::sync::atomic::AtomicU32))
-            .load(std::sync::atomic::Ordering::Acquire)==0);
+        && crate::native_fields::load_acquire_u32(task + 0x10)==0);
     let result=SameClassValues {binding:now.binding,thread:now.thread,owner:o,
         header:rd(o.object,0x54),
         mirrors:values::Mirrors::decode(rd(o.row,0x1a8),rd(o.entry,0x46),
@@ -206,8 +205,7 @@ pub(super) unsafe fn completion_failure(track:&super::Track)->Option<Failure> {
             f.o_init=Some(rd(o,0x4c));f.o_words=Some(rd(o,0x54));
             let task:usize=rd(o,0xa8);f.task=Some(task);
             if task!=0 && aligned(task) && span(task,0x14,false) {
-                f.outstanding=Some((&*((task+0x10) as *const std::sync::atomic::AtomicU32))
-                    .load(std::sync::atomic::Ordering::Acquire));
+                f.outstanding=Some(crate::native_fields::load_acquire_u32(task + 0x10));
             }
         }
     }

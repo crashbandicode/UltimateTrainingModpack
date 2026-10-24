@@ -1,11 +1,9 @@
 //! Shared read-only saved-row binding; no hook registration or native mutation.
 use skyline::hooks::{getRegionAddress, Region};
 
-unsafe fn rd<T: Copy>(base: usize, offset: usize) -> T {
-    std::ptr::read_volatile((base + offset) as *const T)
-}
-
-fn aligned(p: usize) -> bool { p != 0 && p.is_multiple_of(8) }
+// The live FighterEntry callback and binding checks below supply lifetime;
+// structural pointer checks alone are not permission to use an old entry.
+use crate::native_fields::{object as aligned, read_unchecked as rd};
 
 /// A live FighterEntry bound to its saved player entry through the game's own lookup
 /// (`FighterManager::get_fighter_entry`, as `common::try_get_module_accessor` does), then verified.

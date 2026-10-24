@@ -1,7 +1,7 @@
 //! Helper2/3 adapter around shared selector transactions. SourceBook owns all leases/lifetimes.
 use super::mii_ordinary_player::native::{self as provenance, check, helpers, Scalars};
 use super::mii_selector_native::{self as native, PublicationTarget, Snapshot};
-use super::{mii_saved_alpha, native_source, InstallToken, BASE, INSTALL};
+use super::{mii_saved_alpha, native_fighter_install, native_source, InstallToken, BASE, INSTALL};
 use crate::source_lifetime::{LoadToken, SourceToken};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -209,18 +209,12 @@ pub(super) unsafe fn install(source: SourceToken) -> bool {
         };
         t.data.descriptor
     };
-    let mut aligned_descriptor = [0u64; 14];
-    std::ptr::copy_nonoverlapping(
-        descriptor.as_ptr(),
-        aligned_descriptor.as_mut_ptr().cast::<u8>(),
-        descriptor.len(),
-    );
-    let install: unsafe extern "C" fn(*mut u8, *const u64, *const u8) =
-        std::mem::transmute(BASE.load(Ordering::Acquire) + 0x653240);
-    install(
+    let staged = native_fighter_install::Descriptor::from_bytes(&descriptor);
+    native_fighter_install::install(
+        BASE.load(Ordering::Acquire),
         source.entry().0 as *mut u8,
-        aligned_descriptor.as_ptr(),
-        [0u8; 3].as_ptr(),
+        &staged,
+        native_fighter_install::Flags::Parked,
     );
     true
 }

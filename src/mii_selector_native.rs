@@ -463,8 +463,7 @@ pub(crate) unsafe fn publication(
         Some(0)
     } else if aligned(task) && span(task, 0x14, false) {
         Some(
-            (&*((task + 0x10) as *const std::sync::atomic::AtomicU32))
-                .load(std::sync::atomic::Ordering::Acquire),
+            crate::native_fields::load_acquire_u32(task + 0x10),
         )
     } else {
         None
@@ -604,8 +603,7 @@ pub(crate) unsafe fn completed(
         task == 0
             || (aligned(task)
                 && span(task, 0x14, false)
-                && (&*((task + 0x10) as *const std::sync::atomic::AtomicU32))
-                    .load(std::sync::atomic::Ordering::Acquire)
+                && crate::native_fields::load_acquire_u32(task + 0x10)
                     == 0),
         "ready task outstanding",
     )?;

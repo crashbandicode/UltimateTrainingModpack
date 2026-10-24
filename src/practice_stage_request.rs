@@ -144,8 +144,12 @@ unsafe fn span(address:usize,size:usize,write:bool)->bool {
     result as u32==0 && info.permission & required==required && info.address<=address as u64
         && info.address.checked_add(info.size).is_some_and(|v| end as u64<=v)
 }
-unsafe fn rd<T:Copy>(at:usize)->T { std::ptr::read_volatile(at as *const T) }
-unsafe fn wr<T:Copy>(at:usize,value:T) { std::ptr::write_volatile(at as *mut T,value); }
+// span() and the fresh StageManager callback qualify these required fields.
+// Mapping checks remain local; they do not replace native lifetime authority.
+#[inline]
+unsafe fn rd<T:Copy>(at:usize)->T { crate::native_fields::read_unchecked(at,0) }
+#[inline]
+unsafe fn wr<T:Copy>(at:usize,value:T) { crate::native_fields::write_unchecked(at,0,value); }
 fn check(ok:bool,why:&'static str)->Result<(),&'static str> { if ok {Ok(())} else {Err(why)} }
 unsafe fn pointer(at:usize,size:usize)->Result<usize,&'static str> {
     check(span(at,8,false),"pointer slot unavailable")?;

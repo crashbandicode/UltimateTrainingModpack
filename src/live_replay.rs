@@ -75,7 +75,10 @@ fn trace_clock(capture: &Capture, phase: &str, entry: i32) {
     }
 }
 
-unsafe fn read<T: Copy>(at: usize) -> T { std::ptr::read_volatile(at as *const T) }
+// Current native replay callback owns these required fields. native() below
+// validates the object and bounded pool; no address is reused across callbacks.
+#[inline]
+unsafe fn read<T: Copy>(at: usize) -> T { crate::native_fields::read_unchecked(at, 0) }
 
 /// Read a state borrowed by an executing native method, never a remembered pointer
 /// or a global manager reached from an unrelated fighter/save callback.

@@ -338,8 +338,7 @@ unsafe fn same_class_values(now:&Snapshot)->Result<SameClassValues,&'static str>
     check(span(o.object,0xb0,true),"same-class writable O span")?;
     let task:usize=rd(o.object,0xa8);
     let task_idle=task==0 || (aligned(task)&&span(task,0x24,false)
-        && (&*((task+0x10) as *const std::sync::atomic::AtomicU32))
-            .load(std::sync::atomic::Ordering::Acquire)==0);
+        && crate::native_fields::load_acquire_u32(task + 0x10)==0);
     let values=SameClassValues {
         binding:now.binding,thread:now.thread,owner:o,
         header:rd(o.object,0x54),
@@ -453,8 +452,7 @@ pub(super) unsafe fn publish(track:&super::Track, selected:usize) -> Result<(),&
     // Queue3549720 increments it; worker354a7e0 decrements after the callback.
     // Match that release with Acquire; +0x20 is not this job's status field.
     check(task==0 || (aligned(task)&&span(task,0x24,false)
-        && (&*((task+0x10) as *const std::sync::atomic::AtomicU32))
-            .load(std::sync::atomic::Ordering::Acquire)==0),
+        && crate::native_fields::load_acquire_u32(task + 0x10)==0),
         "old O task not quiescent")?;
     if track.publish.is_some() {
         check(rd::<u8>(o.information,0x94)==0,"native Mii rebuild gate is closed")?;
@@ -561,8 +559,7 @@ pub(super) unsafe fn generic_completed(g:&super::Generic,kind:u32) -> Result<Sna
         "generic ready native O header differs")?;
     let task:usize=rd(own.object,0xa8);
     check(task==0 || (aligned(task)&&span(task,0x24,false)
-        && (&*((task+0x10) as *const std::sync::atomic::AtomicU32))
-            .load(std::sync::atomic::Ordering::Acquire)==0),"generic ready task outstanding")?;
+        && crate::native_fields::load_acquire_u32(task + 0x10)==0),"generic ready task outstanding")?;
     let tokens:[u16;5]=rd(before.binding.entry,0x46);
     check(rd::<[u16;4]>(own.information,0x72)==tokens[..4]
         && rd::<[u32;4]>(own.object,0x6c)==[
