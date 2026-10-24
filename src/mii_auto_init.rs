@@ -1,8 +1,9 @@
-//! Current combined alpha: one data-only catalog worker, then current-callback capture.
+//! Current combined alpha: one shared catalog read, then current-callback capture.
 use super::*;
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 use training_mod_consts::mii::{
     auto_init::{Initialization, Token},
+    catalog_request::Kind,
     inventory::Snapshot,
 };
 
@@ -14,13 +15,13 @@ pub(super) fn pending() -> bool {
 }
 static STATE: Mutex<State> = Mutex::new(State {
     init: Initialization::empty(),
-    result: None,
+    held: None,
 });
 struct State {
     init: Initialization,
-    result: Option<mpsc::Receiver<(Token, Arc<Snapshot>)>>,
+    held: Option<(Token, Arc<Snapshot>)>,
 }
-fn token() -> Token {
+fn current_token() -> Token {
     Token {
         generations: [
             mii_saved_alpha::current_generation(0),
@@ -29,16 +30,19 @@ fn token() -> Token {
         opening: mii_saved_alpha::menu_epoch(),
     }
 }
+pub(super) fn reading_token() -> Option<Token> {
+    STATE.lock().unwrap().init.reading()
+}
 pub(super) fn cancel() {
     let mut s = STATE.lock().unwrap();
     s.init.cancel();
-    s.result = None;
+    s.held = None;
     PENDING.store(false, Ordering::Release);
 }
 pub(super) fn reset() {
     let mut s = STATE.lock().unwrap();
     s.init.reset();
-    s.result = None;
+    s.held = None;
     PENDING.store(true, Ordering::Release);
 }
 unsafe fn idle() -> bool {
@@ -71,77 +75,59 @@ pub(super) unsafe fn service(entry: *const u8, owner: u32) {
         && idle()
         && (ready_single_mii(entry, owner).is_some() || ready_forms(entry, owner).is_some());
     let mut s = STATE.lock().unwrap();
-    let current = token();
-    if let Some(result) = s.result.as_ref() {
-        // Keep the completed owned values until a current callback is eligible to arm capture.
+    let current = current_token();
+    if s.held.is_some() {
+        // Keep the owned catalog until this callback may arm capture. No extra file read.
         if !eligible {
             return;
         }
-        let received = result.try_recv();
-        match received {
-            Ok((started, catalog)) => {
-                s.result = None;
-                let arm = s.init.finish(started, current, catalog.is_complete());
-                PENDING.store(s.init.pending(), Ordering::Release);
-                drop(s);
-                if arm {
-                    let player = mii_ordinary_player::catalog_ready(
-                        Arc::clone(&catalog),
-                        started.generations[0],
-                        started.opening,
-                    );
-                    let cpu = mii_ordinary_cpu::catalog_ready(
-                        catalog,
-                        started.generations[1],
-                        started.opening,
-                    );
-                    trace!("[MiiAutoInit] catalog ready; capture_armed={:?} generations={:?} opening={}", [player,cpu], started.generations, started.opening);
-                } else {
-                    trace!(
-                        "[MiiAutoInit] catalog refused: incomplete or retired; no automatic retry"
-                    );
-                }
-            }
-            Err(mpsc::TryRecvError::Empty) => {}
-            Err(mpsc::TryRecvError::Disconnected) => {
-                s.init.cancel();
-                s.result = None;
-                PENDING.store(false, Ordering::Release);
-                drop(s);
-                trace!("[MiiAutoInit] catalog worker unavailable; no automatic retry");
-            }
+        let (started, catalog) = s.held.take().unwrap();
+        let arm = s.init.finish(started, current, catalog.is_complete());
+        PENDING.store(s.init.pending(), Ordering::Release);
+        drop(s);
+        if arm {
+            let player = mii_ordinary_player::catalog_ready(
+                Arc::clone(&catalog),
+                started.generations[0],
+                started.opening,
+            );
+            let cpu = mii_ordinary_cpu::catalog_ready(
+                catalog,
+                started.generations[1],
+                started.opening,
+            );
+            trace!("[MiiAutoInit] catalog ready; capture_armed={:?} generations={:?} opening={}", [player, cpu], started.generations, started.opening);
+        } else {
+            trace!("[MiiAutoInit] catalog refused: incomplete or retired; no automatic retry");
         }
         return;
     }
     let Some(started) = s.init.observe(current, logical as u32, eligible) else {
         return;
     };
-    let (send, receive) = mpsc::channel();
-    s.result = Some(receive);
     drop(s);
-    // No native pointer, native call, App or adapter lock crosses this boundary.
-    let worker = std::thread::Builder::new()
-        .name("mii-catalog".into())
-        .stack_size(0x20000)
-        .spawn(move || {
-            let catalog = Arc::new(crate::replay_store::mii_catalog());
-            let _ = send.send((started, catalog));
-        });
-    if let Err(error) = worker {
-        let mut s = STATE.lock().unwrap();
-        // A failed old spawn cannot cancel a new lifetime's worker.
-        let _ = s.init.finish(started, token(), false);
-        if !s.init.pending() {
-            s.result = None;
-            PENDING.store(false, Ordering::Release);
-        }
-        drop(s);
-        trace!("[MiiAutoInit] catalog worker launch failed: {error}; no automatic retry");
-    } else {
+    // The shared writer owns the read. No native pointer crosses that boundary.
+    super::mii_catalog_request::request(Kind::Auto(started));
+    if pending() {
         trace!(
-            "[MiiAutoInit] catalog read started generations={:?} opening={}",
-            started.generations,
-            started.opening
+            "[MiiAutoInit] catalog read queued generations={:?} opening={}",
+            started.generations, started.opening
         );
     }
+}
+
+pub(super) fn deliver(token: Token, catalog: Arc<Snapshot>) {
+    let mut s = STATE.lock().unwrap();
+    if s.init.reading() == Some(token) {
+        s.held = Some((token, catalog));
+    }
+}
+
+pub(super) fn abandon(token: Token) {
+    let mut s = STATE.lock().unwrap();
+    if s.held.as_ref().is_some_and(|(started, _)| *started == token) {
+        s.held = None;
+    }
+    let _ = s.init.finish(token, current_token(), false);
+    PENDING.store(s.init.pending(), Ordering::Release);
 }

@@ -75,6 +75,10 @@ impl Initialization {
     pub fn reset(&mut self) {
         *self = Self::empty();
     }
+
+    pub fn reading(&self) -> Option<Token> {
+        if self.phase == Phase::Reading { self.token } else { None }
+    }
 }
 
 /// A mixed Player roster waits only while its native qualification can still finish.

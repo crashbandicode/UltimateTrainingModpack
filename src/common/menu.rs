@@ -33,6 +33,10 @@ pub fn mii_preferences() -> training_mod_consts::mii::selection::Preferences {
 }
 pub static QUICK_MENU_ACTIVE: RwLock<bool> = RwLock::new(false);
 
+pub fn quick_menu_active() -> bool {
+    read(&QUICK_MENU_ACTIVE)
+}
+
 pub fn captures_input() -> bool {
     let frames = frame_counter::get_frame_count(*MENU_CLOSE_FRAME_COUNTER);
     read(&QUICK_MENU_ACTIVE)
@@ -45,6 +49,10 @@ pub fn clear_session_state() {
     #[cfg(feature = "practice-stage-request-alpha")]
     assign(&STAGE_CONTEXT, None);
     assign(&QUICK_MENU_ACTIVE, false);
+    #[cfg(feature = "mii-saved-alpha")]
+    crate::character_roster::mii_catalog_request::close_opening(
+        crate::character_roster::mii_saved_alpha::menu_epoch(),
+    );
     assign(&VANILLA_MENU_ACTIVE, false);
     assign(&MENU_RECEIVED_INPUT, true);
     lock_write(&DIRECTION_HOLD_FRAMES).fill(0);
@@ -277,6 +285,10 @@ pub unsafe fn handle_final_input_mapping(
                 .all(|i| GetNpadStyleSet(i as *const _).flags == 0)
             {
                 assign(&QUICK_MENU_ACTIVE, false);
+                #[cfg(feature = "mii-saved-alpha")]
+                crate::character_roster::mii_catalog_request::close_opening(
+                    crate::character_roster::mii_saved_alpha::menu_epoch(),
+                );
                 return;
             }
 

@@ -16,6 +16,8 @@ native Mii editor and Test screen.
   configurations can share a cycle, with the original restored at slot 0.
   Changing the currently cycled form applies when the menu closes; starting
   as Ice Climbers no longer prevents saved-Mii entries from joining the cycle.
+  A fresh Training visit clears the previous cycle position, including after
+  a Mii swap, so original Ice Climbers follows its own Solo setting.
 - Practice Stages includes Training and Waiting Room. **L/R** pages; direct
   selection changes the current Training stage. **X** edits lobby rotation,
   which advances only on lobby-practice entry.
@@ -49,6 +51,23 @@ This build does **not** create a multi-gigabyte trace. Keep those small logs and
 Atmosphère crash reports if a fault occurs.
 
 ## Validation and limits
+
+The current candidate moves saved-Mii catalog reads and writer waits off the
+menu-opening path into bounded background work. Fourteen catalog/auto-init
+regressions, strict native Clippy, no-default and full release builds pass.
+The reported G&W → Brawler → quit → original Ice Climbers sequence now starts
+with both Climbers when original Solo is Off, even with the cycle red S On.
+Return through slot 0, quick menu close/reopen, saved Brawler selection, and
+Quickplay Add New/cancel passed in the same emulator session. The matched
+Deluxe/Elite pair also passed compact passive status-table navigation and save.
+The session exited normally and all owned profile changes were restored.
+
+The all-seven-plan resource review is complete within its documented scope.
+The latest whole-emulator peak was about 6.7 GiB across two game loads under
+an 8 GiB/no-swap limit, without memory-pressure events. This includes native
+asset caches; no isolated catalog speedup or long-term leak proof is claimed.
+The earlier measurements below remain evidence for unchanged features.
+
 
 Native all-target Clippy produced zero warnings; no-default and full release
 builds passed. Five focused ownership/cycle regressions passed. Earlier
@@ -94,9 +113,9 @@ fighter/costume/move/stage combination.
 
 ## Artifact identity
 
-- NRO: 4268032 bytes.
-- SHA-256: `85cca7efd2d9acd6955f9d05367e3919bca43532ed96463061361065852a7f62`.
-- Frozen compiled-input SHA-256: `1450c450358f47e212f9e843511030a7ce739a30fa7f88f8d5c153edf1803298`.
+- NRO: 4272128 bytes.
+- SHA-256: `97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6`.
+- Frozen compiled-input SHA-256: `8a43e10a61c2b0a7183c6e9e7ef3015357c455b585be1014838d1d7d34206701`.
 - Package version: 7.1.2; the experimental release tag distinguishes the candidate.
 
 Enabled local feature closure:

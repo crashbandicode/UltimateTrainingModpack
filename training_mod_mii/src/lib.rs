@@ -16,5 +16,6 @@ pub mod draft;
 pub mod draft_store;
 pub mod role_owner;
 pub mod auto_init;
+pub mod catalog_request;
 pub mod replay;
 pub mod editor_row;

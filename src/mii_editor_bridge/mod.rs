@@ -186,16 +186,45 @@ fn quickplay_available() -> bool {
             & 0x7fffff00 == 0x07010100
 }
 
-/// File boundary on menu opening; no per-frame catalog work and no fighter role
-/// capture. Ordinary Training continues to use its qualified role adapters.
+/// Queue the Quickplay editor catalog. No file IO, writer wait, or fighter capture here.
 pub(crate) fn menu_ready(opening: u64) {
     if !quickplay_available() || ACTIVE.load(Ordering::Acquire) { return; }
-    let catalog = crate::replay_store::mii_catalog();
-    let mut app = training_mod_sync::lock_write(&crate::common::menu::QUICK_MENU_APP);
-    if opening == crate::character_roster::mii_saved_alpha::menu_epoch()
-        && quickplay_available() && app.mount_mii_editor_catalog(catalog, opening) {
-        training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT, true);
+    crate::character_roster::mii_catalog_request::request(
+        training_mod_consts::mii::catalog_request::Kind::Editor { opening },
+    );
+}
+
+pub(crate) enum OpenedCatalog {
+    Shown,
+    Later(Snapshot),
+    Dropped,
+}
+
+/// Mount one owned snapshot into the already-open menu. A non-submenu page keeps the snapshot.
+pub(crate) fn mount_opened_catalog(catalog: Snapshot, opening: u64) -> OpenedCatalog {
+    if !editor_opening_current(opening) {
+        return OpenedCatalog::Dropped;
     }
+    let mut app = training_mod_sync::lock_write(&crate::common::menu::QUICK_MENU_APP);
+    if !editor_opening_current(opening) {
+        return OpenedCatalog::Dropped;
+    }
+    if app.page != training_mod_tui::AppPage::SUBMENU {
+        return OpenedCatalog::Later(catalog);
+    }
+    if app.mount_mii_editor_catalog(catalog, opening) {
+        training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT, true);
+        OpenedCatalog::Shown
+    } else {
+        OpenedCatalog::Dropped
+    }
+}
+
+fn editor_opening_current(opening: u64) -> bool {
+    crate::common::menu::quick_menu_active()
+        && opening == crate::character_roster::mii_saved_alpha::menu_epoch()
+        && quickplay_available()
+        && !ACTIVE.load(Ordering::Acquire)
 }
 
 fn current_thread() -> usize { unsafe { skyline::nn::os::GetCurrentThread() as usize } }

@@ -69,6 +69,9 @@ mod mii_origin_observer;
 #[path="mii_saved_alpha.rs"]
 pub(crate) mod mii_saved_alpha;
 #[cfg(feature="mii-saved-alpha")]
+#[path="mii_catalog_request.rs"]
+pub(crate) mod mii_catalog_request;
+#[cfg(feature="mii-saved-alpha")]
 #[path="mii_backend.rs"]
 mod mii_backend;
 #[cfg(feature="mii-saved-alpha")]
@@ -779,6 +782,8 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
         return;
     }
     let role = if owner == 0 { Role::Player } else { Role::Cpu };
+    #[cfg(feature="mii-saved-alpha")]
+    mii_catalog_request::service();
     #[cfg(feature="mii-ordinary-cpu-alpha")]
     mii_auto_init::service(entry,owner);
     #[cfg(feature="mii-ordinary-cpu-alpha")]
@@ -1225,6 +1230,11 @@ pub unsafe fn on_destroy(entry: *const u8) {
             entry as usize
         );
         state.observed = None;
+        // Mii adapters publish a cursor without setting the ordinary loader's
+        // `loaded` receipt. Retire it with the observed entry as well: Training
+        // -> CSS -> Training can keep the same mode tuple, and a new CSS fighter
+        // must start at slot 0. Lobby continuation lives in WAITING_MEMORY.
+        state.cursor = None;
         ORIGINAL_KINDS[role as usize].store(u32::MAX, Ordering::Release);
         SOLO_ACTIVE[role as usize].store(false, Ordering::Release);
     }

@@ -9,8 +9,6 @@ use training_mod_consts::mii::{
     role_adapter::SavedRole,
     selection::{self, Action, Active, Origin, PlayerLive, PlayerOrigin, Role as MiiRole},
 };
-#[cfg(not(feature="mii-ordinary-cpu-alpha"))]
-use training_mod_consts::mii::saved;
 use training_mod_tui::mii_menu::{Context as MenuContext, MenuCapture, PendingSelection};
 #[path = "mii_saved_native.rs"]
 mod native;
@@ -101,26 +99,42 @@ pub(crate) fn menu_open() -> u64 {
     opening
 }
 
-/// Explicit file boundary after App reset, with no App/G/native lock held.
+/// Queue the catalog read after App reset. No file IO and no writer wait on this thread.
 pub(crate) fn menu_ready(opening: u64) {
     if !ENABLED.load(Ordering::Acquire) || mii_backend::current().is_none() {
         return;
     }
-    #[cfg(feature="mii-ordinary-cpu-alpha")]
-    let catalog = Arc::new(crate::replay_store::mii_catalog());
-    #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
-    let catalog = Arc::new(saved::read_catalog(std::path::Path::new(
-        "save:/save_data/mii",
-    )));
+    super::mii_catalog_request::request(training_mod_consts::mii::catalog_request::Kind::Menu {
+        opening,
+        owners: [current_generation(0), current_generation(1)],
+    });
+}
+
+pub(super) fn accept_catalog(catalog: Arc<Snapshot>, opening: u64, owners: [u64; 2]) -> bool {
+    if !crate::common::menu::quick_menu_active()
+        || menu_epoch() != opening
+        || current_generation(0) != owners[0]
+        || current_generation(1) != owners[1]
+    {
+        return false;
+    }
     let mut state = ALPHA.lock().unwrap();
-    if menu_epoch() != opening { return; }
+    // Closing preserves the selection epoch. Recheck under the same lock as
+    // menu_close so a completion that waited behind close cannot rearm capture.
+    if !crate::common::menu::quick_menu_active()
+        || menu_epoch() != opening
+        || state.epoch != owners
+    {
+        return false;
+    }
     #[cfg(feature="mii-ordinary-player-alpha")]
-    super::mii_ordinary_player::catalog_ready(Arc::clone(&catalog),state.epoch[0],opening);
+    super::mii_ordinary_player::catalog_ready(Arc::clone(&catalog), state.epoch[0], opening);
     #[cfg(feature="mii-ordinary-cpu-alpha")]
-    super::mii_ordinary_cpu::catalog_ready(Arc::clone(&catalog),state.epoch[1],opening);
+    super::mii_ordinary_cpu::catalog_ready(Arc::clone(&catalog), state.epoch[1], opening);
     state.catalog = Some(catalog);
     state.menu.begin();
-    WORK.store(true, Ordering::Release);
+    refresh_work(&state);
+    true
 }
 pub(crate) fn menu_epoch() -> u64 {
     MENU_EPOCH.load(Ordering::Acquire)
@@ -128,6 +142,8 @@ pub(crate) fn menu_epoch() -> u64 {
 
 /// Called after releasing the App guard. P1 Origin produces no intent in the shared UI policy.
 pub(crate) fn menu_close(pending: Option<PendingSelection>) {
+    // Leave the opening epoch unchanged so a selection taken for this open still applies.
+    super::mii_catalog_request::close_opening(menu_epoch());
     // Match the ordinary loader's request gate; menu capture itself is expected here.
     let another_action = lobby::native_ui_busy() || button_config::has_pending_request();
     let mut state = ALPHA.lock().unwrap();
@@ -702,6 +718,7 @@ pub(super) fn scene_changed() {
     drop(s);
     #[cfg(feature="mii-ordinary-cpu-alpha")]
     super::mii_auto_init::reset();
+    super::mii_catalog_request::retire();
 }
 pub(super) fn on_destroy(entry: *const u8, owner: u32) {
     let i=match owner {0=>0,1|4=>1,_=>return};
@@ -743,6 +760,7 @@ pub(super) fn on_destroy(entry: *const u8, owner: u32) {
     }
     #[cfg(feature="mii-ordinary-cpu-alpha")]
     super::mii_auto_init::reset();
+    super::mii_catalog_request::retire();
     trace!(
         "[MiiSavedAlpha] destroyed owner={owner} entry={:#x} cleanup_writes=false",
         entry as usize

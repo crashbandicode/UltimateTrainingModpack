@@ -53,10 +53,10 @@ struct CommittedCapture {
 enum WriteJob {
     Capture(Box<CommittedCapture>),
     #[cfg(feature = "mii-ordinary-cpu-alpha")]
-    Catalog(training_mod_consts::mii::inventory::Snapshot,
-        mpsc::Sender<training_mod_consts::mii::inventory::Snapshot>),
+    ReadCatalog(mpsc::SyncSender<training_mod_consts::mii::inventory::Snapshot>),
     #[cfg(feature = "mii-ordinary-cpu-alpha")]
-    Import { name: Option<String>, configuration: training_mod_consts::mii::lifetime::Configuration,
+    // Keep ordinary catalog requests small; only an actual import owns this payload.
+    Import { name: Option<String>, configuration: Box<training_mod_consts::mii::lifetime::Configuration>,
         native: Arc<training_mod_consts::mii::inventory::Snapshot>,
         reply: mpsc::Sender<Result<Arc<training_mod_consts::mii::draft::Library>, String>> },
 }
@@ -119,7 +119,12 @@ pub fn start_writer() -> Result<(), String> {
                         }
                     }
                     #[cfg(feature = "mii-ordinary-cpu-alpha")]
-                    WriteJob::Catalog(mut native, reply) => {
+                    WriteJob::ReadCatalog(reply) => {
+                        // Stable native header reads stay in saved::read_catalog. Preset merge stays
+                        // on this writer, after any import already queued ahead of this job.
+                        let mut native = read_saved_mii_catalog();
+                        #[cfg(feature = "mii-editor-alpha")]
+                        crate::mii_editor_bridge::catalog_read(&native);
                         match &presets {
                             Ok(store) => native = native.with_library(store.library()),
                             Err(error) => native.findings.push(training_mod_consts::mii::inventory::Finding::PresetSource {
@@ -131,7 +136,7 @@ pub fn start_writer() -> Result<(), String> {
                     WriteJob::Import {name, configuration, native, reply} => {
                         let result = presets.as_mut().map_err(|error| error.clone()).and_then(|store| {
                             let name = name.unwrap_or_else(|| format!("Replay {:?}", configuration.canonical().class));
-                            store.import(configuration, &name, &native).map_err(|error| error.to_string())?;
+                            store.import(*configuration, &name, &native).map_err(|error| error.to_string())?;
                             Ok(Arc::new(store.library().clone()))
                         });
                         let _ = reply.send(result);
@@ -158,22 +163,77 @@ pub fn persist_committed(replay_id: String, replay_name: String, session: Arc<Li
     }
 }
 
-/// Called only at the existing catalog file boundary (menu or owned catalog worker).
-#[cfg(feature = "mii-ordinary-cpu-alpha")]
-pub(crate) fn mii_catalog() -> training_mod_consts::mii::inventory::Snapshot {
-    use training_mod_consts::mii::{inventory::Finding, saved};
-    let mut native = saved::read_catalog(Path::new("save:/save_data/mii"));
-    #[cfg(feature = "mii-editor-alpha")]
-    crate::mii_editor_bridge::catalog_read(&native);
-    let (reply, receive) = mpsc::channel();
+/// Queue one owned catalog read. Never blocks the caller on the writer or the filesystem.
+#[cfg(feature = "mii-saved-alpha")]
+pub(crate) enum CatalogQueue {
+    Queued,
+    Full,
+    Unavailable,
+}
+
+#[cfg(feature = "mii-saved-alpha")]
+fn read_saved_mii_catalog() -> training_mod_consts::mii::inventory::Snapshot {
+    training_mod_consts::mii::saved::read_catalog(Path::new("save:/save_data/mii"))
+}
+
+#[cfg(feature = "mii-saved-alpha")]
+pub(crate) fn request_mii_catalog(
+    reply: mpsc::SyncSender<training_mod_consts::mii::inventory::Snapshot>,
+) -> CatalogQueue {
+    #[cfg(feature = "mii-ordinary-cpu-alpha")]
     if let Some(writer) = WRITER.get() {
-        // Startup opened the store before this queued snapshot; no initialization race.
-        if writer.send(WriteJob::Catalog(native.clone(), reply)).is_ok() {
-            if let Ok(catalog) = receive.recv() { return catalog; }
-        }
+        return match writer.try_send(WriteJob::ReadCatalog(reply)) {
+            Ok(()) => CatalogQueue::Queued,
+            Err(mpsc::TrySendError::Full(_)) => CatalogQueue::Full,
+            Err(mpsc::TrySendError::Disconnected(WriteJob::ReadCatalog(reply))) => {
+                fallback_catalog(reply)
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => CatalogQueue::Unavailable,
+        };
     }
-    native.findings.push(Finding::PresetSource {error: "Mii preset owner unavailable".into()});
-    native
+    fallback_catalog(reply)
+}
+
+/// One permanent 128 KiB reader used only when the shared replay writer cannot take the job.
+/// Saved-only builds have no preset writer; a dead writer still returns the native catalog.
+#[cfg(feature = "mii-saved-alpha")]
+fn fallback_catalog(
+    reply: mpsc::SyncSender<training_mod_consts::mii::inventory::Snapshot>,
+) -> CatalogQueue {
+    static WORKER: OnceLock<
+        SyncSender<mpsc::SyncSender<training_mod_consts::mii::inventory::Snapshot>>,
+    > = OnceLock::new();
+    let sender = WORKER.get_or_init(|| {
+        let (sender, receiver) = mpsc::sync_channel::<
+            mpsc::SyncSender<training_mod_consts::mii::inventory::Snapshot>,
+        >(1);
+        let _ = std::thread::Builder::new()
+            .name("mii-catalog".into())
+            .stack_size(0x20000)
+            .spawn(move || {
+                while let Ok(reply) = receiver.recv() {
+                    let native = read_saved_mii_catalog();
+                    #[cfg(feature = "mii-editor-alpha")]
+                    crate::mii_editor_bridge::catalog_read(&native);
+                    #[cfg(feature = "mii-ordinary-cpu-alpha")]
+                    let native = {
+                        let mut native = native;
+                        native.findings.push(training_mod_consts::mii::inventory::Finding::PresetSource {
+                            error: "Mii preset owner unavailable".into(),
+                        });
+                        native
+                    };
+                    let _ = reply.send(native);
+                }
+            });
+        // A failed spawn drops the receiver. Later sends disconnect once and do not retry forever.
+        sender
+    });
+    match sender.try_send(reply) {
+        Ok(()) => CatalogQueue::Queued,
+        Err(mpsc::TrySendError::Full(_)) => CatalogQueue::Full,
+        Err(mpsc::TrySendError::Disconnected(_)) => CatalogQueue::Unavailable,
+    }
 }
 
 #[cfg(feature = "mii-ordinary-cpu-alpha")]
@@ -181,7 +241,7 @@ pub(crate) fn import_mii(configuration: training_mod_consts::mii::lifetime::Conf
     native: Arc<training_mod_consts::mii::inventory::Snapshot>,
     reply: mpsc::Sender<Result<Arc<training_mod_consts::mii::draft::Library>, String>>) -> Result<(), String> {
     WRITER.get().ok_or("Mii preset owner unavailable")?
-        .try_send(WriteJob::Import {name: None, configuration, native, reply}).map_err(|error| error.to_string())
+        .try_send(WriteJob::Import {name: None, configuration: Box::new(configuration), native, reply}).map_err(|error| error.to_string())
 }
 
 /// Called after the Training data directory and legacy migration are ready, and
