@@ -50,6 +50,12 @@
       "source_sha256": "029070cab093fc75174c61c113e65f3eecc99771d5ad9dec4c75a6458a0a4944",
       "bytes": 386,
       "bytecode_sha256": "f2527e45cfbb58c9c57c296df7ac8249a24da07c184364c0a98a492568b9b06d"
+    },
+    {
+      "name": "settings_policy.lua",
+      "source_sha256": "1e1403d3a402bc9931d72b3c984a6302e936aae95e34db774a8bb9474477e92c",
+      "bytes": 1223,
+      "bytecode_sha256": "122dbe55b0b2eb3dcca4e5c2796f88e3f194aceea593793531ff32b9fc7db72b"
     }
   ]
 }

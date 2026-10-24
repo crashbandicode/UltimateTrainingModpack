@@ -310,7 +310,7 @@ pub(super) unsafe fn before_release(context: usize) {
     name_keyboard::before_release(context);
     *CAPTURE.lock().unwrap() = None;
     *RECONSTRUCTION.lock().unwrap() = None;
-    settings_resume::clear();
+    settings_resume::release();
     settle(false, 3);
 }
 

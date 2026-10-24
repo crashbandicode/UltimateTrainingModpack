@@ -2,9 +2,11 @@
 >
 > Anyone, including the original developers, may reuse, analyze, redistribute, and otherwise use anything and everything in this repository as they see fit.
 
-**UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-experimental.20261024). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
+**UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-full-experimental.20261024). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
 
 [Download this fork from Forgejo](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases). Version 7.1.2 reduces input-display work in Training; see the [performance checks](docs/input-display-performance.md).
+
+[Browse the guide by modpack menu page](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/wiki).
 
 ## Features added in this fork
 
@@ -24,7 +26,7 @@ Change either fighter during Training without going back to the character select
 
 The enhancements development build has one shared portrait grid: red P1 order at top-left, blue CPU order at top-right, **ZR** to switch roles, and **Y** on Ice Climbers for Solo Popo. P1 cycles through the numbered choices and back through its original **slot 0**; Ice Climbers can have a numbered slot with the opposite Solo Popo setting in the enhancements alpha; the CPU's original fighter remains selectable. Pyra/Mythra and Pokémon Trainer each occupy one slot with a chosen starting form, and normal transformations remain available. Ice Climbers and saved-Mii cycling are available in the experimental build; consult its feature limits above. See the [hot-swap controls](docs/fighter-hotswap.md) and [development checks and limitations](docs/character-cycles-validation.md).
 
-![Player 1 and the CPU changing fighters during Training.](docs/fighter-hotswap/hotswap.gif)
+![Choosing Bowser in the manual character grid and returning to Training.](docs/fighter-hotswap/manual-hotswap.gif)
 
 ### Recording and macro import
 
@@ -43,6 +45,22 @@ The modpack menu and its practice tools work in the waiting room, not only in Tr
 ![Player and CPU cycling from Solo Popo to other fighters in a local-wireless waiting room.](docs/lobby-practice/waiting-room.gif)
 
 *Captured in an emulator's local-wireless waiting room.*
+
+### Kirby hats, character items and Miis
+
+In the unstable enhancements alpha, **Character Extras** adds:
+
+- **Kirby Hats:** choose hat orders for Player 1 and the CPU, then press
+  **L3 + B** (Player) or **R3 + B** (CPU) in practice to put on, advance or
+  restore a hat. In Training or local-wireless practice, the source fighter does not need to be in the match.
+- **Character Item:** give Player 1 any listed fighter's item, such as a Peach
+  turnip or Link's Remote Bomb. Save states keep the exact item.
+- **Mii Brawler / Swordfighter / Gunner:** choose which saved Mii Player 1 and
+  the CPU use in character cycles, or make a new one with the game's own Mii
+  editor. Opponent Miis from saved replay captures are kept for CPU practice.
+
+[How character changes work](docs/character-changes.md) explains swaps, slot 0,
+Solo Popo, the hidden source fighter used for hats and items, and Mii storage.
 
 ---
 
@@ -86,7 +104,7 @@ The latest beta release can be found [here](https://github.com/jugeeya/UltimateT
 <a name="features"/>
 
 # Features
-The features in this modpack are configured through the menu, which can be accessed within training mode by pressing `SPECIAL+UPTAUNT`. Generally they fall into these categories:
+The features in this modpack are configured through the menu, which can be accessed within training mode by pressing **Minus**, or the permanent **B + D-pad Up** fallback (see [menu shortcuts](docs/menu-shortcuts.md)). Generally they fall into these categories:
 
 - **Mash Settings**; **Defensive Settings**: Controls CPU behavior
 - **Save State Settings**: Saves and loads the positional state of the player and CPU

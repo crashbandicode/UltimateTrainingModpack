@@ -1,6 +1,6 @@
 //! Native Settings selectors, captured and rebuilt at their suspended callback.
 //! The pane coordinate mirrored into the editor context is not a button id.
-use super::{current_thread, lua_vm::{Error, Value, Vm}, native, Phase, BASE,
+use super::{current_thread, lua_vm::{Error, Value, Vm}, native, Origin, Phase, BASE,
     EDIT_CONTEXT, EDIT_OWNED, STATE};
 use std::sync::{atomic::Ordering, Mutex};
 
@@ -33,6 +33,12 @@ struct Job {
 static JOB: Mutex<Option<Job>> = Mutex::new(None);
 
 pub(super) fn clear() { *JOB.lock().unwrap() = None; }
+
+/// Editor release: the next owned Settings component is a new entry.
+pub(super) fn release() {
+    clear();
+    *POLICY.lock().unwrap() = None;
+}
 
 pub(super) fn capture(context: usize) -> Option<Result<Option<Snapshot>, Error>> {
     let mut stored = JOB.lock().unwrap();
@@ -92,21 +98,97 @@ impl Job {
     }
 }
 
+/// Training-only cosmetics for the owned Quickplay editor: Headgear, Outfit,
+/// Color, Voice and Random stay native in ordinary Training and in the unowned
+/// editor. Native `initialize` rebuilds both selectors on every Settings entry
+/// (component age 0), so the helper runs once per entry, never per frame.
+struct Policy { context: usize, component: usize, last_age: u32, attempts: u16, settled: bool }
+
+static POLICY: Mutex<Option<Policy>> = Mutex::new(None);
+
+impl Policy {
+    const ATTEMPTS: u16 = 120;
+
+    /// Whether this callback should run the helper for the bound owned component.
+    fn due(slot: &mut Option<Self>, context: usize, component: usize, age: u32) -> bool {
+        // A new component, or an age that went backwards, is a new Settings entry.
+        if !slot.as_ref().is_some_and(|entry| entry.context == context
+            && entry.component == component && age >= entry.last_age) {
+            *slot = None;
+        }
+        let entry = slot.get_or_insert_with(|| Self {
+            context, component, last_age: 0, attempts: 0, settled: false,
+        });
+        entry.last_age = age;
+        age >= 1 && !entry.settled && entry.attempts < Self::ATTEMPTS
+    }
+
+    /// The trace event for a finished helper run, once it is settled.
+    fn record(&mut self, result: &Result<i32, Error>) -> Option<(&'static str, [u64; 4])> {
+        self.attempts = self.attempts.saturating_add(1);
+        let (age, attempts) = (u64::from(self.last_age), u64::from(self.attempts));
+        let failed = |code: u64| Some(("waiting_cosmetics_policy_failed", [code, age, attempts, 0]));
+        match result {
+            // 1: gate installed and rows disabled; 0: gate present, rows disabled again.
+            Ok(applied @ (0 | 1)) => {
+                self.settled = true;
+                Some(("waiting_cosmetics_disabled", [u64::from(*applied == 0), age, attempts, 0]))
+            }
+            // Selectors not built yet, or the player not bound yet: next callback.
+            Ok(2) | Err(Error::Binding | Error::Stack) if self.attempts < Self::ATTEMPTS => None,
+            Ok(2) => { self.settled = true; failed(0) }
+            Err(error) => { self.settled = true; failed(error.code() as u64) }
+            Ok(_) => { self.settled = true; failed(Error::Value.code() as u64) }
+        }
+    }
+}
+
+unsafe fn install(component: usize) -> Result<i32, Error> {
+    // initialize has built the selectors before main's first resume at age 1;
+    // the helper reports 2 until both exist and is retried on the next callback.
+    let mut vm = Vm::bind_from(BASE.load(Ordering::Acquire), component, 1)?;
+    let settings = vm.settings()?;
+    let [applied] = vm.call::<1>(include_bytes!("lua_helpers/settings_policy.luac"), &[settings])?;
+    applied.int().ok_or(Error::Value)
+}
+
+unsafe fn apply_policy(context: usize, component: usize) {
+    let age: u32 = native::read(component, 0xe4);
+    if !Policy::due(&mut POLICY.lock().unwrap(), context, component, age) { return; }
+    // Protected Lua runs without a Rust mutex held.
+    let result = install(component);
+    let event = POLICY.lock().unwrap().as_mut()
+        .filter(|policy| policy.context == context && policy.component == component)
+        .and_then(|policy| policy.record(&result));
+    if let Some((name, values)) = event {
+        if let Some(session) = STATE.lock().unwrap().as_mut() { session.event(name, values); }
+        if name == "waiting_cosmetics_policy_failed" {
+            // Fail open: the native editor keeps its own rows; the interruption
+            // adapter still treats cosmetic pages as unqualified Settings.
+            crate::logging::diagnostic(format_args!("[MiiEditor] waiting cosmetics policy failed: {result:?}"));
+        }
+    }
+}
+
 #[skyline::hook(offset = 0x19ca590)]
 unsafe fn settings_frame(component: usize) {
     let context = EDIT_CONTEXT.load(Ordering::Acquire);
-    // The ordinary editor pays no Lua work when no capture/restore is pending.
+    // The ordinary editor pays no Lua work: an unowned editor never reaches the
+    // session lock, and an owned Training editor only compares its origin.
     let pending = JOB.lock().unwrap().as_ref().is_some_and(|job|
         job.context == context && job.result.is_none());
-    let owned = pending && EDIT_OWNED.load(Ordering::Acquire) && context != 0
-        && STATE.lock().unwrap().as_ref().is_some_and(|session|
-            session.phase == Phase::Editing && session.thread == current_thread());
-    let bound = owned && {
+    let (owned, waiting) = if EDIT_OWNED.load(Ordering::Acquire) && context != 0 {
+        STATE.lock().unwrap().as_ref()
+            .filter(|session| session.phase == Phase::Editing && session.thread == current_thread())
+            .map_or((false, false), |session| (true, session.origin == Origin::Quickplay))
+    } else { (false, false) };
+    let bound = owned && (pending || waiting) && {
         let holder: usize = native::read(context, 0x178);
         native::aligned(holder) && native::read::<usize>(holder, 0x80) == component
     };
+    if bound && waiting { apply_policy(context, component); }
     // Age 0 starts the coroutine; wait until its default selection has run.
-    if bound && native::read::<u32>(component, 0xe4) > 1 {
+    if bound && pending && native::read::<u32>(component, 0xe4) > 1 {
         let mut job = JOB.lock().unwrap().take().unwrap();
         let capture = matches!(job.operation, Operation::Capture);
         let result = job.step(component);
@@ -121,3 +203,51 @@ unsafe fn settings_frame(component: usize) {
 }
 
 pub(super) fn init() { skyline::install_hooks!(settings_frame); }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn policy_runs_once_per_settings_entry() {
+        let mut slot = None;
+        assert!(!Policy::due(&mut slot, 1, 2, 0), "age 0 has no selectors yet");
+        assert!(Policy::due(&mut slot, 1, 2, 1));
+        assert_eq!(slot.as_mut().unwrap().record(&Ok(1)),
+            Some(("waiting_cosmetics_disabled", [0, 1, 1, 0])));
+        assert!(!Policy::due(&mut slot, 1, 2, 2), "settled entries stay idle");
+        // Returning to Settings resets the native component age: reapply once.
+        assert!(!Policy::due(&mut slot, 1, 2, 0));
+        assert!(Policy::due(&mut slot, 1, 2, 1));
+        assert_eq!(slot.as_mut().unwrap().record(&Ok(0)),
+            Some(("waiting_cosmetics_disabled", [1, 1, 1, 0])));
+        assert!(!Policy::due(&mut slot, 1, 2, 2));
+        assert!(Policy::due(&mut slot, 1, 3, 5), "another component is a new entry");
+    }
+
+    #[test]
+    fn policy_retries_transient_results_and_stops_on_identity() {
+        let mut slot = None;
+        assert!(Policy::due(&mut slot, 1, 2, 1));
+        assert_eq!(slot.as_mut().unwrap().record(&Ok(2)), None);
+        assert!(Policy::due(&mut slot, 1, 2, 2));
+        assert_eq!(slot.as_mut().unwrap().record(&Err(Error::Binding)), None);
+        assert!(Policy::due(&mut slot, 1, 2, 3));
+        assert_eq!(slot.as_mut().unwrap().record(&Err(Error::Identity)),
+            Some(("waiting_cosmetics_policy_failed", [3, 3, 3, 0])));
+        assert!(!Policy::due(&mut slot, 1, 2, 4));
+    }
+
+    #[test]
+    fn policy_gives_up_after_bounded_attempts() {
+        let mut slot = None;
+        for age in 1..u32::from(Policy::ATTEMPTS) {
+            assert!(Policy::due(&mut slot, 1, 2, age));
+            assert_eq!(slot.as_mut().unwrap().record(&Ok(2)), None);
+        }
+        assert!(Policy::due(&mut slot, 1, 2, u32::from(Policy::ATTEMPTS)));
+        assert_eq!(slot.as_mut().unwrap().record(&Ok(2)),
+            Some(("waiting_cosmetics_policy_failed", [0, 120, 120, 0])));
+        assert!(!Policy::due(&mut slot, 1, 2, 121));
+    }
+}

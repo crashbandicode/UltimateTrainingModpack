@@ -67,8 +67,14 @@ impl Vm {
     pub(super) unsafe fn bind(base: usize, component: usize) -> Result<Self, Error> {
         // The native age-0 update creates the coroutine and age 1 first
         // resumes it. Before that resume the pending-choice table is empty.
+        Self::bind_from(base, component, 2)
+    }
+
+    /// The Settings policy binds from age 1: `initialize` has built both
+    /// selectors and `main` has not enabled input. Capture/restore keep `bind`.
+    pub(super) unsafe fn bind_from(base: usize, component: usize, minimum_age: u32) -> Result<Self, Error> {
         if !aligned(component) || read::<i32>(component, 0xe0) != 1
-            || read::<u32>(component, 0xe4) <= 1 { return Err(Error::Binding); }
+            || read::<u32>(component, 0xe4) < minimum_age { return Err(Error::Binding); }
         let holder: usize = read(component, 0x40);
         if !aligned(holder) { return Err(Error::Binding); }
         let player: usize = read(holder, 0);

@@ -4,8 +4,7 @@ Change the fighter you control, or the CPU, without leaving Training and without
 returning to the character select screen. Each role has its own ordered roster.
 The game's normal loader replaces the fighter that is already in the match.
 
-The controls below describe the enhancements development build, not a new
-published release.
+The controls below describe the [unstable enhancements alpha](experimental-release.md).
 
 This page is the Training control. Waiting-room practice, the roster editor, and
 what an actual match keeps from the character select screen are in
@@ -39,7 +38,7 @@ Default lists:
 Open **Characters → Character Cycles**. Both roles' numbers stay visible:
 **red, top-left** is P1 order; **blue, top-right** is CPU order. The original
 P1 fighter's whole group normally appears as grey **0**. In the current development
-source, Ice Climbers can also have a numbered P1 slot when its red S setting differs
+alpha, Ice Climbers can also have a numbered P1 slot when its red S setting differs
 from Character Extras → Solo Popo. Matching configurations remain grey. The CPU's
 original fighter remains selectable in its list.
 
@@ -71,7 +70,9 @@ configured starting forms (defaulting to Pyra and Squirtle), excludes P1's
 original group from the numbered P1 list (except the opposite Solo Popo configuration),
 and includes the CPU's original fighter. Each role's All selection is independent.
 The layout matches the tested all-unlocked character-select screen; it does not
-read arbitrary save layouts. Saved-Mii cycling is available in this alpha; the native Mii editor and managed Mii-helper gates remain disabled. See the [release limits](experimental-release.md).
+read arbitrary save layouts. Saved-Mii cycling, the native Mii editor and Mii hats are included in the full
+alpha. See [how character changes work](character-changes.md) and the
+[release limits](experimental-release.md).
 
 **Ice Climbers is supported**, as the pair or Solo Popo. The three Solo settings
 save independently:
@@ -87,11 +88,22 @@ Extras. Each S appears only when enabled; both can appear together. The applicab
 setting switches between the pair and Popo alone when the menu closes, and Solo
 Popo remains alone after respawn. See the [Solo Popo guide](solo-popo.md).
 
-![Shared cycle grid with red and blue orders, independent Solo Popo toggles, and All.](fighter-hotswap/character-cycles.gif)
+![Shared cycle grid and a Player cycle through Kirby, normal Ice Climbers and original Solo Popo.](fighter-hotswap/character-cycles.gif)
 
-*This earlier demonstration shows the original always-grey behavior. The current
-development source allows opposite Solo configurations as described above; refreshed
-footage will follow validation. The clip switches roles, toggles each S and enables All.*
+*Recorded in Training: normal Ice Climbers is added as Player slot 2 while
+Character Extras keeps original slot 0 as Solo Popo. The shortcut then cycles
+through Kirby, the pair, and original Solo Popo. CPU Young Link stays unchanged.*
+
+## Choose a fighter directly
+
+Open **Characters → Player Character** or **CPU Character**. Choose a portrait
+and press **A** to apply it; the portrait briefly flashes as feedback. **ZR**
+switches roles and **X** previews a starting form. This changes the current
+practice fighter without changing either numbered cycle.
+
+![Selecting Bowser in the manual portrait grid and returning to Training.](fighter-hotswap/manual-hotswap.gif)
+
+*Player Ice Climbers changes to Bowser. CPU Young Link remains unchanged.*
 
 ## Save states and demonstration
 

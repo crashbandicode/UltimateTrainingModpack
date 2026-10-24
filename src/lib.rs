@@ -85,6 +85,8 @@ mod practice_trace_core;
 mod native_unlink_core;
 #[cfg(feature = "native-unlink-probe")]
 mod native_unlink_probe;
+#[cfg(any(feature = "native-unlink-guard", feature = "native-unlink-probe"))]
+mod native_unlink_install;
 #[cfg(feature = "native-unlink-guard")]
 mod native_unlink_guard;
 #[cfg(feature = "native-unlink-guard")]
@@ -133,8 +135,9 @@ fn nro_main(nro: &NroInfo<'_>) {
 pub fn main() {
     logging::init_diagnostics();
     practice_trace::init();
-    #[cfg(feature = "native-unlink-probe")]
-    native_unlink_probe::init();
+    // Guard installation never depends on the optional observer's file readiness.
+    #[cfg(any(feature = "native-unlink-guard", feature = "native-unlink-probe"))]
+    native_unlink_install::init();
     #[cfg(feature = "native-unlink-guard")]
     native_gc_guard::init();
     #[cfg(feature = "console-map-probe")]

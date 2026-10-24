@@ -1,85 +1,95 @@
-# Experimental enhancements alpha — UNSTABLE
+# Full enhancements alpha — UNSTABLE
 
-This opt-in diagnostic alpha targets Smash Ultimate 13.0.5. Intermittent console
-crashes remain under investigation. It is not a stable release or proof that the
-underlying native-memory corruption has been fixed.
+This opt-in alpha targets Smash Ultimate 13.0.5. Console stability remains under
+review. Cleanup guards contain observed null-reference faults; the writer that
+corrupts those references is still unknown. This is not a stable release.
 
-The NRO includes character cycling/manual swapping, Solo Popo, Kirby hats,
-character items, direct practice stages and lobby stage rotation, and saved-Mii
-cycling. Native Mii-editor and managed Mii-helper feature gates remain **disabled
-in this diagnostic NRO**. The source contains those separate experiments.
+The full alpha includes character cycles and manual portrait selection, Solo
+Popo, Kirby hats, character items, direct practice stages and lobby rotation,
+saved-Mii cycling, opponent-Mii replay discovery, and Add New through the game's
+native Mii editor and Test screen.
 
-## Changes in this alpha
+## Included behavior
 
-- Original P1 Ice Climbers uses Character Extras → Solo Popo; numbered Ice
-  Climbers uses the independent red S. Opposite configurations can share a cycle,
-  and returning through slot 0 restores the original configuration. The original
-  portrait is grey only when both configurations match. CPU's blue S is unchanged.
-- Practice Stages includes the actual Training stage as well as Waiting Room.
-  L/R changes pages. Direct selection works in Training; rotation remains for
-  lobby practice.
-- Two optional [INI menu shortcuts](menu-shortcuts.md), initially Minus and
-  disabled. B + D-pad Up is permanent. Plus opens normal pause unless explicitly
-  configured as a mod-menu shortcut.
-- Shared native-field checks cover selected cleanup and Mii pointer chains.
-  They check null parents, offsets and alignment; they do not cover every unsafe
-  access or prove that a non-null pointer is alive. Native object lifetime and
-  synchronization still belong to the caller. Mii callbacks also avoid redundant
-  large copies and unnecessary work when inactive.
+- Original P1 Ice Climbers uses **Character Extras → Solo Popo**. Numbered
+  Ice Climbers uses the independent red S; CPU uses blue S. Opposite Player
+  configurations can share a cycle, with the original restored at slot 0.
+- Practice Stages includes Training and Waiting Room. **L/R** pages; direct
+  selection changes the current Training stage. **X** edits lobby rotation,
+  which advances only on lobby-practice entry.
+- Two optional [INI menu shortcuts](menu-shortcuts.md) default to Minus and
+  disabled. **B + D-pad Up** is permanent. Plus opens normal pause unless
+  explicitly configured as a modpack shortcut.
+- Native Mii editing and managed Mii hats are enabled again. In Quickplay's
+  owned editor, cosmetics are disabled; Name, Specials, Settings and Test retain
+  interruption support. Ordinary Training keeps the cosmetic options.
+- Shared native-field checks protect selected cleanup and Mii chains. They do
+  not cover every unsafe access or prove that a non-null pointer is alive.
+- Cleanup guards are independent of optional tracing. The broad/focused trace
+  writer and unlink-observer capture are absent from this full build.
 
-The existing exact-null cleanup and Lua garbage-collector guards remain. The
-malformed-reference writer is unknown; non-null dangling pointers are outside
-this containment. Native instruction checks refuse mismatched patch windows.
+See [how character changes work](character-changes.md) for the loading mechanism,
+Mii storage, source-fighter limits, and same-lobby continuation.
 
-## Install
+## Install and logs
 
-Download `libtraining_modpack-UNSTABLE.nro` from the [experimental release](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-experimental.20261024).
-Back up the current NRO, rename the download to `libtraining_modpack.nro`, and put
-it in `atmosphere/contents/01006A800016E000/romfs/skyline/plugins/` on the SD card.
-Retain Skyline, ARCropolis, `libnro_hook.nro`, and `libparam_hook.nro`. This download
-does not replace other mods or their settings.
+Use the **full** unstable candidate on [Forgejo releases](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases).
+Back up the current NRO. Rename the download to `libtraining_modpack.nro` and
+replace only that file in
+`atmosphere/contents/01006A800016E000/romfs/skyline/plugins/`.
+Retain Skyline, ARCropolis, `libnro_hook.nro`, `libparam_hook.nro`, other mods,
+settings and saves. Never keep two Training Modpack NROs installed.
 
-Focused diagnostic capture starts automatically in
-`ultimate/TrainingModpack/practice-trace-swap.bin`, bounded below 4 GiB. Small
-native unlink and diagnostic logs are retained alongside it. Existing Trace
-Control users can stop/start capture. This build does not write the former broad
-`practice-trace-controlled.bin` recording.
+Small diagnostics remain in `ultimate/TrainingModpack/`: two practice logs of
+at most 128 KiB each, a bounded console-map record, and bounded boot/load records.
+This build does **not** create a multi-gigabyte trace. Keep those small logs and
+Atmosphère crash reports if a fault occurs.
 
-## What was checked
+## Validation and limits
 
-- Native all-target Clippy: zero warnings; no-default and optimized release builds
-  passed with source identities checked before and after.
-- 18 focused Cargo tests and 8 real-source helper tests passed. Their code is
-  unchanged by the final startup file-I/O correction, so those results were
-  carried forward rather than rerun. Three native controller tests were compile
-  checked only and are not counted as executed.
-- Eden verified original Solo Popo → numbered paired Ice Climbers → original Solo
-  Popo; default Minus and permanent B + D-pad Up; normal Plus pause; L/R stage
-  paging; direct Waiting Room → Training stage changes; normal Training exit.
-- A second Eden session verified creation of the missing shortcut INI, then a
-  normal game stop/relaunch with X configured: X opened the menu, Minus no longer
-  did, and the permanent shortcut still worked. Normal Training exit passed.
-- Both sessions retained the Switch mod set plus trace controls, exited normally,
-  used no swap, and restored their profiles. Observed emulator peaks were about
-  5.41 and 6.16 GiB. These are emulator measurements, not Switch memory usage or
-  proof that the intermittent console fault was reproduced or fixed.
+Native all-target Clippy produced zero warnings. The no-default build, combined
+guard/probe build, full release and seven focused Cargo tests passed. Earlier
+unchanged guard and functional tests were carried forward.
 
-Earlier native ARM-loop regression evidence for the unchanged guard assembly is
-retained. This build has no new physical-console or LDN acceptance claim. The
-updated Solo cycle behavior is not yet represented by the older demonstration GIF.
+The full-alpha integration session observed first-shortcut Mii initialization,
+managed Mii Brawler hat and Shot Put, ordinary native editor/Test/discard,
+Training Quit and reentry, and Quickplay's disabled-cosmetics navigation with
+normal cancellation back to waiting practice. Eden exited normally and the
+test profile was restored. Its sampled host peak was about 5.7 GiB under an
+8 GiB/no-swap limit; this is not Switch or guest-heap accounting.
 
-## Artifact identity and build options
+Earlier coverage includes 85 selectable hats in both roles, 38 item grant and
+restore cases, saved-Mii swaps and replay discovery/dedup/restart, editor
+interruptions, and local-wireless match/return/helper reconstruction. Those
+matrices were not repeated for this integration.
 
-- NRO size: 5550080 bytes.
-- NRO SHA-256: `c72fa274f239a3d30a51cc802d8d2088bbd75b342ba084b1e7af02678670b17e`.
-- Frozen build-input SHA-256: `b1a1cff8456cf719b48257a1d9b527c62fc4e47b2200a2c677e467540133f7f0`.
-- Package version remains 7.1.2; the experimental tag identifies this candidate.
-- The source commit preserves the exact compiled Rust/assets and lockfile;
-  listed guide/release documentation was updated after the build. The optional
-  Deluxe SDK requires the pinned snapshot described in `Cargo.toml`.
+The later GIF session completed the manual selector, opposite Solo cycle and
+direct stage change, but Eden's Closing software overlay stalled on shutdown.
+The owned process was stopped and its profile restored. That observation is
+kept separate from the earlier clean lifecycle pass.
+
+The bounded resource pass compared baseline/full idle activity and sampled the
+hat helper, native editor, held item and settled stage. All eight 20-second
+windows stayed near 60 FPS without memory-pressure events. Idle CPU use was
+about 0.945/0.951 cores. Absolute host-memory comparison includes different
+native cache warmup and is not an isolated feature-memory measurement. The full
+run exited normally, with helper cleanup recording zero tracked leases. These
+are host samples, not console frame-time percentiles or a long-term leak test.
+
+Custom Mii HUD portraits remain deferred: the body and moves change, but the
+small portrait can retain the previous Mii. The separate standalone counterpick's paired
+accepted-rematch check and physical-console acceptance remain pending. No claim is made for online arenas or every possible
+fighter/costume/move/stage combination.
+
+## Artifact identity
+
+- NRO: 4276224 bytes.
+- SHA-256: `3412c7505cf7b50625daa6c23f47d48748b4c37d900a5efcc2947d0e7217b0d1`.
+- Frozen compiled-input SHA-256: `146fdea8cea99d46d70f0f989aafddb00825dd8be20bda9679af09ef726e802b`.
+- Package version: 7.1.2; the experimental release tag distinguishes the candidate.
 
 Enabled local feature closure:
 
 ```text
-automation-results-native console-map-probe console-practice-trace console-swap-trace cpu-pilot-probe deluxe-sdk dep:deluxe-plugin-sdk lobby-stage-probe managed-sources mii-managed-source-coexist-alpha mii-ordinary-cpu-alpha mii-ordinary-player-alpha mii-saved-alpha native-unlink-guard native-unlink-probe practice-stage-observer practice-stage-request-alpha training_mod_consts/mii-saved-alpha training_mod_consts/p1-cpu-control training_mod_tui/mii-ordinary-cpu-alpha training_mod_tui/mii-ordinary-player-alpha training_mod_tui/mii-saved-alpha waiting-roster-reload
+console-map-probe cpu-pilot-probe deluxe-sdk dep:deluxe-plugin-sdk enhancements-alpha lobby-stage-probe managed-sources mii-editor-alpha mii-managed-helper-alpha mii-managed-source-coexist-alpha mii-ordinary-cpu-alpha mii-ordinary-player-alpha mii-saved-alpha native-unlink-guard practice-stage-observer practice-stage-request-alpha training_mod_consts/mii-managed-helper-alpha training_mod_consts/mii-saved-alpha training_mod_consts/p1-cpu-control training_mod_tui/mii-editor-alpha training_mod_tui/mii-ordinary-cpu-alpha training_mod_tui/mii-ordinary-player-alpha training_mod_tui/mii-saved-alpha waiting-roster-reload
 ```

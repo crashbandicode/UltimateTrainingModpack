@@ -78,7 +78,10 @@ console-practice-trace = []
 console-swap-trace = ["console-practice-trace"]
 # Private, byte-guarded paired native unlink capture. Never a release default.
 native-unlink-probe = ["console-swap-trace"]
-native-unlink-guard = ["native-unlink-probe"]
+# Experimental null-parent unlink store guard plus the Lua GC null-constant guard.
+# Independent of the probe/trace: no recorder, allocator hook, writer thread or
+# diagnostic file. Add native-unlink-probe explicitly for the observer.
+native-unlink-guard = []
 # Combined operator-review build. Keep the accepted alpha controls together so
 # a focused Mii/cosmetic rebuild cannot silently drop direct practice stages.
 enhancements-alpha = ["mii-editor-alpha", "cpu-pilot-probe", "mii-managed-helper-alpha", "waiting-roster-reload", "practice-stage-request-alpha"]

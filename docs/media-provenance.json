@@ -2,33 +2,6 @@
   "environment": "Linux Eden, real Training and solo local-wireless waiting-room UI",
   "clips": [
     {
-      "path": "docs/fighter-hotswap/solo-popo.gif",
-      "recorded_date": "2026-10-16",
-      "nro_sha256": "2c81ac2a28649e955a202dbc79faece52ecde039b03232c5c336b14f82cb3024",
-      "source_manifest_sha256": "e70932d28df8d44fbaaa9ea3eab36f14b61d9d04cf485d83bb7f13f6c7caa7fe",
-      "sha256": "b34b2dcc0ba1694162053b64c560fce589c2296fd48cad744617a448b9094f55",
-      "frames": 120,
-      "seconds": 12,
-      "fps": 10,
-      "dimensions": [
-        800,
-        450
-      ],
-      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/plan1-native-03/solo-player-clear",
-      "source_frame_range": [
-        0,
-        119
-      ],
-      "captured_seconds": 12.000044,
-      "timing_warning": false,
-      "crop_source_pixels": {
-        "top": 39,
-        "bottom": 41
-      },
-      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/solo-popo-review",
-      "visual_review": "Accepted first/middle/last: original P1 pair with Solo Off; menu closes and P1 becomes one Popo; moving Popo remains alone, CPU Kirby unchanged."
-    },
-    {
       "path": "docs/fighter-hotswap/hotswap.gif",
       "recorded_date": "2026-10-16",
       "nro_sha256": "2c81ac2a28649e955a202dbc79faece52ecde039b03232c5c336b14f82cb3024",
@@ -54,33 +27,6 @@
       },
       "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/hotswap-plan1-review",
       "visual_review": "Accepted first/middle/last: native Mario and Solo CPU Popo; P1 cycles through Solo Popo to Mythra; CPU completes its swap to Kirby. Middle frame includes the native reload transition; final fighters and CPU label are visible."
-    },
-    {
-      "path": "docs/fighter-hotswap/character-cycles.gif",
-      "recorded_date": "2026-10-16",
-      "nro_sha256": "2c81ac2a28649e955a202dbc79faece52ecde039b03232c5c336b14f82cb3024",
-      "source_manifest_sha256": "e70932d28df8d44fbaaa9ea3eab36f14b61d9d04cf485d83bb7f13f6c7caa7fe",
-      "sha256": "fc1c60fbd35ddaa59576af76387b08f376b5e00d61d606aa04debed7010e9ac6",
-      "frames": 160,
-      "seconds": 16.0,
-      "fps": 10,
-      "dimensions": [
-        960,
-        540
-      ],
-      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/plan1-lobby-01/grid-demo",
-      "source_frame_range": [
-        0,
-        159
-      ],
-      "captured_seconds": 16.000073,
-      "timing_warning": false,
-      "crop_source_pixels": {
-        "top": 39,
-        "bottom": 41
-      },
-      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/character-cycles-plan1-review",
-      "visual_review": "Accepted first/middle/last: grey original P1 Ice Climbers 0 with independent red and blue S, both numbered orders, role switch, S toggles, then Player All and CPU All with row-major red/blue numbers and the shared Smash Ball tile. CPU Ice Climbers remains selectable; P1 original is excluded."
     },
     {
       "path": "docs/lobby-practice/waiting-room.gif",
@@ -110,32 +56,112 @@
       "visual_review": "Accepted first/middle/last: solo local-wireless waiting-room with both Solo Popos; Player All cycles through Mario to Donkey Kong; CPU All advances from Ice Climbers to Sheik with updated CPU icon. Green Waiting and ready/waiting cards remain visible. Original P1 card still shows Ice Climbers. This is no online-arena or physical-Switch proof."
     },
     {
-      "path": "docs/lobby-practice/stage-menu.gif",
-      "recorded_date": "2026-10-16",
-      "nro_sha256": "132da284f303ed779523eafe46c6dc284f4a2d87969ecf5524287e0fb8de83bc",
-      "source_manifest_sha256": "e1cacd78f17a25a75a4085ad7bb15a7265c224de9ef1102a637725c9c7a9a64b",
-      "sha256": "07b33ac2976a8613c623e8862b26a31d059c70f30549752f12b32b2918f6c92d",
-      "frames": 7,
-      "source_frames": 160,
-      "seconds": 16.0,
-      "source_fps": 10,
+      "path": "docs/fighter-hotswap/solo-popo.gif",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "3412c7505cf7b50625daa6c23f47d48748b4c37d900a5efcc2947d0e7217b0d1",
+      "source_manifest_sha256": "d22d4259b2e035b918bb3d8e3c94505f619eafd0c67a87a495ea54ede151d68b",
+      "sha256": "c101e9031f7bf3e16572a5e6440440ce368017070476669c516e54c9a1189db5",
+      "frames": 110,
+      "seconds": 11.0,
+      "fps": 10,
       "dimensions": [
         960,
-        540
+        541
       ],
-      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/plan4-native-10/stage-menu-capture",
-      "source_frame_range": [
-        0,
-        159
-      ],
-      "captured_seconds": 16.000071,
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/media122/runtime/captures/solo-popo",
+      "source_frames": 110,
+      "captured_seconds": 11.000077,
       "timing_warning": false,
-      "crop_source_pixels": {
-        "top": 39,
-        "bottom": 41
-      },
-      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/plan4-native-10/gif-review",
-      "visual_review": "Accepted first/middle/last and source frames30/45: Hollow Bastion rank2 removed then restored, page8 wraps to page1, cursor reaches Small Battlefield rank1. Seven distinct GIF frames preserve all160 captured frame durations. Local-wireless development selector only; no online or physical-Switch proof."
+      "crop_source_pixels": [
+        129,
+        43,
+        1657,
+        933
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/media122/runtime/review-evidence/compact/solo-popo-review",
+      "visual_review": "First: Solo Off checked and both climbers visible. On selected; menu closed; middle and last show Popo alone, CPU Young Link unchanged."
+    },
+    {
+      "path": "docs/fighter-hotswap/manual-hotswap.gif",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "3412c7505cf7b50625daa6c23f47d48748b4c37d900a5efcc2947d0e7217b0d1",
+      "source_manifest_sha256": "d22d4259b2e035b918bb3d8e3c94505f619eafd0c67a87a495ea54ede151d68b",
+      "sha256": "7c5fa22056d6e939b6cf52de119b5e28dc56d09b5eadad09d492ecc0d8275f16",
+      "frames": 120,
+      "seconds": 12.0,
+      "fps": 10,
+      "dimensions": [
+        960,
+        541
+      ],
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/media122/runtime/captures/manual-hotswap",
+      "source_frames": 120,
+      "captured_seconds": 12.000067,
+      "timing_warning": false,
+      "crop_source_pixels": [
+        129,
+        43,
+        1657,
+        933
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/media122/runtime/review-evidence/compact/manual-hotswap-review",
+      "visual_review": "First: Change Character Player portrait grid highlights original Ice Climbers. Action: Bowser selected, Player marker moves. Middle and last: Bowser loaded with updated HUD; CPU Young Link unchanged."
+    },
+    {
+      "path": "docs/fighter-hotswap/character-cycles.gif",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "3412c7505cf7b50625daa6c23f47d48748b4c37d900a5efcc2947d0e7217b0d1",
+      "source_manifest_sha256": "d22d4259b2e035b918bb3d8e3c94505f619eafd0c67a87a495ea54ede151d68b",
+      "sha256": "704e7792c2a3ea02e847ddd2b96908edd2c4b77588757993e14283c039a4ca31",
+      "frames": 260,
+      "seconds": 26.0,
+      "fps": 10,
+      "dimensions": [
+        960,
+        541
+      ],
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/media122/runtime/captures/character-cycles",
+      "source_frames": 260,
+      "captured_seconds": 26.000071,
+      "timing_warning": false,
+      "crop_source_pixels": [
+        129,
+        43,
+        1657,
+        933
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/media122/runtime/review-evidence/compact/character-cycles-review",
+      "visual_review": "First: red Player Kirby1 and independent blue CPU order. Action at3s: normal Ice Climbers added as Player2; role switch shown. At13s Kirby1; at16.5s paired Ice Climbers2; last original Solo Popo0. CPU unchanged. This demonstrates opposite Solo configurations and original-slot return."
+    },
+    {
+      "path": "docs/lobby-practice/stage-menu.gif",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "3412c7505cf7b50625daa6c23f47d48748b4c37d900a5efcc2947d0e7217b0d1",
+      "source_manifest_sha256": "d22d4259b2e035b918bb3d8e3c94505f619eafd0c67a87a495ea54ede151d68b",
+      "sha256": "86862b6f7b2359f04a6adaf20f6e70f2ef82eefceb1822b22a463dfaaacc3eff",
+      "frames": 298,
+      "seconds": 29.8,
+      "fps": 10,
+      "dimensions": [
+        960,
+        541
+      ],
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/media122/runtime/captures/stage-menu",
+      "source_frames": 210,
+      "captured_seconds": 29.740027,
+      "timing_warning": true,
+      "crop_source_pixels": [
+        129,
+        43,
+        1657,
+        933
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/media122/runtime/review-evidence/compact/stage-menu-review",
+      "visual_review": "First: Change Stage Now page1. R shows page2, L returns page1. X shows Lobby Stage Rotation, X returns direct selection. Battlefield selected; native morph transition; final Battlefield with same fighters. Delayed screenshots during load are held according to recorded timestamps, not sped up. No match/online claim."
     }
   ]
 }
