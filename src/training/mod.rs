@@ -57,8 +57,27 @@ mod reset;
 pub mod save_states;
 mod shield_tilt;
 
+/// An explicit menu disable cancels the old sequence once. Ordinary trigger
+/// inactivity and unrelated menu edits must leave queued follow-ups alone.
+pub(crate) fn mash_settings_changed(
+    previous: &training_mod_consts::TrainingModpackMenu,
+    current: &training_mod_consts::TrainingModpackMenu,
+) {
+    use training_mod_consts::{Action, MashTrigger};
+    if current.mash_state == Action::empty()
+        && current.mash_triggers == MashTrigger::empty()
+        && (previous.mash_state != current.mash_state
+            || previous.mash_triggers != current.mash_triggers)
+    {
+        mash::full_reset();
+    }
+}
+
 /// Cancel a departing practice session without touching game objects or game RNG.
 pub fn clear_session_state() {
+    crate::practice_trace::checkpoint(20, [0; 5]);
+    crate::kirby_hats::cancel_pending();
+    crate::character_items::cancel_pending();
     menu::clear_session_state();
     button_config::clear_session_state();
     input_delay::clear_session_state();
@@ -81,6 +100,7 @@ pub fn clear_session_state() {
     unsafe {
         input_record::stop_playback();
     }
+    crate::practice_trace::checkpoint(21, [0; 5]);
 }
 
 #[cfg(debug_assertions)]
@@ -161,21 +181,52 @@ pub unsafe fn handle_get_command_flag_cat(
 unsafe extern "C" fn fighter_vtable_on_frame_inner(fighter: &mut smash::app::Fighter);
 
 unsafe extern "C" fn fighter_vtable_on_frame(fighter: &mut smash::app::Fighter) {
+    let trace_identity = [fighter as *mut _ as u64, fighter.battle_object.module_accessor as u64,
+        u64::from(fighter.battle_object.battle_object_id), u64::from(fighter.battle_object.kind), fighter.battle_object.entry_id];
+    crate::practice_trace::event(200, trace_identity);
+    #[cfg(feature = "source-lifecycle-probe")]
+    crate::character_roster::source_lifecycle_probe::body_frame(fighter.battle_object.module_accessor);
+    if crate::character_roster::sources::reserved(&mut *fighter.battle_object.module_accessor) {
+        crate::practice_trace::event(210, trace_identity);
+        fighter_vtable_on_frame_inner(fighter);
+        crate::practice_trace::event(211, trace_identity);
+        return;
+    }
+    #[cfg(any(feature = "source-owner-probe", feature = "managed-sources"))]
+    if crate::character_roster::sources::legacy_training_owner_reserved(&mut *fighter.battle_object.module_accessor) {
+        crate::practice_trace::event(212, trace_identity);
+        fighter_vtable_on_frame_inner(fighter);
+        crate::practice_trace::event(213, trace_identity);
+        return;
+    }
     named_macros::observe_playback_before(&mut *fighter.battle_object.module_accessor);
+    crate::practice_trace::event(201, trace_identity);
     crate::replay_capture::before_frame(fighter);
+    crate::practice_trace::event(202, trace_identity);
     crate::replay_preview::before_frame(&mut *fighter.battle_object.module_accessor);
+    crate::practice_trace::event(203, trace_identity);
     named_macros::hold_panel_fighter(&mut *fighter.battle_object.module_accessor);
+    crate::practice_trace::event(204, trace_identity);
     fighter_vtable_on_frame_inner(fighter);
+    crate::practice_trace::event(205, trace_identity);
     crate::replay_capture::after_frame(fighter);
+    #[cfg(feature = "cpu-pilot-probe")]
+    crate::cpu_pilot::on_frame(&mut *fighter.battle_object.module_accessor);
+    #[cfg(feature = "source-owner-probe")]
+    crate::character_roster::source_owner_probe::observe_copy(fighter.battle_object.module_accessor);
     once_per_frame_per_fighter(&mut *fighter.battle_object.module_accessor);
+    crate::practice_trace::event(206, trace_identity);
     crate::replay_preview::after_frame(&mut *fighter.battle_object.module_accessor);
+    crate::practice_trace::event(207, trace_identity);
 }
 
 fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) {
     unsafe {
         lobby::update();
+        crate::character_roster::sources::on_frame(module_accessor);
         // Restore shield parameters on departure even when practice is inactive.
         shield::param_installer();
+        crate::character_items::on_frame(module_accessor);
         if !is_training_mode() {
             return;
         }
@@ -201,6 +252,9 @@ fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) 
             }
             return;
         }
+
+        #[cfg(feature = "item-state-probe")]
+        crate::item_state_probe::on_frame(module_accessor);
 
         if menu::menu_condition() {
             menu::spawn_menu();
@@ -523,7 +577,12 @@ pub unsafe fn handle_add_damage(
     {
         damage_to_add = 0.0;
     }
-    original!()(damage_module, damage_to_add, param_2)
+    #[cfg(feature = "source-owner-probe")]
+    let before = DamageModule::damage(module_accessor, 0);
+    let result = original!()(damage_module, damage_to_add, param_2);
+    #[cfg(feature = "source-owner-probe")]
+    crate::character_roster::source_owner_probe::observe_damage(module_accessor, damage_to_add, before);
+    result
 }
 
 // Control L+R+A Resets
@@ -711,45 +770,6 @@ pub unsafe fn handle_effect_follow(
     )
 }
 
-#[skyline::hook(replace = EffectModule::req)] // hooked to prevent death gfx from playing when loading save states
-pub unsafe fn handle_fighter_effect(
-    module_accessor: &mut BattleObjectModuleAccessor,
-    eff_hash: Hash40,
-    pos: *const Vector3f,
-    rot: *const Vector3f,
-    mut size: f32,
-    arg6: u32,
-    arg7: i32,
-    arg8: bool,
-    arg9: i32,
-) -> u64 {
-    if !crate::common::is_native_training_mode() {
-        return original!()(
-            module_accessor,
-            eff_hash,
-            pos,
-            rot,
-            size,
-            arg6,
-            arg7,
-            arg8,
-            arg9,
-        );
-    }
-    size = ptrainer::handle_pokemon_effect(module_accessor, eff_hash, size);
-    original!()(
-        module_accessor,
-        eff_hash,
-        pos,
-        rot,
-        size,
-        arg6,
-        arg7,
-        arg8,
-        arg9,
-    )
-}
-
 #[skyline::hook(replace = EffectModule::req_on_joint)] // hooked to prevent death gfx from playing when loading save states
 pub unsafe fn handle_fighter_joint_effect(
     module_accessor: &mut BattleObjectModuleAccessor,
@@ -804,7 +824,7 @@ pub unsafe fn handle_effect(
     eff_hash: Hash40,
     pos: *const Vector3f,
     rot: *const Vector3f,
-    size: f32,
+    mut size: f32,
     arg6: u32,
     arg7: i32,
     arg8: bool,
@@ -823,6 +843,9 @@ pub unsafe fn handle_effect(
             arg9,
         );
     }
+    // This used to be a second hook on req. Keep its adjustment before the
+    // save-state suppression, then call the pre-existing effect handler once.
+    size = ptrainer::handle_pokemon_effect(module_accessor, eff_hash, size);
     if save_states::is_loading() && !buff::is_buffing(module_accessor) {
         // Making the size 0 prevents these effects from being displayed. Fixes throw explosions, ICs squall, etc.
         return original!()(
@@ -922,6 +945,8 @@ unsafe fn handle_final_input_mapping(
     #[cfg(feature = "named-input-trace")]
     let close_raw_before = controller_struct.controller.current_buttons.b();
     original!()(mappings, player_idx, out, controller_struct, arg);
+    #[cfg(feature = "cpu-pilot-probe")]
+    crate::cpu_pilot::input(player_idx, out);
     lobby::update();
     // is_training_mode deliberately excludes a busy character loader. The parked
     // clip editor still owns P1 input then, including B cancellation and raw Plus
@@ -1015,6 +1040,36 @@ unsafe fn handle_final_input_mapping(
         && input_record::handle_named_stop_request(player_idx);
     if player_idx == 0 {
         crate::character_roster::handle_input(&mut *out);
+        #[cfg(feature = "source-capacity-probe")]
+        crate::character_roster::source_capacity_probe::handle_input(
+            &mut *out,
+            controller_struct.controller.current_buttons.stick_l(),
+            controller_struct.controller.current_buttons.stick_r(),
+            controller_struct.controller.current_buttons.x(),
+        );
+        #[cfg(feature = "item-state-probe")]
+        crate::item_state_probe::handle_input(
+            &mut *out,
+            controller_struct.controller.current_buttons.stick_l(),
+            controller_struct.controller.current_buttons.x(),
+        );
+        #[cfg(feature = "mii-pool-observer")]
+        crate::character_roster::mii_pool_observer::handle_input(
+            &mut *out,
+            controller_struct.controller.current_buttons.stick_l(),
+            controller_struct.controller.current_buttons.x(),
+        );
+        #[cfg(feature = "mii-identical-reload-probe")]
+        crate::character_roster::mii_reload_probe::handle_input(
+            &mut *out,
+            controller_struct.controller.current_buttons.stick_l(),
+            controller_struct.controller.current_buttons.x(),
+        );
+        crate::kirby_hats::handle_input(
+            &mut *out,
+            controller_struct.controller.current_buttons.stick_l(),
+            controller_struct.controller.current_buttons.stick_r(),
+        );
     }
 
     // Potentially apply input delay
@@ -1123,7 +1178,17 @@ pub fn training_mods() {
         handle_add_limit,
         handle_check_doyle_summon_dispatch,
         handle_reused_ui,
-        handle_req_screen,
+    );
+    unsafe {
+        crate::effect_hook_chain::install(
+            "req_screen", EffectModule::req_screen as *const () as usize,
+            handle_req_screen as *const () as usize,
+            &handle_req_screen_skyline_internal_original_fn,
+            [0xf940a000, 0xf9400008, 0xf9413105, 0x12000042],
+            handle_req_screen_skyline_internal_install_hook,
+        );
+    }
+    skyline::install_hooks!(
         handle_add_damage,
         // Buff SFX
         handle_fighter_play_se,
@@ -1133,8 +1198,28 @@ pub fn training_mods() {
         // Death SFX
         handle_se,
         // Death GFX
-        handle_effect,
-        handle_effect_follow,
+    );
+    unsafe {
+        crate::effect_hook_chain::install(
+            "req", EffectModule::req as *const () as usize,
+            handle_effect as *const () as usize,
+            &handle_effect_skyline_internal_original_fn,
+            [0xf940a000, 0xf9400008, 0xf9403508, 0x120000c6],
+            handle_effect_skyline_internal_install_hook,
+        );
+    }
+    skyline::install_hooks!(
+    );
+    unsafe {
+        crate::effect_hook_chain::install(
+            "req_follow", EffectModule::req_follow as *const () as usize,
+            handle_effect_follow as *const () as usize,
+            &handle_effect_follow_skyline_internal_original_fn,
+            [0xf940a000, 0xf940000d, 0x394083e9, 0x394063ea],
+            handle_effect_follow_skyline_internal_install_hook,
+        );
+    }
+    skyline::install_hooks!(
         // Star KO turn off
         handle_star_ko,
         // Clatter
@@ -1145,8 +1230,17 @@ pub fn training_mods() {
         handle_final_input_mapping,
         // Charge
         handle_article_get_int,
-        handle_fighter_effect,
-        handle_fighter_joint_effect,
+    );
+    unsafe {
+        crate::effect_hook_chain::install(
+            "req_on_joint", EffectModule::req_on_joint as *const () as usize,
+            handle_fighter_joint_effect as *const () as usize,
+            &handle_fighter_joint_effect_skyline_internal_original_fn,
+            [0xf940a000, 0xf940000b, 0xb94003e8, 0xb94013e9],
+            handle_fighter_joint_effect_skyline_internal_install_hook,
+        );
+    }
+    skyline::install_hooks!(
         // L+R+A Reset
         lra_handle
     );

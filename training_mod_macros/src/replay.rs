@@ -26,6 +26,24 @@ pub struct ReplaySession {
     pub truncated: bool,
 }
 
+impl ReplaySession {
+    /// Associate only values from the same immutable committed capture. Native
+    /// CFMK row numbers and local live entry IDs are different namespaces.
+    pub fn mii_for_track(&self, miis: &training_mod_mii::replay::ReplayMiis,
+        entry: i32, kind: u32) -> Result<training_mod_mii::replay::RawMii, &'static str>
+    {
+        let raw = miis.unique_class(kind)?;
+        let mut matching = self.tracks.iter().filter(|track|
+            track.frames.iter().any(|frame| frame.start.fighter_kind as u32 == kind));
+        let track = matching.next().ok_or("Capture has no track for this Mii class")?;
+        if matching.next().is_some() { return Err("Capture has ambiguous same-class Mii tracks"); }
+        if track.entry != entry || track.frames.iter().any(|frame| frame.start.fighter_kind as u32 != kind) {
+            return Err("Capture Mii track identity changes or selection differs");
+        }
+        Ok(*raw)
+    }
+}
+
 impl ReplayTrack {
     pub fn window(&self) -> Result<FrameWindow, String> {
         FrameWindow::new(self.frames.len() as u32).map_err(|e| e.to_string())
@@ -94,5 +112,35 @@ mod tests {
         track.frames.clear();
         assert!(track.window().is_err());
         assert_eq!(track.previous_clean_start(100, &[14]), None);
+    }
+
+    #[test]
+    fn replay_mii_unique_class_binds_different_indices_and_refuses_ambiguous_history() {
+        use training_mod_mii::replay::{ReplayMiis, HEADER_LEN, VERSION};
+        let mut bytes = vec![0; HEADER_LEN];
+        bytes[4..8].copy_from_slice(b"CFMK");
+        bytes[8..12].copy_from_slice(&VERSION.to_le_bytes());
+        bytes[0x10..0x12].copy_from_slice(&(HEADER_LEN as u16).to_le_bytes());
+        for index in 0..8 { bytes[0x468 + index * 0x260 + 0xa] = 2; }
+        bytes[0x468 + 8] = 0x48;
+        bytes[0x468 + 0xa] = 0;
+        let miis = ReplayMiis::parse_inner(&bytes).unwrap();
+        let mut brawler = track();
+        for frame in &mut brawler.frames { frame.start.fighter_kind = 0x48; }
+        let mut mario = track(); mario.entry = 0;
+        for frame in &mut mario.frames { frame.start.fighter_kind = 0; }
+        let mut session = ReplaySession {tracks: vec![mario, brawler], truncated: false};
+        let associated = session.mii_for_track(&miis, 1, 0x48).unwrap();
+        assert_eq!(associated.entry(), 0); // Native index never replaces the selected live entry.
+        assert!(session.mii_for_track(&miis, 0, 0x48).is_err());
+        bytes[0x468 + 0x260 + 8] = 0x48;
+        bytes[0x468 + 0x260 + 0xa] = 0;
+        assert!(session.mii_for_track(&ReplayMiis::parse_inner(&bytes).unwrap(), 1, 0x48).is_err());
+        let mut duplicate = session.tracks[1].clone(); duplicate.entry = 2;
+        session.tracks.push(duplicate);
+        assert!(session.mii_for_track(&miis, 1, 0x48).is_err());
+        session.tracks.pop();
+        session.tracks[1].frames[0].start.fighter_kind = 0x49;
+        assert!(session.mii_for_track(&miis, 1, 0x48).is_err());
     }
 }

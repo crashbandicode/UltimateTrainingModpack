@@ -64,6 +64,16 @@ pub unsafe fn check_character_specific_status(
     expected_status: i32,
 ) -> bool {
     let fighter_kind = app::utility::get_kind(module_accessor);
+    // In the pinned native status enum, this entire interval is Kirby's copied
+    // neutral-special domain (including charge/cancel/air phases). His own
+    // inhale, hammer, up special, stone and final statuses precede it.
+    if fighter_kind == *FIGHTER_KIND_KIRBY
+        && expected_status == *FIGHTER_STATUS_KIND_SPECIAL_N
+        && (*FIGHTER_KIRBY_STATUS_KIND_MIIFIGHTER_SPECIAL_N..*FIGHTER_KIRBY_STATUS_KIND_NUM)
+            .contains(&current_status)
+    {
+        return true;
+    }
     if let Some(statuses) = CHARACTER_SPECIFIC_STATUS_MAP.get(&(fighter_kind, expected_status)) {
         if statuses.contains(&current_status) {
             return true;

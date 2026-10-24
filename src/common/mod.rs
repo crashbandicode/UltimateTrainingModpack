@@ -89,7 +89,14 @@ pub fn is_fighter(module_accessor: &app::BattleObjectModuleAccessor) -> bool {
 
 pub fn is_operation_cpu(module_accessor: &mut app::BattleObjectModuleAccessor) -> bool {
     unsafe {
+        #[cfg(any(feature = "source-owner-probe", feature = "managed-sources"))]
+        if crate::character_roster::sources::legacy_training_owner_reserved(module_accessor) {
+            return false;
+        }
         if !is_fighter(module_accessor) {
+            return false;
+        }
+        if crate::character_roster::sources::reserved(module_accessor) {
             return false;
         }
 

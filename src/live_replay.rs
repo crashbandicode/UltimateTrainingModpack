@@ -53,6 +53,7 @@ struct BoundSave {
     index: u64,
     queued: bool,
     session: Arc<LiveSession>,
+    miis: Option<training_mod_consts::mii::replay::ReplayMiis>,
 }
 
 #[derive(Clone, Copy)]
@@ -347,6 +348,11 @@ unsafe fn copy_record(actor: usize) {
     let size: u32 = read(actor + 0x118);
     if index >= total || index > u32::MAX as u64 || payload == 0 || size < 944 + 7088
         || read::<u32>(payload + 944 + 4) != 0x4b4d4643 { return; }
+    // Copy only the already-owned immutable header; row IDs are resolved later in Training.
+    let header = std::slice::from_raw_parts((payload + 944) as *const u8,
+        training_mod_consts::mii::replay::HEADER_LEN);
+    let miis = training_mod_consts::mii::replay::ReplayMiis::parse_inner(header).map_err(|error|
+        println!("[ReplayCapture] Mii metadata unavailable: {error}")).ok();
     let mut capture = CAPTURE.lock().unwrap();
     // Reject any lifecycle transition during native's copy. Never look up a new
     // incarnation and attach it to payload copied before the transition.
@@ -357,7 +363,7 @@ unsafe fn copy_record(actor: usize) {
     if capture.pool.active_key() == Some(key) { capture.pool.finish_partial(); }
     let Some(session) = capture.pool.snapshot(key) else { return };
     while capture.saves.len() >= MAX_RETAINED_CAPTURES { capture.saves.pop_front(); }
-    capture.saves.push_back(BoundSave { actor, payload, index, queued: false, session });
+    capture.saves.push_back(BoundSave { actor, payload, index, queued: false, session, miis });
     println!("[ReplayCapture] save_bound generation={} index={}", key.generation, key.index);
 }
 
@@ -431,7 +437,7 @@ const _: () = assert!(
 );
 
 /// Read the save actor before the native function consumes status 1.
-unsafe fn observe_save(actor: usize) -> Option<(String, String, Arc<LiveSession>)> {
+unsafe fn observe_save(actor: usize) -> Option<(String, String, Arc<LiveSession>, Option<training_mod_consts::mii::replay::ReplayMiis>)> {
     if read::<u32>(actor + 0xfc) == 0 {
         // Entry queues operation8 and resets its status; an older operation's
         // status1 must never be accepted without seeing this exact queue boundary.
@@ -452,9 +458,15 @@ unsafe fn observe_save(actor: usize) -> Option<(String, String, Arc<LiveSession>
     let saved = saved?;
     if status == 1 && saved.queued && saved.payload == read::<usize>(actor + 0x110)
         && saved.index == read::<u64>(actor + 0x190)
-        && read::<u32>(actor + 0x118) >= 944 {
+        && read::<u32>(actor + 0x118) >= 944 + 7088 {
         if let (Some(id), Some(title)) = (replay_id(actor), replay_title(saved.payload)) {
-            return Some((id, title, saved.session));
+            let header=std::slice::from_raw_parts((saved.payload+944) as *const u8,
+                training_mod_consts::mii::replay::HEADER_LEN);
+            let current=training_mod_consts::mii::replay::ReplayMiis::parse_inner(header).ok();
+            let miis=if saved.miis==current {saved.miis} else {
+                println!("[ReplayCapture] committed Mii metadata changed; exact association unavailable");None
+            };
+            return Some((id, title, saved.session, miis));
         }
         println!("[ReplayCapture] committed identity/title unavailable");
     } else {
@@ -468,16 +480,16 @@ unsafe fn write_record(actor: usize) {
     const _: () = assert!(SAVE_ENTRY == 0x143e2a0);
     let committed = observe_save(actor);
     original!()(actor);
-    if let Some((id, title, session)) = committed {
-        crate::replay_store::persist_committed(id, title, session);
+    if let Some((id, title, session, miis)) = committed {
+        crate::replay_store::persist_committed(id, title, session, miis);
     }
 }
 
 #[skyline::hook(offset = 0x143e2b0, inline)]
 unsafe fn write_record_shared(ctx: &mut InlineCtx) {
     const _: () = assert!(SAVE_BODY == 0x143e2b0);
-    if let Some((id, title, session)) = observe_save(ctx.registers[0].x() as usize) {
-        crate::replay_store::persist_committed(id, title, session);
+    if let Some((id, title, session, miis)) = observe_save(ctx.registers[0].x() as usize) {
+        crate::replay_store::persist_committed(id, title, session, miis);
     }
 }
 

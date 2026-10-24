@@ -2,7 +2,7 @@ use training_mod_tui::{SliderState, StatefulSlider};
 
 fn initialize_slider(state: SliderState) -> StatefulSlider {
     StatefulSlider {
-        state: state,
+        state,
         lower: 0,
         upper: 150,
         min: 0,
@@ -261,19 +261,19 @@ fn stateful_slider_switch_hover() {
 #[test]
 fn stateful_slider_is_handle_selected() {
     let mut s = initialize_slider(SliderState::LowerHover);
-    assert_eq!(s.is_handle_selected(), false);
+    assert!(!s.is_handle_selected());
 
     s.state = SliderState::LowerSelected;
-    assert_eq!(s.is_handle_selected(), true);
+    assert!(s.is_handle_selected());
 
     s.state = SliderState::UpperHover;
-    assert_eq!(s.is_handle_selected(), false);
+    assert!(!s.is_handle_selected());
 
     s.state = SliderState::UpperSelected;
-    assert_eq!(s.is_handle_selected(), true);
+    assert!(s.is_handle_selected());
 
     s.state = SliderState::None;
-    assert_eq!(s.is_handle_selected(), false);
+    assert!(!s.is_handle_selected());
 }
 
 #[test]

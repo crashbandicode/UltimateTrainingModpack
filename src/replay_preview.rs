@@ -6,7 +6,7 @@ use training_mod_macros::{MacroRecording, StartState};
 
 use crate::training::{input_record, save_states};
 
-enum Request { Play { recording: MacroRecording, revision: u64 }, Stop }
+enum Request { Play { recording: Box<MacroRecording>, revision: u64 }, Stop }
 #[derive(Clone, Copy, PartialEq)]
 enum Phase { Starting, Playing, Complete, Stopping, Failed }
 struct Session {
@@ -21,7 +21,7 @@ static SESSION: Mutex<Option<Session>> = Mutex::new(None);
 static STATUS: AtomicU8 = AtomicU8::new(0);
 
 pub fn request_play(recording: MacroRecording, revision: u64) {
-    *REQUEST.lock().unwrap() = Some(Request::Play { recording, revision });
+    *REQUEST.lock().unwrap() = Some(Request::Play { recording: Box::new(recording), revision });
     STATUS.store(1, Ordering::Relaxed);
 }
 
@@ -149,7 +149,7 @@ pub unsafe fn before_frame(module: &mut BattleObjectModuleAccessor) {
             }
             input_record::stop_playback();
             *SESSION.lock().unwrap() = Some(Session {
-                recording, revision, phase: Phase::Starting, waits: 0, cpu: None,
+                recording: *recording, revision, phase: Phase::Starting, waits: 0, cpu: None,
             });
             if let Err(error) = save_states::request_preview_restore() { fail(error); }
             else { println!("[ClipPreview] restore_start revision={}", revision); }

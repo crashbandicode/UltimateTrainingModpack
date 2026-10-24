@@ -1,4 +1,6 @@
 mod mips;
+mod menu_pictures;
+mod stage_panel;
 mod validation;
 use nx_layout_toolbox::{
     bflyt::*,
@@ -136,6 +138,8 @@ fn run() -> Result<()> {
             },
         )?;
     }
+    let stage_assets = stage_panel::import_textures(&mut bntx, Path::new(&a[3]))?;
+    let item_assets = menu_pictures::import_textures(&mut bntx, Path::new(&a[3]))?;
     let raw = write_bntx(&bntx)?;
     let repaired = mips::repair(&raw, &old_bntx)?;
     let after = read_bntx(&repaired)?;
@@ -156,6 +160,18 @@ fn run() -> Result<()> {
         }
     }
     arc.files[bi].data = repaired;
+    let mut menu_picture_reports = vec![];
+    for entry in &mut arc.files {
+        if !entry.data.starts_with(b"FLYT") { continue; }
+        let mut button = read_bflyt(&entry.data)?;
+        if button.pane_exists("MenuButton") && button.pane_exists("Icon")
+            && button.pane_exists("character_item") {
+            let report = menu_pictures::append(&mut button, &item_assets, &after)?;
+            entry.data = write_bflyt(&button)?;
+            menu_picture_reports.push(json!({"path":entry.name,"report":report}));
+        }
+    }
+    if menu_picture_reports.len() != 1 { return Err("expected one shared menu button layout".into()); }
     let li = arc
         .position("blyt/info_training.bflyt")
         .or_else(|| arc.position("blyt/trmod_waiting.bflyt"))
@@ -163,7 +179,7 @@ fn run() -> Result<()> {
     let mut layout = read_bflyt(&arc.files[li].data)?;
     let original_layout = layout.clone();
     let old_texture_refs = layout.textures.len();
-    if layout.pane_exists("roster_grid") {
+    if layout.pane_exists("roster_grid") || layout.pane_exists("stage_grid") {
         return Err("already built".into());
     }
     let template = layout
@@ -196,7 +212,7 @@ fn run() -> Result<()> {
     let old_materials = layout.materials.len();
     let grid: Vec<Vec<u32>> = serde_json::from_str(include_str!("grid.json"))?;
     assert_eq!(grid.len(), 87);
-    assert_eq!(grid.iter().map(Vec::len).sum::<usize>(), 89);
+    assert_eq!(grid.iter().map(Vec::len).sum::<usize>(), 90);
     let mut panel = base("roster_grid", 0., 0., 1920., 1080.);
     panel.set_visible(false);
     // Opaque panel and cursor precede portraits and badge text in native draw order.
@@ -228,6 +244,11 @@ fn run() -> Result<()> {
     layout.materials.push(cm.clone());
     cm.name = "roster_background_mat".into();
     let bg_material = layout.materials.len() as u16;
+    layout.materials.push(cm.clone());
+    cm.name = "roster_all_mat".into();
+    cm.white_color = color(255, 255, 255, 255);
+    cm.black_color = color(0, 0, 0, 0);
+    let all_material = layout.materials.len() as u16;
     layout.materials.push(cm);
     panel.children[0].picture.as_mut().unwrap().material_index = bg_material;
     let mut cursor = picture(
@@ -255,13 +276,13 @@ fn run() -> Result<()> {
             material.texture_maps[0].index = texture as i16;
             let mi = layout.materials.len() as u16;
             layout.materials.push(material.clone());
-            let unsupported = [0x4b, 0x48, 0x49, 0x4a].contains(&kind);
+            let unsupported = [0x48, 0x49, 0x4a].contains(&kind);
             let mut p = picture(
                 &format!("roster_icon_{kind:02X}"),
                 x,
                 y,
-                96.,
-                96.,
+                80.,
+                80.,
                 mi,
                 if unsupported {
                     color(110, 110, 110, 150)
@@ -276,8 +297,8 @@ fn run() -> Result<()> {
             &template,
             &format!("roster_p_{cell:02}"),
             "",
-            x - 30.,
-            y - 35.,
+            x - 36.,
+            y + 35.,
             52.,
             28.,
             color(255, 85, 85, 255),
@@ -286,19 +307,53 @@ fn run() -> Result<()> {
             &template,
             &format!("roster_c_{cell:02}"),
             "",
-            x + 30.,
-            y - 35.,
+            x + 36.,
+            y + 35.,
             52.,
             28.,
             color(85, 165, 255, 255),
         ));
+        for (prefix, side, tint) in [
+            ("p", -56., color(255, 85, 85, 255)),
+            ("c", 56., color(85, 165, 255, 255)),
+        ] {
+            let mut stripe = picture(
+                &format!("roster_all_{prefix}_{cell:02}"),
+                x + side,
+                y,
+                4.,
+                86.,
+                all_material,
+                tint,
+            );
+            stripe.picture.as_mut().unwrap().tex_coords.clear();
+            stripe.set_visible(false);
+            panel.children.push(stripe);
+        }
+        if kinds == &[0x4b] {
+            for (prefix, side, tint) in [
+                ("p", -36., color(255, 85, 85, 255)),
+                ("c", 36., color(85, 165, 255, 255)),
+            ] {
+                panel.children.push(text(
+                    &template,
+                    &format!("roster_solo_{prefix}"),
+                    "",
+                    x + side,
+                    y - 35.,
+                    40.,
+                    28.,
+                    tint,
+                ));
+            }
+        }
     }
     for (name, s, x, y, w, size) in [
         ("roster_title", "Character Cycle", 0., 465., 1500., 44.),
         ("roster_name", "Mario", 0., -390., 1500., 36.),
         (
             "roster_help",
-            "A: Add   X: Form   Y: Player/CPU   B: Back",
+            "A Add   R Remove   X Form   Y Solo Popo   ZR Player/CPU   ZL All   B Back",
             0.,
             -465.,
             1700.,
@@ -323,6 +378,8 @@ fn run() -> Result<()> {
         .ok_or("TrModMenu")?
         .children
         .push(panel);
+    let roster_layout = layout.clone();
+    let stage_report = stage_panel::append(&mut layout, &template, &stage_assets)?;
     let bytes = write_bflyt(&layout)?;
     let parsed = read_bflyt(&bytes)?;
     assert_eq!(write_bflyt(&parsed)?, bytes);
@@ -359,14 +416,14 @@ fn run() -> Result<()> {
             .iter()
             .filter(|p| p.kind == PaneKind::Picture)
             .count(),
-        91
+        266
     );
     assert_eq!(
         p.children
             .iter()
             .filter(|p| p.kind == PaneKind::Text)
             .count(),
-        178
+        180
     );
     let unique: std::collections::BTreeSet<_> = p.children.iter().map(|p| &p.name).collect();
     assert_eq!(unique.len(), p.children.len());
@@ -391,12 +448,26 @@ fn run() -> Result<()> {
             }
         }
     }
+    stage_panel::validate(&parsed, &after, &stage_assets)?;
+    let mut without_stage = parsed.clone();
+    without_stage
+        .find_pane_mut("TrModMenu")
+        .unwrap()
+        .children
+        .retain(|p| p.name != "stage_grid");
+    without_stage
+        .materials
+        .truncate(roster_layout.materials.len());
+    without_stage
+        .textures
+        .truncate(roster_layout.textures.len());
+    assert_eq!(write_bflyt(&without_stage)?, write_bflyt(&roster_layout)?);
     let mut restored = parsed.clone();
     restored
         .find_pane_mut("TrModMenu")
         .unwrap()
         .children
-        .retain(|p| p.name != "roster_grid");
+        .retain(|p| p.name != "roster_grid" && p.name != "stage_grid");
     restored.materials.truncate(old_materials);
     restored.textures.truncate(old_texture_refs);
     assert_eq!(write_bflyt(&restored)?, write_bflyt(&original_layout)?);
@@ -411,9 +482,17 @@ fn run() -> Result<()> {
     }
     fs::write(&a[2], output)?;
     fs::write(
+        Path::new(&a[4]).with_extension("menu-pictures.json"),
+        serde_json::to_vec_pretty(&menu_picture_reports)?,
+    )?;
+    fs::write(
+        Path::new(&a[4]).with_extension("stage.json"),
+        serde_json::to_vec_pretty(&stage_report)?,
+    )?;
+    fs::write(
         &a[4],
         serde_json::to_vec_pretty(
-            &json!({"parent":"TrModMenu","panel":"roster_grid","size":[1920,1080],"portrait":[96,96],"cursor":[120,102],"children":count,"icons":89,"badge_textboxes":174,"textboxes":178,"old_textures_preserved":before.textures.len(),"new_textures":after.textures.len(),"old_materials_preserved":old_materials,"coordinates":coordinates}),
+            &json!({"parent":"TrModMenu","panel":"roster_grid","size":[1920,1080],"portrait":[80,80],"cursor":[120,102],"children":count,"icons":90,"badge_textboxes":174,"solo_textboxes":2,"all_stripes":174,"textboxes":180,"old_textures_preserved":before.textures.len(),"new_textures":after.textures.len(),"old_materials_preserved":old_materials,"coordinates":coordinates}),
         )?,
     )?;
     Ok(())

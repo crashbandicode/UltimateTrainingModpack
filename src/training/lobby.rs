@@ -123,6 +123,8 @@ pub fn update() {
                 unsafe { super::input_record::stop_playback(); }
             }
             crate::character_roster::scene_changed(mode);
+            #[cfg(feature = "practice-stage-request-alpha")]
+            crate::practice_stage_request::depart();
             // A scene switch invalidates the previous layout even if the next
             // waiting room happens to use the same allocation address.
             UI_READY.store(false, Ordering::Release);
@@ -166,6 +168,8 @@ pub unsafe fn observe_fighter(accessor: &mut smash::app::BattleObjectModuleAcces
     }
     let bit = 1 << entry;
     if SEEN_ENTRIES.fetch_or(bit, Ordering::Relaxed) & bit == 0 {
+        #[cfg(feature = "lobby-stage-probe")]
+        crate::lobby_stage_probe::observe_loaded();
         trace!(
             "[LobbyPractice] fighter entry={} cpu={} ready_go={}",
             entry,

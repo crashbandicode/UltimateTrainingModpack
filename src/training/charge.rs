@@ -17,6 +17,10 @@ fn copy_setup(
     bool_2: bool,
 );
 
+pub unsafe fn setup_copy_ability(module_accessor: *mut app::BattleObjectModuleAccessor, slot: i32, kind: i32) {
+    copy_setup(module_accessor, slot, kind, true, false);
+}
+
 #[derive(Serialize, Deserialize, Default, Copy, Clone, Debug)]
 pub struct RobinCharges {
     pub thunder_kind: i32,
@@ -496,6 +500,14 @@ pub unsafe fn handle_charge(
     }
     // Kirby Copy Abilities
     else if fighter_kind == FIGHTER_KIND_KIRBY {
+        if cfg!(feature = "managed-sources") {
+            if charge.has_charge == Some(true) {
+                if let Some(kind) = charge.int_z {
+                    crate::kirby_hats::restore(module_accessor, kind as u32);
+                }
+            }
+            return;
+        }
         if let Some(_has_copy_ability) = charge.has_charge {
             let cpu_module_accessor = &mut *try_get_module_accessor(FighterId::CPU)
                 .expect("Could not get CPU module accessor for Kirby copy ability charge setup");
@@ -513,7 +525,7 @@ pub unsafe fn handle_charge(
             if opponent_matches_fighter == Some(true) {
                 copy_setup(
                     module_accessor,
-                    1,
+                    WorkModule::get_int(opponent_module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID),
                     charge
                         .int_z
                         .expect("charge.int_z is None in handle_charge::Kirby"),

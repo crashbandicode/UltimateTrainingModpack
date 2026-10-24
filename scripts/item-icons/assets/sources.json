@@ -1,0 +1,575 @@
+{
+  "description": "Actual game captures from existing item acceptance sessions; no generated artwork. Original game art belongs to its respective owners.",
+  "icons": [
+    {
+      "index": 0,
+      "label": "Grenade Egg",
+      "filename": "icon-00.png",
+      "sha256": "9a9d967216dc1684ac35ee6039aabc13c1c1042099360bb676298511e125e59e",
+      "source_capture": "plan5-matrix-01/item-00/held.png",
+      "source_sha256": "d92da7639e137d1536bb7afd02eeafae9fd03f576f34dd940d2eebbdd7092980",
+      "crop": [
+        352,
+        399,
+        432,
+        479
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 1,
+      "label": "Mechakoopa",
+      "filename": "icon-01.png",
+      "sha256": "c734ff0f7fe752b27bd340600eca83b8da745af811ba2c60ee9f86215d1db9e9",
+      "source_capture": "plan5-matrix-01/item-01/held.png",
+      "source_sha256": "12aaf038d5c4741011466ac59f9042083b897dd5870beecb344b3de24ab1b653",
+      "crop": [
+        309,
+        340,
+        432,
+        493
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 2,
+      "label": "Smile turnip",
+      "filename": "icon-02.png",
+      "sha256": "96b992ef7f5ccf041706f650ab43a252813e65178d6aa6d695cdbc892878a96e",
+      "source_capture": "plan5-matrix-02/item-22/held.png",
+      "source_sha256": "dbd04c03021f665fb67808e9dd853965025cc3331d4e681574142555fc1bef51",
+      "crop": [
+        399,
+        383,
+        550,
+        548
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 3,
+      "label": "Winky turnip",
+      "filename": "icon-03.png",
+      "sha256": "b941a3fd19a875b629b456e25b2f3b0d08d8dcf48dc21b7ef7c793c73778627d",
+      "source_capture": "plan5-matrix-01/item-03/held.png",
+      "source_sha256": "c5a8be98f71ce05993fd07b253d7e9e252d16bc322dca97099fc17fe42991930",
+      "crop": [
+        329,
+        360,
+        452,
+        483
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 4,
+      "label": "Dot-Eyes turnip",
+      "filename": "icon-04.png",
+      "sha256": "cf25f2503c02211217f86135ca8371e7d9edaeee94cb2d9d028d0ee5df711de3",
+      "source_capture": "plan5-matrix-02/item-24/held.png",
+      "source_sha256": "a02d728b6c00b4e8b48d690ed3216d36719c696ce6881a8002de0e09c83c6d20",
+      "crop": [
+        399,
+        383,
+        550,
+        548
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 5,
+      "label": "Stitch-Face turnip",
+      "filename": "icon-05.png",
+      "sha256": "3057bac05d41217f90c6d06788b1ba53ffb0944a667da7975ad4aa943d1e78c5",
+      "source_capture": "plan5-matrix-02/item-25/held.png",
+      "source_sha256": "d9452618ca4ee5bc598294bb2e29ad2f0822ff3acac5f2e592d4b5e0b78e4c9e",
+      "crop": [
+        399,
+        383,
+        550,
+        548
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 6,
+      "label": "Mr. Saturn",
+      "filename": "icon-06.png",
+      "sha256": "89c691808db25c0ffdd69c511ec67dcec60a50d66a1ea03129e41039e589cfe6",
+      "source_capture": "plan5-matrix-01/item-06/held.png",
+      "source_sha256": "9ca6333c30b9ad1dc2df2ae616c360aadc85815e4ce6772285ee26698bc92364",
+      "crop": [
+        310,
+        386,
+        427,
+        503
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 7,
+      "label": "Bob-omb",
+      "filename": "icon-07.png",
+      "sha256": "6b9d2160e68ed3e0a19c53308456bab59d84ce319bd9752c53f55d5a567450b7",
+      "source_capture": "plan5-matrix-01/item-07/held.png",
+      "source_sha256": "24bdbbe6378937e33763408bb0eeae8bfb1036fe2343c6f81d3b5a9b616c0bac",
+      "crop": [
+        328,
+        368,
+        437,
+        477
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 8,
+      "label": "Banana Peel",
+      "filename": "icon-08.png",
+      "sha256": "c1fd9b990715d1517154d7571ad63cf87ddc124a5076e411b7b3e4e8b1f2ab84",
+      "source_capture": "plan5-matrix-01/item-08/held.png",
+      "source_sha256": "e47fb54805d22e24fb7c2e4788b573a2d4a451468816428fb7d93e6972264329",
+      "crop": [
+        349,
+        398,
+        454,
+        468
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 9,
+      "label": "Peanut",
+      "filename": "icon-09.png",
+      "sha256": "7857af340383980410d0a49a3ef4c49c932143ffdc04fde1320c8349d8a7d376",
+      "source_capture": "plan5-matrix-01/item-09/held.png",
+      "source_sha256": "193454052975400a5e2c33773973da11b04d98225d0cbe8d9ccc353f3a54944e",
+      "crop": [
+        355,
+        382,
+        439,
+        466
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 10,
+      "label": "Crown",
+      "filename": "icon-10.png",
+      "sha256": "c449bad400cc2c5d61fac62ac3f0de283103bb60a79ac08c632991258dc05963",
+      "source_capture": "plan5-matrix-01/item-10/held.png",
+      "source_sha256": "df86fd998de40b56f78eafb1961bbf2bc3408ca4cd9f61d38aaa4b7f23250c81",
+      "crop": [
+        353,
+        376,
+        441,
+        484
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 11,
+      "label": "Remote Bomb",
+      "filename": "icon-11.png",
+      "sha256": "c1497cbcad3d7c717f4f5fe2d717e3c8011d16e6c196ded80ae699c723a7940a",
+      "source_capture": "plan5-matrix-01/item-11/held.png",
+      "source_sha256": "68f33446f7cd0aa0726923c4c6b6adcc742f85a74546c6ec65ef7d730ba27377",
+      "crop": [
+        354,
+        399,
+        431,
+        476
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 12,
+      "label": "Arrow",
+      "filename": "icon-12.png",
+      "sha256": "070ea08a17456118e6535958c0ea52a819252dba5615e8ff9ff53a297bbe03b4",
+      "source_capture": "plan5-matrix-01/item-12/held.png",
+      "source_sha256": "4f71a89e663aef691181d8adfdd2e8bd1c517a96eda48bb8d73a950842658354",
+      "crop": [
+        247,
+        331,
+        312,
+        396
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 13,
+      "label": "Metal Blade",
+      "filename": "icon-13.png",
+      "sha256": "a16d884f4ff25121293b9211e50bcddfd0c9b09aa9419a8b53124274989f7e4b",
+      "source_capture": "plan5-matrix-01/item-13/held.png",
+      "source_sha256": "575a508e5687cc081ac98308996c51499fa9efeff5056b4b8989c25f0f2f2a09",
+      "crop": [
+        360,
+        379,
+        448,
+        478
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 14,
+      "label": "Cherry",
+      "filename": "icon-14.png",
+      "sha256": "c0b0e569ab6e9bdfb96fb2408658b96f1db7988c43e12aedc5f18e1123df33ed",
+      "source_capture": "plan5-matrix-01/item-14/held.png",
+      "source_sha256": "ae1c81c58a2fd4289bccc8cf65b00c870be6e82b613f475b17636c180637f6fd",
+      "crop": [
+        355,
+        368,
+        458,
+        471
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 15,
+      "label": "Strawberry",
+      "filename": "icon-15.png",
+      "sha256": "3d590b73e346bd20a934f18dd06ce16c65e939d886098daad2de428484dc2ea4",
+      "source_capture": "plan5-matrix-01/item-15/held.png",
+      "source_sha256": "db11fc03bb936d96046e2d5c5b2b937a057188b23276ec81d773b61f44001035",
+      "crop": [
+        365,
+        363,
+        465,
+        463
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 16,
+      "label": "Orange",
+      "filename": "icon-16.png",
+      "sha256": "513361f70dcc080955af30d9eb0e6b83d8a63464a6773e03b897c644334a729d",
+      "source_capture": "plan5-matrix-01/item-16/held.png",
+      "source_sha256": "6b9fe578aa8a9a5982b7f60d64c35a721c0c437a3f20fd35f344376cc89028b8",
+      "crop": [
+        267,
+        362,
+        369,
+        464
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 17,
+      "label": "Apple",
+      "filename": "icon-17.png",
+      "sha256": "3b8655519b0b5da683fe14ca8a385242540191c83a35ca161568dadae226e729",
+      "source_capture": "plan5-matrix-01/item-17/held.png",
+      "source_sha256": "3d2c3b5acab973850592bcaa3102ac45c561b7e39c8ee774d62479f88c16b476",
+      "crop": [
+        358,
+        385,
+        464,
+        491
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 18,
+      "label": "Melon",
+      "filename": "icon-18.png",
+      "sha256": "dfb6f9463ff353f7d1163424470664bd5c5f7c1d9b509cdd10a6715f19d51b23",
+      "source_capture": "plan5-matrix-02/item-18/held.png",
+      "source_sha256": "cbd1d1d6a40933ca266ae90b02ea019694f9780ef5f6808ab6c1523201b72081",
+      "crop": [
+        381,
+        370,
+        490,
+        501
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 19,
+      "label": "Galaxian",
+      "filename": "icon-19.png",
+      "sha256": "584d503d6a182ee8666ae61e42deb2e6da7a771d40dc74dfdd7751ac0e18d90c",
+      "source_capture": "plan5-matrix-02/item-19/held.png",
+      "source_sha256": "a9b4ae2925afbc7e198acdc69b9ce827366c09783ae4273aff3fea171933248e",
+      "crop": [
+        380,
+        375,
+        485,
+        480
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 20,
+      "label": "Bell",
+      "filename": "icon-20.png",
+      "sha256": "ba3a9912ead1b03c8cba8d0cf103206bf681cbb7346e9945363c0238bc5a8a81",
+      "source_capture": "plan5-matrix-02/item-20/held.png",
+      "source_sha256": "6d235b45aaa5d71bfb46520a0e5e408faeabbbd77c7c2b5d9bb895974b953c46",
+      "crop": [
+        378,
+        362,
+        487,
+        485
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 21,
+      "label": "Key",
+      "filename": "icon-21.png",
+      "sha256": "85fc423f0ccd3883e8aebf13a082819c049e726f6724636dba6af4b33db9885b",
+      "source_capture": "plan5-matrix-02/item-21/held.png",
+      "source_sha256": "2f872bbf2a3e4901789aaf1b5649ce175b3c0c764723239328454b3f4aa88b2c",
+      "crop": [
+        393,
+        377,
+        484,
+        501
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 22,
+      "label": "Smile turnip",
+      "filename": "icon-22.png",
+      "sha256": "96b992ef7f5ccf041706f650ab43a252813e65178d6aa6d695cdbc892878a96e",
+      "source_capture": "plan5-matrix-02/item-22/held.png",
+      "source_sha256": "dbd04c03021f665fb67808e9dd853965025cc3331d4e681574142555fc1bef51",
+      "crop": [
+        399,
+        383,
+        550,
+        548
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 23,
+      "label": "Winky turnip",
+      "filename": "icon-23.png",
+      "sha256": "b941a3fd19a875b629b456e25b2f3b0d08d8dcf48dc21b7ef7c793c73778627d",
+      "source_capture": "plan5-matrix-01/item-03/held.png",
+      "source_sha256": "c5a8be98f71ce05993fd07b253d7e9e252d16bc322dca97099fc17fe42991930",
+      "crop": [
+        329,
+        360,
+        452,
+        483
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 24,
+      "label": "Dot-Eyes turnip",
+      "filename": "icon-24.png",
+      "sha256": "cf25f2503c02211217f86135ca8371e7d9edaeee94cb2d9d028d0ee5df711de3",
+      "source_capture": "plan5-matrix-02/item-24/held.png",
+      "source_sha256": "a02d728b6c00b4e8b48d690ed3216d36719c696ce6881a8002de0e09c83c6d20",
+      "crop": [
+        399,
+        383,
+        550,
+        548
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 25,
+      "label": "Stitch-Face turnip",
+      "filename": "icon-25.png",
+      "sha256": "3057bac05d41217f90c6d06788b1ba53ffb0944a667da7975ad4aa943d1e78c5",
+      "source_capture": "plan5-matrix-02/item-25/held.png",
+      "source_sha256": "d9452618ca4ee5bc598294bb2e29ad2f0822ff3acac5f2e592d4b5e0b78e4c9e",
+      "crop": [
+        399,
+        383,
+        550,
+        548
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 26,
+      "label": "Mr. Saturn",
+      "filename": "icon-26.png",
+      "sha256": "89c691808db25c0ffdd69c511ec67dcec60a50d66a1ea03129e41039e589cfe6",
+      "source_capture": "plan5-matrix-01/item-06/held.png",
+      "source_sha256": "9ca6333c30b9ad1dc2df2ae616c360aadc85815e4ce6772285ee26698bc92364",
+      "crop": [
+        310,
+        386,
+        427,
+        503
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 27,
+      "label": "Bob-omb",
+      "filename": "icon-27.png",
+      "sha256": "6b9d2160e68ed3e0a19c53308456bab59d84ce319bd9752c53f55d5a567450b7",
+      "source_capture": "plan5-matrix-01/item-07/held.png",
+      "source_sha256": "24bdbbe6378937e33763408bb0eeae8bfb1036fe2343c6f81d3b5a9b616c0bac",
+      "crop": [
+        328,
+        368,
+        437,
+        477
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 28,
+      "label": "Holy Water",
+      "filename": "icon-28.png",
+      "sha256": "b4c4ede7f39923d720f23071c2233e0d2443fba6678b3ceca39335506bedbbf8",
+      "source_capture": "plan5-matrix-02/item-28/held.png",
+      "source_sha256": "cd2f47f6cbdb34e78c05e27629d66c46d82950c2ae7d11e607db2a4c05bcdd6b",
+      "crop": [
+        413,
+        387,
+        476,
+        465
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 29,
+      "label": "Gyro",
+      "filename": "icon-29.png",
+      "sha256": "6deceddcf9a7708d7972b8fa3eb5d296398de268d8c203f04f465a97c2cebe2f",
+      "source_capture": "plan5-matrix-02/item-29/held.png",
+      "source_sha256": "fe8f87aa7fffbc52de47a66053eb3ed1674b76ade3339a22a00129037f8fecc5",
+      "crop": [
+        409,
+        373,
+        543,
+        470
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 30,
+      "label": "Tome",
+      "filename": "icon-30.png",
+      "sha256": "e95ccde4017cae71edcd1fa69566447642f146cea4bc7e9c1cfa3fb41fad4bfd",
+      "source_capture": "plan5-matrix-02/item-30/held.png",
+      "source_sha256": "a7834f4c2a7048bb33f15597d8acbf7926b4a334661f3ddbbf15c38df15dbb64",
+      "crop": [
+        416,
+        387,
+        469,
+        461
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 31,
+      "label": "Levin Sword",
+      "filename": "icon-31.png",
+      "sha256": "9ff0ee2db63681cd9e279330c3008249a100bc0b60ed35e7ee0f2fa6c74c4aa5",
+      "source_capture": "plan5-matrix-02/item-31/held.png",
+      "source_sha256": "f0d13eafbba55ec4ebc80e3cc76c3f04c033e8a10ed5a6ece524988959d2601b",
+      "crop": [
+        367,
+        596,
+        414,
+        663
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 32,
+      "label": "Burst Grenade",
+      "filename": "icon-32.png",
+      "sha256": "df28ee40a97e62d98c64596b4d53bd7ee7a87a9997a63b301baf3d0ae0a192a0",
+      "source_capture": "plan5-managed-items-06/item-32/throw/012.png",
+      "source_sha256": "76ef22e0a246b76f9fadcc0e0a6733e9b8e72f146d8b6fca2c5127befe06126f",
+      "crop": [
+        503,
+        111,
+        524,
+        132
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 33,
+      "label": "Holy Water",
+      "filename": "icon-33.png",
+      "sha256": "6244bd7401e9060ef03543f37de4af1986d05c41c9454afcfcef17070cf1bbd4",
+      "source_capture": "plan5-matrix-02/item-33/held.png",
+      "source_sha256": "58caf728a9db882ab9b0e0fde707193230a0ade8b8a31b3724fcc823c974a0a2",
+      "crop": [
+        413,
+        387,
+        476,
+        465
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 34,
+      "label": "Hand Grenade",
+      "filename": "icon-34.png",
+      "sha256": "59b38e8cf1eeedacbe536ac19517319581953f323f654261fd430ff3c300c9d7",
+      "source_capture": "plan5-matrix-02/item-34/held.png",
+      "source_sha256": "f9e57161528ff7b6d2d8c722dd96970634c284fcd04e0e763d4a94710057b5fe",
+      "crop": [
+        419,
+        391,
+        476,
+        455
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 35,
+      "label": "Toon Link Bomb",
+      "filename": "icon-35.png",
+      "sha256": "5c70d7f22226e8957c5d40245620f1fd38e4d52c6e50c1c09d68a96abe7818b5",
+      "source_capture": "plan5-matrix-02/item-35/held.png",
+      "source_sha256": "86fcd9e3930b6a24eedbf08593dd5ea4684baeb08606ac33345e34012e06ddfb",
+      "crop": [
+        413,
+        301,
+        486,
+        460
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 36,
+      "label": "Wood Chip",
+      "filename": "icon-36.png",
+      "sha256": "fd56934802a0b4f4971e975188e57848cba753e0d7b77477614f283668b11f23",
+      "source_capture": "plan5-matrix-02/item-36/held.png",
+      "source_sha256": "4ede8dba24d236eb9e05e92a736a45cb7fbde387b94f59983ec5b7e2ebdf1ea6",
+      "crop": [
+        407,
+        336,
+        464,
+        458
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    },
+    {
+      "index": 37,
+      "label": "Young Link Bomb",
+      "filename": "icon-37.png",
+      "sha256": "c6a4f476f145c111728c93bf364cfeb320062dc8f73512236baafb2858a0d7d1",
+      "source_capture": "plan5-matrix-02/item-37/held.png",
+      "source_sha256": "8e898212cac44c02481e3871809eb672c1388135469d425859b2a6c5e2a6a94f",
+      "crop": [
+        415,
+        378,
+        494,
+        470
+      ],
+      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+    }
+  ]
+}

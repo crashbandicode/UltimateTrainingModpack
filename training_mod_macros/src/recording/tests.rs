@@ -117,7 +117,7 @@ fn rejects_non_finite_floats_in_every_field() {
 
 #[test]
 fn rejects_unsupported_schema_version_and_missing_fighter() {
-    for version in [0, 2, u32::MAX] {
+    for version in [0, 3, u32::MAX] {
         let mut rec = recording("Version");
         rec.schema_version = version;
         let err = rec.validate().unwrap_err();
@@ -187,4 +187,40 @@ fn placement_is_relative_to_the_anchor_and_never_compounds() {
     assert_eq!(first, second);
     // A different restored anchor shifts the result by exactly the same delta.
     assert_eq!(placement.apply((0.0, 0.0)), (-10.0, 25.0));
+}
+
+#[test]
+fn exact_mii_schema_preserves_payload_and_rejects_identity_loss() {
+    let ordinary = recording("ordinary");
+    let encoded = serde_json::to_value(&ordinary).unwrap();
+    assert_eq!(encoded["schema_version"], 1);
+    assert!(encoded.get("mii").is_none());
+    assert_eq!(ordinary.playback_target().unwrap().kind(), 8);
+
+    let mut legacy = MacroRecording::new("legacy Mii", "13.0.5", StartState::neutral(0x48, 0, 1.0), frames(2)).unwrap();
+    legacy.validate().unwrap();
+    assert!(matches!(legacy.playback_target(), Err(MacroError::InvalidMii(_))));
+    let configuration = crate::test_util::exact_mii();
+    legacy.set_mii(configuration).unwrap();
+    let value = serde_json::to_value(&legacy).unwrap();
+    assert_eq!(value["schema_version"], 2);
+    let restored: MacroRecording = serde_json::from_value(value.clone()).unwrap();
+    restored.validate().unwrap();
+    assert_eq!(restored, legacy);
+    assert_eq!(restored.playback_target().unwrap().configuration(), Some(configuration));
+    for (version, payload, kind) in [(1, Some(configuration), 0x48), (2, None, 0x48), (2, Some(configuration), 0x49)] {
+        let mut invalid = restored.clone();
+        invalid.schema_version = version; invalid.mii = payload; invalid.start.fighter_kind = kind;
+        assert!(matches!(invalid.validate(), Err(MacroError::InvalidMii(_))));
+    }
+    let mut invalid = value.clone();
+    invalid["mii"]["charinfo"].as_array_mut().unwrap().pop();
+    assert!(serde_json::from_value::<MacroRecording>(invalid).is_err());
+    let mut invalid = value.clone();
+    invalid["mii"]["charinfo"][87] = serde_json::json!(8);
+    assert!(serde_json::from_value::<MacroRecording>(invalid).is_err());
+    let mut invalid = value;
+    let tag = invalid["mii"]["tags"][0].as_u64().unwrap();
+    invalid["mii"]["tags"][0] = serde_json::json!(tag ^ 1);
+    assert!(serde_json::from_value::<MacroRecording>(invalid).is_err());
 }

@@ -61,14 +61,11 @@ impl<'a> InputControl for SubMenu<'a> {
     }
     fn on_x(&mut self) {}
     fn on_y(&mut self) {
-        match self.submenu_type {
-            SubMenuType::ToggleMultiple => {
-                let toggle = self.selected_toggle();
-                if toggle.max > 1 {
-                    toggle.value = 0;
-                }
+        if let SubMenuType::ToggleMultiple = self.submenu_type {
+            let toggle = self.selected_toggle();
+            if toggle.max > 1 {
+                toggle.value = 0;
             }
-            _ => {}
         }
     }
     fn on_up(&mut self) {
@@ -177,6 +174,11 @@ impl<'a> SubMenu<'a> {
     pub fn update_from_vec(&mut self, values: Vec<u8>) {
         match self.submenu_type {
             SubMenuType::ToggleSingle | SubMenuType::ToggleMultiple | SubMenuType::Ordered => {
+                // Old catalog arrays are shorter. Restore must clear appended
+                // choices rather than retaining a previous session's suffix.
+                for toggle in self.toggles.iter_mut().flatten() {
+                    toggle.value = 0;
+                }
                 for (idx, value) in values.iter().enumerate() {
                     if let Some(toggle) = self.toggles.get_by_idx_mut(idx) {
                         toggle.value = *value;

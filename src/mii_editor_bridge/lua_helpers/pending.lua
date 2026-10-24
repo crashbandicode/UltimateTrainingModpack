@@ -1,0 +1,3 @@
+local pending, main, a, b, c, d = ...
+pending[1], pending[2], pending[3], pending[4] = a, b, c, d
+main:update_text()

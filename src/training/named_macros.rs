@@ -27,6 +27,60 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 // export keyboard is open. Only session cleanup invalidates that naming draft.
 static SESSION_GENERATION: AtomicU64 = AtomicU64::new(0);
 static NAME_SERIAL: AtomicU64 = AtomicU64::new(1);
+// Kept through the requested native install's ordinary session cleanup. True
+// scene/destruction retirement remains the existing CPU generation boundary.
+static NAMED_SELECTION_REVISION: AtomicU64 = AtomicU64::new(1);
+static NAMED_REFUSAL_SHOWN: AtomicU64 = AtomicU64::new(0);
+static NAMED_SOURCE_ACTIVE: AtomicBool = AtomicBool::new(false);
+pub(crate) fn selection_revision() -> u64 { NAMED_SELECTION_REVISION.load(Ordering::Acquire) }
+pub(crate) fn cancel_character_selection() {
+    NAMED_SELECTION_REVISION.fetch_add(1, Ordering::AcqRel);
+    NAMED_REFUSAL_SHOWN.store(0, Ordering::Release);
+    lock_write(&UI).invalidate_character_request();
+}
+fn commit_loaded(id:String, recording:MacroRecording, current:Option<i32>) -> Result<Effect,training_mod_macros::MacroError> {
+    NAMED_SELECTION_REVISION.fetch_add(1, Ordering::AcqRel);
+    NAMED_REFUSAL_SHOWN.store(0, Ordering::Release);
+    lock_write(&UI).commit_loaded(id,recording,current)
+}
+fn exact_target_ready(target:training_mod_consts::mii::replay::Target,current:Option<i32>) -> bool {
+    let Some(kind)=current else{return false;};
+    if target.configuration().is_none() {return target.ready(kind as u32,None);}
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    {crate::character_roster::mii_replay::named_ready(target,kind as u32)}
+    #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
+    {false}
+}
+fn observe_loaded() {
+    let target=lock_read(&UI).loaded_target();
+    let current=cpu_kind();
+    let busy=crate::character_roster::busy();
+    let configuration=target.filter(|target|exact_target_ready(*target,current)).and_then(|target|target.configuration());
+    lock_write(&UI).observe_exact_cpu(current,configuration,busy);
+}
+fn submit_loaded_character() {
+    if !crate::character_roster::cpu_reload_ready() {return;}
+    let target=lock_read(&UI).loaded_target();
+    let Some(target)=target else{return;};
+    #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
+    if target.configuration().is_some() {
+        let revision=selection_revision();
+        if NAMED_REFUSAL_SHOWN.swap(revision,Ordering::AcqRel)!=revision {
+            notify("Exact Mii macro loading is unavailable in this build");
+        }
+        return;
+    }
+    if lock_write(&UI).claim_character_request()!=Some(target.kind() as i32) {return;}
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    let accepted=crate::character_roster::mii_replay::request_named(target);
+    #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
+    let accepted=target.configuration().is_none() && crate::character_roster::request_cpu_kind(target.kind());
+    if !accepted {
+        // No native request was admitted. A not-yet-qualified owner may become
+        // ready after auto-init; don't consume this one submission prematurely.
+        lock_write(&UI).invalidate_character_request();
+    }
+}
 static NAME_JOB: std::sync::Mutex<Option<NameJob>> = std::sync::Mutex::new(None);
 
 struct NameJob { id: u64, generation: u64, replay: bool }
@@ -221,7 +275,7 @@ pub fn init() {
     let Ok(recording) = library().load(id) else {
         return;
     };
-    let _ = lock_write(&UI).commit_loaded(id.to_owned(), recording, None);
+    let _ = commit_loaded(id.to_owned(), recording, None);
 }
 
 /// Save a validated recording from the later replay-export stream and select it.
@@ -233,8 +287,7 @@ pub fn accept_recording(recording: MacroRecording) -> Result<String, String> {
         .save_new(&recording)
         .map_err(|err| err.to_string())?;
     remember(&id);
-    let effect = lock_write(&UI)
-        .commit_loaded(id.clone(), recording, cpu_kind())
+    let effect = commit_loaded(id.clone(), recording, cpu_kind())
         .map_err(|err| err.to_string())?;
     apply_effect(effect);
     Ok(id)
@@ -414,7 +467,7 @@ pub fn finish_capture(crop: bool) {
 }
 
 pub fn begin_playback() -> Option<PlaybackStart> {
-    lock_write(&UI).observe_cpu(cpu_kind(), crate::character_roster::busy());
+    observe_loaded();
     let ui = lock_read(&UI);
     let (facing, status, frames) = ui.copy_playback()?;
     let info = PlaybackStart {
@@ -541,7 +594,7 @@ pub fn begin_restore() {
 }
 
 pub unsafe fn request_playback() {
-    lock_write(&UI).observe_cpu(cpu_kind(), crate::character_roster::busy());
+    observe_loaded();
     if !lock_read(&UI).playback_allowed() {
         notify("Load a named macro and wait for its fighter");
         return;
@@ -636,6 +689,11 @@ pub fn remember_restore_pose(
 pub unsafe fn prepare_playback_start(module_accessor: &mut BattleObjectModuleAccessor) -> bool {
     if !PLAYBACK_START_PENDING.load(Ordering::Relaxed) {
         return true;
+    }
+    if !crate::replay_preview::occupied() && source_is_named() && !loaded_fighter_matches() {
+        super::input_record::stop_playback();
+        notify("Wait for the exact macro fighter before playback");
+        return false;
     }
     let pose = *lock_read(&RESTORE_POSE);
     let Some(pose) = pose.filter(|pose| {
@@ -754,7 +812,8 @@ pub fn restored_target(x: f32, y: f32) -> Option<(f32, f32)> {
 }
 
 fn loaded_fighter_matches() -> bool {
-    lock_read(&UI).loaded_start().is_some_and(|start| Some(start.fighter_kind) == cpu_kind())
+    let target=lock_read(&UI).loaded_target();
+    target.is_some_and(|target|exact_target_ready(target,cpu_kind()))
 }
 
 /// Recorded aerial motion must survive even at zero vertical offset.
@@ -826,6 +885,10 @@ unsafe fn set_gravity_speed(module_accessor: &mut BattleObjectModuleAccessor, y:
 }
 
 pub fn service_character() {
+    let named=source_is_named();
+    if !named && NAMED_SOURCE_ACTIVE.swap(false,Ordering::AcqRel) {
+        cancel_character_selection();
+    } else if named { NAMED_SOURCE_ACTIVE.store(true,Ordering::Release); }
     // Persisted selection exists before the stage is playable. Native Training
     // mode and an observed entry alone also hold during the initial load screen.
     if unsafe { !is_native_training_mode() || !Fighter::is_ready_go() }
@@ -838,18 +901,25 @@ pub fn service_character() {
     {
         return;
     }
-    let current = cpu_kind();
-    let busy = crate::character_roster::busy();
-    lock_write(&UI).observe_cpu(current, busy);
-    if busy || !crate::character_roster::cpu_reload_ready() {
-        return;
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    {
+        let target=lock_read(&UI).loaded_target();
+        if let Some(reason)=target.and_then(crate::character_roster::mii_replay::named_refusal) {
+            let revision=selection_revision();
+            if NAMED_REFUSAL_SHOWN.swap(revision,Ordering::AcqRel)!=revision {notify(reason);}
+            return;
+        }
     }
-    let Some(kind) = lock_write(&UI).claim_character_request() else {
-        return;
-    };
-    if kind >= 0 {
-        let _ = crate::character_roster::request_cpu_kind(kind as u32);
+    observe_loaded();
+    if crate::character_roster::busy() {return;}
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    {
+        let target=lock_read(&UI).loaded_target();
+        if let Some(target)=target {
+            crate::character_roster::mii_replay::reacknowledge_named(target);
+        }
     }
+    submit_loaded_character();
 }
 
 pub unsafe fn preview(module_accessor: &mut BattleObjectModuleAccessor) {
@@ -932,7 +1002,7 @@ fn save_new(recording: MacroRecording) {
             crate::replay_capture::close_editor();
             remember(&id);
             let name = recording.name.clone();
-            let result = lock_write(&UI).commit_loaded(id, recording, cpu_kind());
+            let result = commit_loaded(id, recording, cpu_kind());
             match result {
                 Ok(effect) => {
                     notify(&format!("Saved {name}"));
@@ -962,7 +1032,7 @@ fn load_id(id: &str) {
         Ok(recording) => {
             let name = recording.name.clone();
             remember(id);
-            let result = lock_write(&UI).commit_loaded(id.to_owned(), recording, cpu_kind());
+            let result = commit_loaded(id.to_owned(), recording, cpu_kind());
             match result {
                 Ok(effect) => {
                     notify(&format!("Loaded {name}"));
@@ -976,12 +1046,7 @@ fn load_id(id: &str) {
 }
 
 fn request_kind(kind: i32) {
-    if kind < 0 || !crate::character_roster::cpu_reload_ready() {
-        return;
-    }
-    if lock_write(&UI).claim_character_request() == Some(kind) {
-        let _ = crate::character_roster::request_cpu_kind(kind as u32);
-    }
+    if kind >= 0 {submit_loaded_character();}
 }
 
 fn cpu_kind() -> Option<i32> {

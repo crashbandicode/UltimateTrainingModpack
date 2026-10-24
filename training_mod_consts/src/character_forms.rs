@@ -4,6 +4,7 @@
 pub struct Forms {
     pub count: u32,
     pub kinds: [u32; 3],
+    pub actor_count: u32,
     pub flags: u8,
 }
 
@@ -16,12 +17,32 @@ impl Forms {
             0x26 => (3, [0x26, 0x24, 0x25], 0x05),
             0x5a => (2, [0x5a, 0x5b, u32::MAX], 0x64),
             0x5b => (2, [0x5b, 0x5a, u32::MAX], 0x64),
+            0x4b => (2, [0x4b, 0x4c, u32::MAX], 0x02),
             _ => (1, [kind, u32::MAX, u32::MAX], 0),
         };
         Self {
             count,
             kinds,
+            actor_count: if kind == 0x4b { 2 } else { 1 },
             flags,
+        }
+    }
+
+    pub fn solo_popo() -> Self {
+        Self {
+            count: 1,
+            kinds: [0x4b, u32::MAX, u32::MAX],
+            actor_count: 1,
+            flags: 0,
+        }
+    }
+
+    /// Simultaneous partners stay active; transformation alternatives sleep.
+    pub fn body_state(self, index: usize, active: u8) -> u8 {
+        if self.actor_count == self.count || index == usize::from(active) {
+            4
+        } else {
+            3
         }
     }
 
@@ -35,6 +56,28 @@ impl Forms {
     pub fn same_group(self, kind: u32) -> bool {
         self.index_of(kind).is_some()
     }
+}
+
+/// Native resource members belong to the requested source's canonical group.
+/// Partners need not be separate selectable choices; the request still must be.
+pub fn is_source_member(requested: u32, member: u32) -> bool {
+    if (0x48..=0x4a).contains(&requested) {
+        // A Mii source has exactly its own class member. Generic archive,
+        // typed-param and copy-file readiness remain mandatory at the caller.
+        return cfg!(feature = "mii-managed-helper-alpha") && requested == member;
+    }
+    crate::TrioFighter::from_kind(requested).is_some()
+        && Forms::starting(requested).same_group(member)
+}
+
+/// FighterParamAccessor2 record key for a validated native source member.
+/// Native acquire (main+607b34) and release (main+720ea4) map Nana to Popo.
+/// This does not change descriptor, body, NRO, archive or copy-resource kinds.
+pub fn typed_record_kind(requested: u32, member: u32) -> Option<u32> {
+    if !is_source_member(requested, member) {
+        return None;
+    }
+    Some(if member == 0x4c { 0x4b } else { member })
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -57,10 +100,14 @@ impl EntryState {
     /// Initial loads use ff in +5919; completed form changes use the live index.
     /// Pointer/owner/body checks remain the native callback's responsibility.
     pub fn ready(self) -> Option<(Forms, u32)> {
-        let forms = Forms::starting(self.kinds[0]);
+        let forms = if self.kinds[0] == 0x4b && self.count == 1 {
+            Forms::solo_popo()
+        } else {
+            Forms::starting(self.kinds[0])
+        };
         (self.count == forms.count
             && self.kinds == forms.kinds
-            && self.actor_count == 1
+            && self.actor_count == forms.actor_count
             && self.installed == u64::from(forms.count)
             && u32::from(self.index) < forms.count
             && (self.previous_or_next == 0xff || self.previous_or_next == self.index)
@@ -74,9 +121,93 @@ impl EntryState {
     }
 }
 
+/// Ordered slots are zero-based internally; None is the original CSS slot 0.
+/// A live transformed partner belongs to its group's existing numbered slot.
+pub fn next_cycle(
+    current: u32,
+    cursor: Option<usize>,
+    choices: &[u32],
+    original: Option<u32>,
+) -> Option<(u32, Option<usize>)> {
+    let position = cursor
+        .filter(|i| *i < choices.len() && Forms::starting(choices[*i]).same_group(current))
+        .or_else(|| {
+            choices
+                .iter()
+                .position(|kind| Forms::starting(*kind).same_group(current))
+        });
+    if let Some(index) = position {
+        if index + 1 < choices.len() {
+            return Some((choices[index + 1], Some(index + 1)));
+        }
+        if let Some(kind) = original {
+            return Some((kind, None));
+        }
+    }
+    choices
+        .first()
+        .map(|kind| (*kind, Some(0)))
+        .or_else(|| original.map(|kind| (kind, None)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_members_include_native_partners_without_making_them_selectable() {
+        // A native Ice Climbers source owns both Popo and Nana resources.
+        assert!(is_source_member(0x4b, 0x4b));
+        assert!(is_source_member(0x4b, 0x4c));
+        assert!(crate::TrioFighter::from_kind(0x4c).is_none());
+        // Membership is scoped to a valid requested source, not a kind whitelist.
+        assert!(!is_source_member(0x00, 0x4c));
+        assert!(!is_source_member(0x4b, u32::MAX));
+        assert!(!is_source_member(0x4c, 0x4c));
+        assert_eq!(is_source_member(0x48, 0x48), cfg!(feature = "mii-managed-helper-alpha"));
+        assert!(is_source_member(0x5a, 0x5b));
+        assert!(is_source_member(0x24, 0x26));
+
+        // Native acquire/release share one typed record for the two IC bodies.
+        assert_eq!(typed_record_kind(0x4b, 0x4b), Some(0x4b));
+        assert_eq!(typed_record_kind(0x4b, 0x4c), Some(0x4b));
+        assert_eq!(Forms::starting(0x4b).kinds, [0x4b, 0x4c, u32::MAX]);
+        // Mapping cannot admit an unrelated member or a nonselectable request.
+        for (requested, member) in [
+            (0x00, 0x4c),
+            (0x4c, 0x4c),
+            (0x4b, u32::MAX),
+        ] {
+            assert_eq!(typed_record_kind(requested, member), None);
+        }
+        // Ordinary and transforming members retain their own parameter records.
+        for (requested, member) in [
+            (0x00, 0x00),
+            (0x24, 0x26),
+            (0x25, 0x24),
+            (0x26, 0x25),
+            (0x5a, 0x5b),
+            (0x5b, 0x5a),
+        ] {
+            assert_eq!(typed_record_kind(requested, member), Some(member));
+        }
+    }
+
+    #[test]
+    fn mii_source_members_keep_feature_gated_exact_typed_identity() {
+        for class in 0x48..=0x4a {
+            let expected = cfg!(feature = "mii-managed-helper-alpha").then_some(class);
+            assert_eq!(typed_record_kind(class, class), expected);
+            assert_eq!(Forms::starting(class).kinds, [class, u32::MAX, u32::MAX]);
+            for other in [0x00, 0x48, 0x49, 0x4a, 0x4c, u32::MAX] {
+                if other != class {
+                    assert!(!is_source_member(class, other));
+                    assert_eq!(typed_record_kind(class, other), None);
+                }
+            }
+            assert_eq!(typed_record_kind(0x00, class), None);
+        }
+    }
 
     // Facts captured from unmodified native CSS loads and Down+B transformations.
     fn pyra_loaded() -> EntryState {
@@ -102,6 +233,72 @@ mod tests {
         state.index = 1;
         state.previous_or_next = 1;
         assert_eq!(state.ready().unwrap().1, 0x5b);
+    }
+    #[test]
+    fn native_ice_climbers_keep_both_bodies_active() {
+        // Captured native CSS load on 13.0.5, separate from requested descriptors.
+        let state = EntryState {
+            count: 2,
+            kinds: [0x4b, 0x4c, u32::MAX],
+            actor_count: 2,
+            installed: 2,
+            index: 0,
+            previous_or_next: 0xff,
+            pending: 0xff,
+            flags: 2,
+            outer: 6,
+            loader: 14,
+            changing: 0,
+            guard: 0,
+        };
+        let (forms, kind) = state.ready().unwrap();
+        assert_eq!(kind, 0x4b);
+        assert_eq!([forms.body_state(0, 0), forms.body_state(1, 0)], [4, 4]);
+        assert!(EntryState {
+            actor_count: 1,
+            ..state
+        }
+        .ready()
+        .is_none());
+        assert!(EntryState {
+            installed: 1,
+            ..state
+        }
+        .ready()
+        .is_none());
+        assert_eq!(Forms::starting(0x5a).body_state(1, 0), 3);
+    }
+    #[test]
+    fn player_visits_original_zero_and_cpu_wraps_numbered_slots() {
+        let selected = [0x0b, 0x5b, 0x25];
+        assert_eq!(
+            next_cycle(6, None, &selected, Some(6)),
+            Some((0x0b, Some(0)))
+        );
+        assert_eq!(
+            next_cycle(0x0b, Some(0), &selected, Some(6)),
+            Some((0x5b, Some(1)))
+        );
+        // Pyra transformed from selected Mythra and Charizard from Ivysaur.
+        assert_eq!(
+            next_cycle(0x5a, Some(1), &selected, Some(6)),
+            Some((0x25, Some(2)))
+        );
+        assert_eq!(
+            next_cycle(0x26, Some(2), &selected, Some(6)),
+            Some((6, None))
+        );
+        assert_eq!(
+            next_cycle(0x26, Some(2), &selected, None),
+            Some((0x0b, Some(0)))
+        );
+        // Edited/reordered menu invalidates a stale cursor; actual group wins.
+        assert_eq!(
+            next_cycle(0x5a, Some(99), &selected, Some(6)),
+            Some((0x25, Some(2)))
+        );
+        assert_eq!(next_cycle(6, None, &[], Some(6)), Some((6, None)));
+        assert_eq!(next_cycle(6, None, &[], None), None);
     }
     #[test]
     fn native_pokemon_forms_keep_descriptor_order() {

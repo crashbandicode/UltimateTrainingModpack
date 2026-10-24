@@ -29,9 +29,19 @@ def main():
     for path, digest in zip(baselines, expected):
         assert sha(path.read_bytes()) == digest, f"Wrong private baseline: {path}"
     icons = json.loads((HERE / "assets/sources.json").read_text())["icons"]
-    assert len(icons) == 89
+    assert len(icons) == 90
     for icon in icons:
         assert sha((HERE / "assets" / icon["filename"]).read_bytes()) == icon["sha256"]
+    stage_assets = HERE.parent / "stage-grid/assets"
+    stage_icons = json.loads((stage_assets / "sources.json").read_text())["icons"]
+    for icon in stage_icons:
+        assert sha((stage_assets / icon["filename"]).read_bytes()) == icon["sha256"], icon["filename"]
+    item_assets = HERE.parent / "item-icons/assets"
+    item_icons = json.loads((item_assets / "sources.json").read_text())["icons"]
+    assert len(item_icons) == 38
+    assert {icon["filename"] for icon in item_icons} == {f"icon-{i:02}.png" for i in range(38)}
+    for icon in item_icons:
+        assert sha((item_assets / icon["filename"]).read_bytes()) == icon["sha256"], icon["filename"]
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     for source, name in zip(baselines[:2], ("layout", "waiting")):
@@ -42,6 +52,8 @@ def main():
     spec.loader.exec_module(module)
     sources = (args.stock.read_bytes(), (out / "layout-roster.arc").read_bytes())
     target = (out / "waiting-roster.arc").read_bytes()
+    # Match the runtime reconstruction bound before installing a new archive.
+    assert 4 <= len(target) <= 9 * 1024 * 1024, "Waiting UI exceeds runtime size bound"
     patch, report = module.make(*sources, target)
     # Independently exercise the runtime recipe format, including donor fingerprint.
     assert patch[:4] == b"TMW1"

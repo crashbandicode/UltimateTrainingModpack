@@ -7,6 +7,7 @@ edition = "2021"
 doctest = false
 
 [dependencies]
+training_mod_mii = { path = "../training_mod_mii" }
 itertools = "0.11.0"
 ratatui = { git = "https://github.com/tonogdlp/ratatui.git", branch = "single-cell", default-features = false}
 serde = { version = "1.0.188", features = ["derive"] }
@@ -15,5 +16,10 @@ training_mod_macros = { path = "../training_mod_macros" }
 crossterm = { version = "0.22.1", optional = true }
 
 [features]
+mii-managed-helper-alpha = ["mii-ordinary-cpu-alpha"]
+mii-saved-alpha = []
+mii-ordinary-player-alpha = ["mii-saved-alpha"]
+mii-ordinary-cpu-alpha = ["mii-ordinary-player-alpha"]
+mii-editor-alpha = ["mii-ordinary-cpu-alpha"]
 default = []
 has_terminal = ["crossterm", "ratatui/crossterm"]

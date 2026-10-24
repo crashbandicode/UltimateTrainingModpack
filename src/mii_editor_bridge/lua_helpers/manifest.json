@@ -1,0 +1,55 @@
+{
+  "compiler_sha256": "04b3390310c507ae4f70c21e4d7a83e1c4c4e886f5a5f0d354f2c3f70d1bac34",
+  "compiler": "Official Lua 5.3.6, LUA_FLOAT_TYPE=1, strip debug data",
+  "own_helper_sources_only": true,
+  "helpers": [
+    {
+      "name": "capture.lua",
+      "source_sha256": "d29c8c6d1eb23186ffe0949db391d32a2a302ee85331b63c2b02e8e809ca95df",
+      "bytes": 352,
+      "bytecode_sha256": "616bd5fff3898b091732954ed4ecc83eed644060a5a9e988c303059b4999472a"
+    },
+    {
+      "name": "closures.lua",
+      "source_sha256": "c696005781374045995d413ee97eec3225a8513a3ce2ebca223044e32e3258be",
+      "bytes": 106,
+      "bytecode_sha256": "54fccd3227a1db0a97e821a6c3910331f08162b08e5d5242342e9a33675137aa"
+    },
+    {
+      "name": "focus.lua",
+      "source_sha256": "33067d644c1647b7244e5dad5cba4231cb08506ecead7be5d4d340eeedcd3832",
+      "bytes": 121,
+      "bytecode_sha256": "f09cae7da9e67882953bdfb30d05995b950f98de09db567e594cf16b598cf946"
+    },
+    {
+      "name": "open_sub.lua",
+      "source_sha256": "ccfa18394f0fd8e6176ed1349b03a50d8cee709b31a2181a5deb9b7cf48673a6",
+      "bytes": 121,
+      "bytecode_sha256": "e071a161f1d179daf96fd16434af4776d21130857e991bdf50066a171e276479"
+    },
+    {
+      "name": "pending.lua",
+      "source_sha256": "413c8a5361b0cddfa7e1c9b4d4c03065f9270ece3b0fc0bdbf54914ea4295758",
+      "bytes": 165,
+      "bytecode_sha256": "f93bd82137fb0861a57a6e9f2249b9589cd7e2e20bd8c7fc39f416e7ae7ef447"
+    },
+    {
+      "name": "sub_cursor.lua",
+      "source_sha256": "56bb83190cfc0cb05f05fb4e568f146d2aa159033b1414df1d31d5afe94840f6",
+      "bytes": 121,
+      "bytecode_sha256": "f09cae7da9e67882953bdfb30d05995b950f98de09db567e594cf16b598cf946"
+    },
+    {
+      "name": "settings_capture.lua",
+      "source_sha256": "9ccc49dcaea0b19fd7ee85d252f83a96bdda31acf4e02a66a5db124352ad4562",
+      "bytes": 401,
+      "bytecode_sha256": "6ad9978861bcd6e30edbb511b7af47787906f59b45bcd90901f597162c988448"
+    },
+    {
+      "name": "settings_focus.lua",
+      "source_sha256": "029070cab093fc75174c61c113e65f3eecc99771d5ad9dec4c75a6458a0a4944",
+      "bytes": 386,
+      "bytecode_sha256": "f2527e45cfbb58c9c57c296df7ac8249a24da07c184364c0a98a492568b9b06d"
+    }
+  ]
+}

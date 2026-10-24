@@ -41,12 +41,24 @@ const fn path_under_root(path: &str, root: &str, suffix: &str) -> bool {
 static SEED_ENABLED: AtomicBool = AtomicBool::new(false);
 static PERSISTENCE_COMPATIBLE: AtomicBool = AtomicBool::new(false);
 static TOGGLE: CaptureToggle = CaptureToggle::new();
-static WRITER: OnceLock<SyncSender<CommittedCapture>> = OnceLock::new();
+static WRITER: OnceLock<SyncSender<WriteJob>> = OnceLock::new();
 
 struct CommittedCapture {
     replay_id: String,
     replay_name: String,
     session: Arc<LiveSession>,
+    miis: Option<training_mod_consts::mii::replay::ReplayMiis>,
+}
+
+enum WriteJob {
+    Capture(Box<CommittedCapture>),
+    #[cfg(feature = "mii-ordinary-cpu-alpha")]
+    Catalog(training_mod_consts::mii::inventory::Snapshot,
+        mpsc::Sender<training_mod_consts::mii::inventory::Snapshot>),
+    #[cfg(feature = "mii-ordinary-cpu-alpha")]
+    Import { name: Option<String>, configuration: training_mod_consts::mii::lifetime::Configuration,
+        native: Arc<training_mod_consts::mii::inventory::Snapshot>,
+        reply: mpsc::Sender<Result<Arc<training_mod_consts::mii::draft::Library>, String>> },
 }
 
 pub fn archive() -> CaptureArchive {
@@ -75,22 +87,55 @@ pub fn persistence_compatible() -> bool {
     PERSISTENCE_COMPATIBLE.load(Ordering::Acquire)
 }
 
-/// Start once, after the optional native adapter's guards pass. A single bounded
-/// writer serializes archive publication; fighter callbacks never perform I/O.
+/// Start once for the mod library (combined alpha) or after live-capture guards.
+/// A single bounded writer serializes publication; fighter callbacks never perform I/O.
 pub fn start_writer() -> Result<(), String> {
     if WRITER.get().is_some() { return Ok(()); }
-    let (sender, receiver) = mpsc::sync_channel::<CommittedCapture>(MAX_RETAINED_CAPTURES);
+    let (sender, receiver) = mpsc::sync_channel::<WriteJob>(MAX_RETAINED_CAPTURES);
     std::thread::Builder::new().name("replay-capture-save".into()).stack_size(0x20000)
         .spawn(move || {
             let archive = SharedCaptureArchive::new(format!("{}/replay_captures",
                 training_mod_consts::TRAINING_MODPACK_ROOT));
-            while let Ok(saved) = receiver.recv() {
-                match archive.save_with_outcome(&saved.replay_id, &saved.replay_name, "13.0.5", &saved.session) {
-                    Ok(outcome) => println!("[ReplayCapture] {} id={} name={:?}",
-                        if outcome.created { "persisted" } else { "already_present" },
-                        outcome.id, saved.replay_name),
-                    Err(error) => println!("[ReplayCapture] persistence_failed id={:?}: {}",
-                        saved.replay_id, error),
+            // The same serialized owner is the only writer of mod presets. Native saves are read-only.
+            #[cfg(feature = "mii-ordinary-cpu-alpha")]
+            let mut presets = training_mod_consts::mii::draft_store::Store::open(
+                training_mod_consts::TRAINING_MODPACK_ROOT).map_err(|error| error.to_string());
+            while let Ok(message) = receiver.recv() {
+                match message {
+                    WriteJob::Capture(saved) => {
+                        match archive.save_with_miis(&saved.replay_id, &saved.replay_name, "13.0.5",
+                            &saved.session, saved.miis.as_ref()) {
+                            Ok(outcome) => {
+                                println!("[ReplayCapture] {} id={} name={:?}",
+                                    if outcome.created { "persisted" } else { "already_present" },
+                                    outcome.id, saved.replay_name);
+                                #[cfg(feature = "mii-ordinary-cpu-alpha")]
+                                if let Some(miis) = saved.miis {
+                                    crate::character_roster::mii_replay::committed(miis);
+                                }
+                            }
+                            Err(error) => println!("[ReplayCapture] persistence_failed id={:?}: {}",
+                                saved.replay_id, error),
+                        }
+                    }
+                    #[cfg(feature = "mii-ordinary-cpu-alpha")]
+                    WriteJob::Catalog(mut native, reply) => {
+                        match &presets {
+                            Ok(store) => native = native.with_library(store.library()),
+                            Err(error) => native.findings.push(training_mod_consts::mii::inventory::Finding::PresetSource {
+                                error: format!("Mii preset library: {error}") }),
+                        }
+                        let _ = reply.send(native);
+                    }
+                    #[cfg(feature = "mii-ordinary-cpu-alpha")]
+                    WriteJob::Import {name, configuration, native, reply} => {
+                        let result = presets.as_mut().map_err(|error| error.clone()).and_then(|store| {
+                            let name = name.unwrap_or_else(|| format!("Replay {:?}", configuration.canonical().class));
+                            store.import(configuration, &name, &native).map_err(|error| error.to_string())?;
+                            Ok(Arc::new(store.library().clone()))
+                        });
+                        let _ = reply.send(result);
+                    }
                 }
             }
         }).map_err(|error| error.to_string())?;
@@ -102,20 +147,49 @@ pub fn start_writer() -> Result<(), String> {
 
 /// Only the verified committed-save boundary may submit a value-owned snapshot.
 /// No native actor, string, or fighter pointer is sent to the background thread.
-pub fn persist_committed(replay_id: String, replay_name: String, session: Arc<LiveSession>) {
+pub fn persist_committed(replay_id: String, replay_name: String, session: Arc<LiveSession>,
+    miis: Option<training_mod_consts::mii::replay::ReplayMiis>) {
     let Some(writer) = WRITER.get() else {
         println!("[ReplayCapture] persistence_writer_unavailable");
         return;
     };
-    if let Err(error) = writer.try_send(CommittedCapture { replay_id, replay_name, session }) {
+    if let Err(error) = writer.try_send(WriteJob::Capture(Box::new(CommittedCapture { replay_id, replay_name, session, miis }))) {
         println!("[ReplayCapture] persistence_queue_unavailable: {}", error);
     }
+}
+
+/// Called only at the existing catalog file boundary (menu or owned catalog worker).
+#[cfg(feature = "mii-ordinary-cpu-alpha")]
+pub(crate) fn mii_catalog() -> training_mod_consts::mii::inventory::Snapshot {
+    use training_mod_consts::mii::{inventory::Finding, saved};
+    let mut native = saved::read_catalog(Path::new("save:/save_data/mii"));
+    #[cfg(feature = "mii-editor-alpha")]
+    crate::mii_editor_bridge::catalog_read(&native);
+    let (reply, receive) = mpsc::channel();
+    if let Some(writer) = WRITER.get() {
+        // Startup opened the store before this queued snapshot; no initialization race.
+        if writer.send(WriteJob::Catalog(native.clone(), reply)).is_ok() {
+            if let Ok(catalog) = receive.recv() { return catalog; }
+        }
+    }
+    native.findings.push(Finding::PresetSource {error: "Mii preset owner unavailable".into()});
+    native
+}
+
+#[cfg(feature = "mii-ordinary-cpu-alpha")]
+pub(crate) fn import_mii(configuration: training_mod_consts::mii::lifetime::Configuration,
+    native: Arc<training_mod_consts::mii::inventory::Snapshot>,
+    reply: mpsc::Sender<Result<Arc<training_mod_consts::mii::draft::Library>, String>>) -> Result<(), String> {
+    WRITER.get().ok_or("Mii preset owner unavailable")?
+        .try_send(WriteJob::Import {name: None, configuration, native, reply}).map_err(|error| error.to_string())
 }
 
 /// Called after the Training data directory and legacy migration are ready, and
 /// before the Deluxe row registers. Configuration is read once; capture
 /// sampling performs no filesystem reads.
 pub fn init() {
+    #[cfg(feature = "mii-ordinary-cpu-alpha")]
+    if let Err(error) = start_writer() { println!("[ReplayCapture] Mii library unavailable: {error}"); }
     let path = REPLAY_CAPTURE_INI;
     let result = (|| -> Result<(CaptureSettings, Result<(), String>), String> {
         // The host persists by rename; a crash between its renames leaves only

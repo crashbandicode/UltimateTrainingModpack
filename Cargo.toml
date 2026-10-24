@@ -70,11 +70,126 @@ plugin-dependencies = [
 ]
 
 [features]
+# Private diagnostic; excluded from product defaults.
+console-map-probe = []
+# Private bounded allocation/lifecycle recorder; never part of the alpha/defaults.
+console-practice-trace = []
+# Focused swap diagnostic: separate file, lifecycle/native boundary records only.
+console-swap-trace = ["console-practice-trace"]
+# Private, byte-guarded paired native unlink capture. Never a release default.
+native-unlink-probe = ["console-swap-trace"]
+native-unlink-guard = ["native-unlink-probe"]
+# Combined operator-review build. Keep the accepted alpha controls together so
+# a focused Mii/cosmetic rebuild cannot silently drop direct practice stages.
+enhancements-alpha = ["mii-editor-alpha", "cpu-pilot-probe", "mii-managed-helper-alpha", "waiting-roster-reload", "practice-stage-request-alpha"]
+# P1 AI assistance and private native driver; disabled by default.
+cpu-pilot-probe = ["training_mod_consts/p1-cpu-control"]
+# Read-only results lifetime capture for qualifying save/rematch automation.
+# Never included by the combined alpha or ordinary release defaults.
+automation-results-observer = []
+# Explicit development-only native save/rematch adapter. Not part of
+# enhancements-alpha. Do not combine with the read-only observer: both hook
+# 0x150e5f0 and 0x150e9d0.
+automation-results-native = ["deluxe-sdk"]
+# Opt-in hook clocks/counters and heartbeat output; archive retirement is always active.
+hang-trace = []
 layout_arc_from_file = []
+# Development-only stale-reader detection; release archive retirement needs no fill.
+archive-poison-probe = []
 # Enable character replacement in waiting practice (physical validation pending).
 waiting-roster-reload = []
 # Bounded console-only writer/native-getter observations for qualification.
 named-input-trace = []
+# Read-only, bounded native copy-resource observations for development builds.
+kirby-resource-probe = []
+# Development-only proof of waiting-scene stage selection before native loading.
+lobby-stage-probe = []
+# Passive direct-stage prerequisites; no transition request writes.
+practice-stage-observer = ["lobby-stage-probe"]
+# Default-off native request API; UI integration and mutation acceptance are separate.
+practice-stage-request-alpha = ["practice-stage-observer"]
+stage-asset-probe = ["lobby-stage-probe"]
+item-state-probe = []
+# Development-only read-only Mii identity observer (artifacts/enhancements/mii-fable/probe-next).
+mii-identity-probe = []
+# Default-off saved Sword Training alpha; no diagnostic hooks/chords/arms.
+mii-saved-alpha = ["training_mod_consts/mii-saved-alpha", "training_mod_tui/mii-saved-alpha"]
+# Separate ordinary-origin Player0 staged transaction; saved-origin paths retain their contract.
+mii-ordinary-player-alpha = ["mii-saved-alpha", "training_mod_tui/mii-ordinary-player-alpha"]
+# Conditional native selector1 handoff; no initialized-O or active-Mii menu reload.
+mii-ordinary-cpu-alpha = ["mii-ordinary-player-alpha", "training_mod_tui/mii-ordinary-cpu-alpha"]
+# Four-owner Training provenance bridge; combined native/resource acceptance remains alpha.
+mii-managed-source-coexist-alpha = ["mii-ordinary-cpu-alpha", "managed-sources"]
+# Separate guarded helper2/3 Mii resource transaction; never enabled by coexistence A.
+mii-managed-helper-alpha = ["mii-managed-source-coexist-alpha", "training_mod_consts/mii-managed-helper-alpha"]
+# Default-off read-only one-shot Mii G/selector capture on the exact LDN waiting map 0/4/5/6
+# (Training 0/1/2/3 as reader control). No allocation, native write or gate change.
+mii-ldn-qualification-probe = ["mii-ordinary-player-alpha"]
+# Default-off read-only READY pool/owner snapshots; no reload or pool reservation.
+mii-pool-observer = []
+# Development-only native configuration-call observation; no input or native writes.
+mii-origin-observer = []
+# Default-off natural editor Test/Cancel trace; no native writes or mutating feature dependencies.
+mii-preview-observer = []
+# Private native editor integration; excludes diagnostic hooks at shared boundaries.
+mii-editor-alpha = ["mii-ordinary-cpu-alpha", "training_mod_tui/mii-editor-alpha"]
+# One read-only native Training finish-selector event; separate closed acknowledgement.
+mii-quit-observer = []
+# Development-only one-shot identical-descriptor reload of P1's native Mii in Training;
+# shares the L3+X chord with item-state-probe, so the two are mutually exclusive.
+mii-identical-reload-probe = ["mii-identity-probe"]
+# Development-only one-shot read of native saved Mii headers.
+mii-saved-file-probe = ["mii-identity-probe"]
+# Development-only two-shot neutral-special change (E+0x1b2 and D+0x390) through the identical
+# reload, then restoration; own arm file; native Training owner 0 only.
+mii-special-change-probe = ["mii-identical-reload-probe"]
+# Development-only two-shot same-class full configuration swap: alternate saved CharInfo into the
+# live record under the native pool lock, outfit/colour/voice tokens and specials in E/FE/D/O,
+# identical reload, then exact restoration on the same live entry. Own arm file; native Training
+# owner 0 only; exclusive with mii-special-change-probe (lib.rs guard).
+mii-fullconfig-probe = ["mii-identical-reload-probe", "mii-saved-file-probe"]
+# Optional regression of the guarded native pool adapter; no production admission.
+mii-native-adapter-probe = ["mii-fullconfig-probe"]
+# Separate CPU1-only diagnostic intent; old P1 mutation is not dispatched in this variant.
+mii-cpu-adapter-probe = ["mii-native-adapter-probe"]
+# Development-only turnip seed/verify sequence through production restore.
+turnip-save-probe = ["item-state-probe"]
+# Development-only native R.O.B. Gyro variant observations; parent-owned probe.
+gyro-variation-probe = ["item-state-probe"]
+# Development-only visible native CPU2 resource-owner experiment.
+source-owner-probe = []
+# Shared source loader under native/LDN qualification; not a release default.
+# Qualification observers require their explicit probe features.
+managed-sources = []
+# Demand-created third native Training helper; alpha, never a release default.
+managed-third-source-alpha = ["managed-sources"]
+# Opt-in canonical grouped managed sources; consumer qualification remains pending.
+managed-grouped-source-alpha = ["managed-third-source-alpha"]
+# Initial native grouped-visible reservation experiment; no release acceptance.
+managed-visible-grouped-source-alpha = ["managed-grouped-source-alpha"]
+# Separate development admission after connected isolated lifetime qualification.
+managed-ldn-third-source-alpha = ["managed-third-source-alpha"]
+# Development experiment: create ordinary7 around canonical parked groups5/6.
+source-ldn-grouped-helper-capacity-probe = ["managed-ldn-third-source-alpha", "source-ldn-grouped-probe"]
+# Read-only native entry lifecycle observations for connected LDN qualification.
+source-lifecycle-probe = []
+# One-shot empty entry7 lifetime experiment; never enabled by release defaults.
+source-capacity-probe = ["source-lifecycle-probe"]
+# Separate one-shot Link load into the qualified empty entry7; development only.
+source-capacity-link-probe = ["source-capacity-probe"]
+# Read-only bounded entry7 baseline in exact LDN waiting; no creation/admission.
+source-ldn-capacity-probe = ["source-capacity-link-probe"]
+# Read-only grouped waiting-entry observations; no LDN creation/load/admission.
+source-ldn-grouped-probe = ["source-ldn-capacity-probe"]
+# Explicit mutation opt-in: one empty LDN entry only; P0 remains read-only.
+source-ldn-capacity-empty-probe = ["source-ldn-capacity-probe"]
+# Separate P2 opt-in: one ordinary Link load after the empty LDN lifetime.
+source-ldn-capacity-link-probe = ["source-ldn-capacity-empty-probe"]
+# Separate isolated grouped load; incompatible with P2/managed third admission.
+source-capacity-group-probe = ["source-ldn-capacity-empty-probe"]
+# Separate isolated targets sharing the canonical alternate-bank observer.
+source-capacity-aegis-probe = ["source-capacity-group-probe", "source-ldn-grouped-probe"]
+source-capacity-trainer-probe = ["source-capacity-group-probe", "source-ldn-grouped-probe"]
 # Runtime capture toggle on the Deluxe Plugins page. Without a Deluxe host the
 # registration reports HostMissing and revision 27 behaviour is unchanged.
 deluxe-sdk = ["dep:deluxe-plugin-sdk"]

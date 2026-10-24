@@ -5,8 +5,9 @@
 //! as manual recording. A replay is selected and played through the native Vault;
 //! its captured timeline remains available when returning to Training.
 
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::convert::TryFrom;
 
 use smash::app::{self, lua_bind::*, BattleObjectModuleAccessor, Fighter};
 use smash::lib::lua_const::*;
@@ -22,12 +23,13 @@ const REPLAY_MODE_13_0_5: u32 = 0x05010100;
 // simulation tick; replay itself never calls that callback. AI values may be off-grid.
 // The120-scale conversion now lives in LiveInput::project, at the consumer seam.
 static ENABLED: AtomicBool = AtomicBool::new(false);
-static EDITOR: Mutex<Option<ClipEditor>> = Mutex::new(None);
+static EDITOR: Mutex<Option<Editor>> = Mutex::new(None);
 static BROWSER: Mutex<Option<MacroUi>> = Mutex::new(None);
 static REVISION: AtomicU64 = AtomicU64::new(1);
+static SELECTION_REVISION: AtomicU64 = AtomicU64::new(1);
 static HOLD: Mutex<(i32, u32, bool)> = Mutex::new((0, 0, false));
 static RELOAD: Mutex<Option<Reload>> = Mutex::new(None);
-static FAILED_KIND: AtomicI32 = AtomicI32::new(-1);
+static FAILED_SELECTION: AtomicU64 = AtomicU64::new(0);
 static CLOSE_INPUT: Mutex<CloseInputGuard> = Mutex::new(CloseInputGuard::new());
 #[cfg(feature = "named-input-trace")]
 static CLOSE_TRACE_LEFT: AtomicU64 = AtomicU64::new(0);
@@ -35,7 +37,43 @@ static CLOSE_TRACE_LEFT: AtomicU64 = AtomicU64::new(0);
 static CLOSE_TRACE_ID: AtomicU64 = AtomicU64::new(0);
 #[cfg(feature = "named-input-trace")]
 const CLOSE_TRACE_LIMIT: u64 = 600;
-struct Reload { editor: ClipEditor, requested: bool, ticks: u32 }
+use training_mod_consts::mii::{inventory::MiiClass, lifetime::Configuration, replay::{RawMii,Target}};
+struct Editor { clip:ClipEditor, association:[Result<RawMii,String>;8], resolved:[Option<Configuration>;8] }
+impl std::ops::Deref for Editor {type Target=ClipEditor;fn deref(&self)->&ClipEditor {&self.clip}}
+impl std::ops::DerefMut for Editor {fn deref_mut(&mut self)->&mut ClipEditor {&mut self.clip}}
+impl Editor {
+    fn raw(&self)->Result<training_mod_consts::mii::replay::RawMii,String> {
+        let view=self.view();
+        if view.previous_selected { return Err("Previous capture has no exact Mii association".into()); }
+        let entry=usize::try_from(view.entry).map_err(|_|"Invalid capture entry")?;
+        let raw=self.association.get(entry).ok_or("Invalid capture entry")?.as_ref().map_err(|error| error.clone())?;
+        if raw.class().kind()!=view.fighter_kind as u32 { return Err("Capture fighter identity changed".into()); }
+        Ok(*raw)
+    }
+    fn target(&self)->Result<Option<Target>,String> {
+        let view=self.view();
+        if MiiClass::from_kind(view.fighter_kind as u32).is_none() {
+            if training_mod_consts::TrioFighter::from_kind(view.fighter_kind as u32).is_none() {
+                return Err("Preview fighter is not available".into());
+            }
+            return Ok(Some(Target::fighter(view.fighter_kind as u32)));
+        }
+        self.raw()?;
+        if !cfg!(feature="mii-ordinary-cpu-alpha") {return Err("Replay Mii loading is unavailable in this build".into());}
+        Ok(self.resolved[view.entry as usize].map(Target::mii))
+    }
+}
+struct Reload { editor:Editor, requested:bool, ticks:u32, revision:u64,
+    resolving:Option<std::sync::mpsc::Receiver<Result<Configuration,String>>> }
+#[cfg(feature="mii-ordinary-cpu-alpha")]
+pub(crate) fn selection_revision()->u64 {SELECTION_REVISION.load(Ordering::Acquire)}
+fn target_ready(target:Target,current:Option<i32>)->bool {
+    let Some(kind)=current else {return false;};
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    { crate::character_roster::mii_replay::ready(target,kind as u32) }
+    #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
+    {target.ready(kind as u32,None)}
+}
 static CAPTURE: Mutex<Capture> = Mutex::new(Capture {
     recording: false,
     session: ReplaySession { tracks: Vec::new(), truncated: false },
@@ -115,15 +153,17 @@ pub fn open_editor() {
 }
 
 fn open_capture(id: &str) -> Result<(), String> {
-    let (session, name, previous) = match id {
+    let (session, name, previous, miis) = match id {
         "latest" => (
             latest().ok_or("No latest Vault capture")?,
             "Latest Vault capture".to_owned(),
             CAPTURE.lock().unwrap().previous.clone(),
+            None,
         ),
         "previous" => (
             CAPTURE.lock().unwrap().previous.clone().ok_or("No previous Vault capture")?,
             "Previous Vault capture".to_owned(),
+            None,
             None,
         ),
         _ => {
@@ -132,9 +172,17 @@ fn open_capture(id: &str) -> Result<(), String> {
             if saved.game_version != "13.0.5" {
                 return Err(format!("Capture is for Smash {}, expected 13.0.5", saved.game_version));
             }
-            (saved.session, saved.replay_name, None)
+            (saved.session, saved.replay_name, None, saved.miis)
         }
     };
+    // Inspect the full owned session once, before ClipEditor selects/crops a track.
+    let association=std::array::from_fn(|entry| {
+        let miis=miis.as_ref().ok_or_else(||"This capture has no exact Mii configuration; ordinary Mii preferences cannot substitute".to_string())?;
+        let kind=session.tracks.iter().find(|track|track.entry==entry as i32)
+            .and_then(|track|track.frames.first()).map(|frame|frame.start.fighter_kind as u32)
+            .ok_or_else(||"Capture track is absent".to_string())?;
+        session.mii_for_track(miis,entry as i32,kind).map_err(str::to_string)
+    });
     let result = ClipEditor::new(session, clean_statuses());
     match result {
         Ok(mut editor) => {
@@ -144,11 +192,14 @@ fn open_capture(id: &str) -> Result<(), String> {
                 }
                 editor.select_kind(unsafe { app::utility::get_kind(&mut *cpu) });
             }
-            *EDITOR.lock().unwrap() = Some(editor.with_name(name).with_previous(previous));
+            *EDITOR.lock().unwrap() = Some(Editor {clip:editor.with_name(name).with_previous(previous),
+                association,resolved:[None;8]});
+            SELECTION_REVISION.fetch_add(1,Ordering::AcqRel);
+            crate::training::named_macros::cancel_character_selection();
             *BROWSER.lock().unwrap() = None;
             REVISION.fetch_add(1, Ordering::Relaxed);
             *HOLD.lock().unwrap() = (0, 0, false);
-            FAILED_KIND.store(-1, Ordering::Relaxed);
+            FAILED_SELECTION.store(0, Ordering::Relaxed);
             training_mod_sync::assign(&crate::common::menu::QUICK_MENU_ACTIVE, false);
         }
         Err(error) => return Err(error),
@@ -212,58 +263,97 @@ pub fn cancel_reload() {
 /// cleanup must finish before handing control to the existing character loader.
 pub unsafe fn service_reload() {
     if !crate::common::is_native_training_mode() {
-        *RELOAD.lock().unwrap() = None;
-        if panel_visible() || browser_visible() { close_editor(); }
+        let had_reload=RELOAD.lock().unwrap().take().is_some();
+        if had_reload || panel_visible() || browser_visible() {close_editor_inner(had_reload);}
         return;
     }
-    let cpu = crate::common::try_get_module_accessor(crate::consts::FighterId::CPU);
-    let current = cpu.map(|cpu| app::utility::get_kind(&mut *cpu));
-    let mut reload = RELOAD.lock().unwrap();
-    if let Some(pending) = reload.as_mut() {
-        let kind = pending.editor.view().fighter_kind;
-        pending.ticks = pending.ticks.saturating_add(1);
-        // A completed native install can still be falling from its spawn height.
-        // Wait for its grounded anchor before giving the editor back the new body.
-        // Ordinary editor opens may still deliberately acquire an airborne CPU.
-        let grounded_idle = cpu.is_some_and(|cpu|
-            StatusModule::status_kind(cpu) == *FIGHTER_STATUS_KIND_WAIT
-                && StatusModule::situation_kind(cpu) == *SITUATION_KIND_GROUND);
-        if pending.requested && !crate::character_roster::busy() && current == Some(kind)
-            && Fighter::is_ready_go() && grounded_idle {
-            let pending = reload.take().unwrap();
-            *EDITOR.lock().unwrap() = Some(pending.editor);
-            REVISION.fetch_add(1, Ordering::Relaxed);
-            training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT, true);
-        } else if pending.ticks > 600 {
-            let pending = reload.take().unwrap();
-            FAILED_KIND.store(kind, Ordering::Relaxed);
-            *EDITOR.lock().unwrap() = Some(pending.editor);
-            notify("Preview fighter did not load; selection kept".into());
-        } else if !pending.requested {
-            // Drop our state lock across the loader's menu/scope guards.
+    let cpu=crate::common::try_get_module_accessor(crate::consts::FighterId::CPU);
+    let current=cpu.map(|cpu|app::utility::get_kind(&mut *cpu));
+    let mut reload=RELOAD.lock().unwrap();
+    if let Some(pending)=reload.as_mut() {
+        pending.ticks=pending.ticks.saturating_add(1);
+        let mut failure=None;
+        if let Some(receive)=pending.resolving.as_ref() {
+            match receive.try_recv() {
+                Ok(Ok(configuration))=>{
+                    let entry=pending.editor.view().entry as usize;
+                    pending.editor.resolved[entry]=Some(configuration);
+                    pending.resolving=None;
+                }
+                Ok(Err(error))=>failure=Some(error),
+                Err(std::sync::mpsc::TryRecvError::Disconnected)=>failure=Some("Mii resolver unavailable".into()),
+                Err(std::sync::mpsc::TryRecvError::Empty)=>{},
+            }
+        }
+        let target=match pending.editor.target() {Ok(target)=>target,Err(error)=>{failure=Some(error);None}};
+        #[cfg(feature="mii-ordinary-cpu-alpha")]
+        if let Some(reason)=target.and_then(|target|crate::character_roster::mii_replay::refusal(target,pending.revision)) {
+            failure=Some(reason.into());
+        }
+        let grounded_idle=cpu.is_some_and(|cpu|StatusModule::status_kind(cpu)==*FIGHTER_STATUS_KIND_WAIT
+            && StatusModule::situation_kind(cpu)==*SITUATION_KIND_GROUND);
+        if failure.is_none() && target.is_some_and(|target|target_ready(target,current))
+            && !crate::character_roster::busy() && Fighter::is_ready_go() && grounded_idle {
+            let pending=reload.take().unwrap();
+            *EDITOR.lock().unwrap()=Some(pending.editor);
+            REVISION.fetch_add(1,Ordering::Relaxed);
+            training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT,true);
+        } else if failure.is_some() || pending.ticks>600 {
+            let pending=reload.take().unwrap();
+            let cancelled=SELECTION_REVISION.fetch_add(1,Ordering::AcqRel)+1;
+            FAILED_SELECTION.store(cancelled,Ordering::Release);
+            *EDITOR.lock().unwrap()=Some(pending.editor);
+            notify(failure.unwrap_or_else(||"Exact preview fighter did not load; selection kept".into()));
+        } else if target.is_none() && pending.resolving.is_none() {
+            #[cfg(feature="mii-ordinary-cpu-alpha")]
+            {
+                let raw=pending.editor.raw();
+                let revision=pending.revision;
+                drop(reload);
+                let result=raw.and_then(|raw|crate::character_roster::mii_replay::resolve(raw,revision));
+                if let Some(pending)=RELOAD.lock().unwrap().as_mut().filter(|p|p.revision==revision) {
+                    match result {Ok(receive)=>pending.resolving=Some(receive),Err(error)=>{
+                        let (send,receive)=std::sync::mpsc::channel();let _=send.send(Err(error));
+                        pending.resolving=Some(receive);
+                    }}
+                }
+            }
+        } else if let Some(target)=target.filter(|_|!pending.requested) {
+            let revision=pending.revision;
             drop(reload);
-            if crate::character_roster::cpu_reload_ready() && crate::character_roster::request_cpu_kind(kind as u32) {
-                if let Some(pending) = RELOAD.lock().unwrap().as_mut() { pending.requested = true; }
+            if crate::character_roster::cpu_reload_ready() {
+                #[cfg(feature="mii-ordinary-cpu-alpha")]
+                let requested=crate::character_roster::mii_replay::request(target,revision);
+                #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
+                let requested=crate::character_roster::request_cpu_kind(target.kind());
+                if let Some(pending)=RELOAD.lock().unwrap().as_mut().filter(|p|p.revision==revision) {
+                    pending.requested=requested;
+                }
             }
         }
         return;
     }
     drop(reload);
     if crate::replay_preview::occupied() || !crate::training::named_macros::clip_foreground()
-        || !Fighter::is_ready_go() { return; }
-    let mut editor = EDITOR.lock().unwrap();
-    if editor.as_ref().is_some_and(|editor| current != Some(editor.view().fighter_kind)
-        && FAILED_KIND.load(Ordering::Relaxed) != editor.view().fighter_kind) {
-        let mut pending = editor.take().unwrap();
-        pending.pause();
-        *RELOAD.lock().unwrap() = Some(Reload { editor: pending, requested: false, ticks: 0 });
-        training_mod_sync::assign(&crate::common::menu::QUICK_MENU_ACTIVE, false);
-        training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT, true);
+        || !Fighter::is_ready_go() {return;}
+    let mut editor=EDITOR.lock().unwrap();
+    let Some(active)=editor.as_ref() else {return;};
+    if FAILED_SELECTION.load(Ordering::Acquire)==SELECTION_REVISION.load(Ordering::Acquire) {return;}
+    match active.target() {
+        Err(error)=>{FAILED_SELECTION.store(SELECTION_REVISION.load(Ordering::Acquire),Ordering::Release);drop(editor);notify(error);},
+        Ok(target) if target.is_none_or(|target|!target_ready(target,current))=>{
+            let mut pending=editor.take().unwrap();pending.pause();
+            *RELOAD.lock().unwrap()=Some(Reload {editor:pending,requested:false,ticks:0,
+                revision:SELECTION_REVISION.load(Ordering::Acquire),resolving:None});
+            training_mod_sync::assign(&crate::common::menu::QUICK_MENU_ACTIVE,false);
+            training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT,true);
+        }
+        _=>{},
     }
 }
 
 pub fn clip_view() -> Option<ClipView> {
-    EDITOR.lock().unwrap().as_ref().map(ClipEditor::view)
+    EDITOR.lock().unwrap().as_ref().map(|editor|editor.view())
 }
 
 pub fn preview_progress(revision: u64, consumed: u32) {
@@ -291,6 +381,7 @@ fn close_editor_inner(was_loading: bool) {
     REVISION.fetch_add(1, Ordering::Relaxed);
     *HOLD.lock().unwrap() = (0, 0, false);
     if was_open || was_browsing || was_loading {
+        SELECTION_REVISION.fetch_add(1,Ordering::AcqRel);
         crate::training::frame_counter::reset_frame_count(*crate::common::menu::MENU_CLOSE_FRAME_COUNTER);
         crate::training::frame_counter::start_counting(*crate::common::menu::MENU_CLOSE_FRAME_COUNTER);
         CLOSE_INPUT.lock().unwrap().arm(crate::common::menu::MENU_CLOSE_WAIT_FRAMES);
@@ -330,22 +421,50 @@ pub fn on_pad(pad: Pad) {
 
 pub fn on_action(action: ClipAction) {
     if matches!(action, ClipAction::PreviousFighter | ClipAction::NextFighter | ClipAction::ToggleCapture) {
-        FAILED_KIND.store(-1, Ordering::Relaxed);
+        FAILED_SELECTION.store(0, Ordering::Relaxed);
+        SELECTION_REVISION.fetch_add(1,Ordering::AcqRel);
+    }
+    if matches!(action,ClipAction::TogglePlay | ClipAction::Restart | ClipAction::Confirm) {
+        let check=EDITOR.lock().unwrap().as_ref()
+            .filter(|editor|MiiClass::from_kind(editor.view().fighter_kind as u32).is_some())
+            .map(|editor| {
+            editor.target().and_then(|target|target.ok_or_else(||"Wait for the exact replay Mii to load".into()))
+        });
+        if let Some(check)=check {
+            let current=crate::common::try_get_module_accessor(crate::consts::FighterId::CPU)
+                .map(|cpu|unsafe {app::utility::get_kind(&mut *cpu)});
+            match check {
+                Err(error)=>{notify(error);return;},
+                Ok(target) if !target_ready(target,current)=>{notify("Wait for the exact preview fighter to load".into());return;},
+                _=>{},
+            }
+        }
     }
     // Drop the editor lock before opening the naming panel or notifying the game.
-    let (effect, revision) = {
+    let (effect, revision, configuration) = {
         let mut editor = EDITOR.lock().unwrap();
         let revision = REVISION.fetch_add(1, Ordering::Relaxed) + 1;
-        (editor.as_mut().map(|editor| editor.on_action(action)), revision)
+        let configuration=editor.as_ref().and_then(|editor|editor.target().ok().flatten())
+            .and_then(Target::configuration);
+        (editor.as_mut().map(|editor| editor.on_action(action)), revision, configuration)
+    };
+    let attach=|mut recording:Box<training_mod_macros::MacroRecording>| -> Result<Box<training_mod_macros::MacroRecording>,String> {
+        if let Some(configuration)=configuration {recording.set_mii(configuration).map_err(|e|e.to_string())?;}
+        recording.playback_target().map_err(|e|e.to_string())?;
+        Ok(recording)
     };
     match effect {
-        Some(ClipEffect::Preview(recording)) => crate::replay_preview::request_play(*recording, revision),
+        Some(ClipEffect::Preview(recording)) => match attach(recording) {
+            Ok(recording)=>crate::replay_preview::request_play(*recording, revision),Err(error)=>notify(error),
+        },
         Some(ClipEffect::StopPreview) => crate::replay_preview::request_stop(),
         Some(ClipEffect::Close) => close_editor(),
         Some(ClipEffect::Export(recording)) => {
             crate::replay_preview::request_stop();
             *HOLD.lock().unwrap() = (0, 0, false);
-            crate::training::named_macros::offer_replay_recording(*recording);
+            match attach(recording) {
+                Ok(recording)=>crate::training::named_macros::offer_replay_recording(*recording),Err(error)=>notify(error),
+            }
         }
         Some(ClipEffect::Error(error)) => {
             crate::replay_preview::request_stop();

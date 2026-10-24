@@ -1,0 +1,7 @@
+{
+  "level": 1,
+  "trigger": { "kind": "immediate" },
+  "command": "release",
+  "require_contact": true,
+  "guard_frames": 3600
+}

@@ -15,6 +15,12 @@ impl<T: Serialize> IntoIterator for StatefulList<T> {
     }
 }
 
+impl<T: Serialize> Default for StatefulList<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Serialize> StatefulList<T> {
     pub fn new() -> StatefulList<T> {
         StatefulList {

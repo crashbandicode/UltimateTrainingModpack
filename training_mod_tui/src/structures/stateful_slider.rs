@@ -20,6 +20,12 @@ pub struct StatefulSlider {
     pub incr_amount_fast: u32,
 }
 
+impl Default for StatefulSlider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StatefulSlider {
     pub fn new() -> StatefulSlider {
         StatefulSlider {

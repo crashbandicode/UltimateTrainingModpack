@@ -19,6 +19,16 @@ pub enum Role {
     Cpu,
 }
 
+/// Which lists the shared portrait grid is editing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RosterPurpose {
+    FighterCycles,
+    KirbyHats,
+    ManualSwap,
+}
+
+pub const MANUAL_FLASH_FRAMES: u8 = 24;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
     Left,
@@ -33,7 +43,7 @@ pub enum CellContent {
     Fighter(u32),
     /// Visible placeholder that keeps its position and can never be selected.
     Unsupported,
-    RoleToggle,
+    All,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,7 +67,6 @@ impl CellInfo {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
     Unchanged,
-    RoleToggled,
     RosterChanged,
 }
 
@@ -81,8 +90,9 @@ impl Group {
 enum Slot {
     Fighter(u32, &'static str),
     Shared(Group),
+    #[cfg(not(feature="mii-saved-alpha"))]
     Unsupported(&'static str),
-    RoleToggle,
+    All,
 }
 
 const fn f(kind: u32, name: &'static str) -> Slot {
@@ -107,7 +117,7 @@ const GRID: [Slot; CELLS] = [
     f(0x0d, "Peach"),
     f(0x0e, "Daisy"),
     f(0x0f, "Bowser"),
-    Slot::Unsupported("Ice Climbers"),
+    f(0x4b, "Ice Climbers"),
     f(0x10, "Sheik"),
     f(0x11, "Zelda"),
     f(0x12, "Dr. Mario"),
@@ -174,10 +184,19 @@ const GRID: [Slot; CELLS] = [
     Slot::Shared(Group::Aegis),
     f(0x5c, "Kazuya"),
     f(0x5d, "Sora"),
+    #[cfg(not(feature="mii-saved-alpha"))]
     Slot::Unsupported("Mii Brawler"),
+    #[cfg(feature="mii-saved-alpha")]
+    f(0x48, "Mii Brawler"),
+    #[cfg(not(feature="mii-saved-alpha"))]
     Slot::Unsupported("Mii Swordfighter"),
+    #[cfg(feature="mii-saved-alpha")]
+    f(0x49,"Mii Swordfighter"),
+    #[cfg(not(feature="mii-saved-alpha"))]
     Slot::Unsupported("Mii Gunner"),
-    Slot::RoleToggle,
+    #[cfg(feature="mii-saved-alpha")]
+    f(0x4a, "Mii Gunner"),
+    Slot::All,
 ];
 
 const fn row_len(row: usize) -> usize {
@@ -239,6 +258,24 @@ impl RosterGrid {
         };
     }
 
+    /// Open the one-shot picker on its configured fighter and exact starting form.
+    pub fn focus_kind(&mut self, kind: u32) {
+        for group in [Group::Aegis, Group::PokemonTrainer] {
+            if let Some(index) = group.forms().iter().position(|(form, _)| *form == kind) {
+                self.forms[group as usize] = index as u8;
+            }
+        }
+        if let Some(cell) = (0..CELLS).find(|cell| self.describe(*cell).kind() == Some(kind)) {
+            self.cursor = cell;
+        }
+    }
+
+    /// The All cell has no meaning for an immediate single-character action.
+    pub fn step_manual(&mut self, direction: Direction) {
+        self.step(direction);
+        if self.cursor_info().content == CellContent::All { self.step(direction); }
+    }
+
     /// Left/Right wrap within the physical row. Up/Down wrap through the rows and
     /// land on the nearest physical column, so the centered last row clamps.
     pub fn step(&mut self, direction: Direction) {
@@ -293,8 +330,9 @@ impl RosterGrid {
                 let (kind, name) = group.forms()[usize::from(self.forms[group as usize])];
                 (name, CellContent::Fighter(kind))
             }
+            #[cfg(not(feature="mii-saved-alpha"))]
             Slot::Unsupported(name) => (name, CellContent::Unsupported),
-            Slot::RoleToggle => ("Player/CPU", CellContent::RoleToggle),
+            Slot::All => ("All", CellContent::All),
         };
         CellInfo {
             row,
@@ -304,18 +342,22 @@ impl RosterGrid {
         }
     }
 
-    /// A: toggle the role on the control cell, otherwise append the displayed
+    /// A: select All on the control cell, otherwise append the displayed
     /// kind to `values`, the active role's `[all, ranks...]`. Unsupported cells
     /// and kinds missing from `kinds` change nothing.
     pub fn confirm(&mut self, kinds: &[u32], values: &mut [u8]) -> Outcome {
         match self.cursor_info().content {
-            CellContent::RoleToggle => {
-                self.toggle_role();
-                Outcome::RoleToggled
+            CellContent::All => {
+                select_all(kinds, values);
+                Outcome::RosterChanged
             }
             CellContent::Fighter(kind) => {
-                let changed = catalog_index(kinds, kind).is_some_and(|i| select_kind(values, i));
-                if changed { Outcome::RosterChanged } else { Outcome::Unchanged }
+                let changed = select_group(kinds, values, kind);
+                if changed {
+                    Outcome::RosterChanged
+                } else {
+                    Outcome::Unchanged
+                }
             }
             CellContent::Unsupported => Outcome::Unchanged,
         }
@@ -325,8 +367,102 @@ impl RosterGrid {
     pub fn remove(&self, kinds: &[u32], values: &mut [u8]) -> bool {
         self.cursor_info()
             .kind()
-            .and_then(|kind| catalog_index(kinds, kind))
+            .and_then(|kind| selected_group_index(kinds, values, kind))
             .is_some_and(|i| deselect_kind(values, i))
+    }
+}
+
+/// Stable identity of a native CSS group. IC's 0x4b descriptor stays distinct
+/// from the Popo/Nana actor kinds; the runtime owns that boundary.
+pub const fn group_kind(kind: u32) -> u32 {
+    match kind {
+        0x24..=0x26 => 0x24,
+        0x5a | 0x5b => 0x5a,
+        _ => kind,
+    }
+}
+
+pub fn selected_group_index(kinds: &[u32], values: &[u8], kind: u32) -> Option<usize> {
+    kinds
+        .iter()
+        .enumerate()
+        .filter(|(_, k)| group_kind(**k) == group_kind(kind))
+        .find(|(i, _)| rank(values, *i).is_some())
+        .map(|(i, _)| i)
+}
+
+pub fn group_rank(kinds: &[u32], values: &[u8], kind: u32) -> Option<u8> {
+    if values.first() == Some(&1) {
+        return None;
+    }
+    selected_group_index(kinds, values, kind).and_then(|i| rank(values, i))
+}
+
+fn select_group(kinds: &[u32], values: &mut [u8], kind: u32) -> bool {
+    let Some(index) = catalog_index(kinds, kind) else {
+        return false;
+    };
+    if values.len() != kinds.len() + 1 {
+        return false;
+    }
+    if values[0] == 0 {
+        if let Some(previous) = selected_group_index(kinds, values, kind) {
+            if previous == index {
+                return false;
+            }
+            values[index + 1] = values[previous + 1];
+            values[previous + 1] = 0;
+            return true;
+        }
+    }
+    select_kind(values, index)
+}
+
+/// All retains only non-default group starts. Those entries are preferences,
+/// not explicit ranks, and are interpreted only while the All flag is set.
+pub fn select_all(kinds: &[u32], values: &mut [u8]) {
+    let starts: Vec<_> = [0x24, 0x5a]
+        .iter()
+        .filter_map(|kind| selected_group_index(kinds, values, *kind))
+        .filter(|i| kinds[*i] != group_kind(kinds[*i]))
+        .collect();
+    values.fill(0);
+    if let Some(all) = values.first_mut() {
+        *all = 1;
+    }
+    for i in starts {
+        values[i + 1] = 1;
+    }
+}
+
+/// CSS row-major order, once per native group, with selected starting forms.
+pub fn css_order(kinds: &[u32], values: &[u8], excluded: Option<u32>) -> Vec<u32> {
+    GRID.iter()
+        .filter_map(|slot| match slot {
+            Slot::Fighter(kind, _) => Some(*kind),
+            Slot::Shared(group) => {
+                let default = group.forms()[0].0;
+                Some(
+                    selected_group_index(kinds, values, default)
+                        .map(|i| kinds[i])
+                        .unwrap_or(default),
+                )
+            }
+            _ => None,
+        })
+        .filter(|kind| kinds.contains(kind) && excluded.map(group_kind) != Some(group_kind(*kind)))
+        .collect()
+}
+
+impl RosterGrid {
+    /// On editor entry/role switch display that role's persisted starting forms.
+    pub fn sync_forms(&mut self, kinds: &[u32], values: &[u8]) {
+        for group in [Group::Aegis, Group::PokemonTrainer] {
+            let forms = group.forms();
+            self.forms[group as usize] = selected_group_index(kinds, values, forms[0].0)
+                .and_then(|i| forms.iter().position(|(kind, _)| *kind == kinds[i]))
+                .unwrap_or(0) as u8;
+        }
     }
 }
 
@@ -398,45 +534,124 @@ mod tests {
     use super::*;
 
     /// Mirrors the consts crate's `trio::CHOICES` kind order (85 stable positions).
-    const CATALOG: [u32; 85] = [
+    const CATALOG: [u32; 86 + 3 * cfg!(feature="mii-saved-alpha") as usize] = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
         0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
         0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
         0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e,
         0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56,
         0x57, 0x58, 0x59, 0x5c, 0x5d, // legacy 80 end here; forms are appended below
-        0x5a, 0x5b, 0x24, 0x25, 0x26,
+        0x5a, 0x5b, 0x24, 0x25, 0x26, 0x4b,
+        #[cfg(feature="mii-saved-alpha")]
+        0x49,
+        #[cfg(feature="mii-saved-alpha")]
+        0x48,
+        #[cfg(feature="mii-saved-alpha")]
+        0x4a,
     ];
 
     /// Observed CSS rows with the audit's names; shared slots show their first form.
     const ROW_LABELS: [&[&str]; ROWS] = [
         &[
-            "Mario", "Donkey Kong", "Link", "Samus", "Dark Samus", "Yoshi", "Kirby", "Fox",
-            "Pikachu", "Luigi", "Ness", "Captain Falcon", "Jigglypuff",
+            "Mario",
+            "Donkey Kong",
+            "Link",
+            "Samus",
+            "Dark Samus",
+            "Yoshi",
+            "Kirby",
+            "Fox",
+            "Pikachu",
+            "Luigi",
+            "Ness",
+            "Captain Falcon",
+            "Jigglypuff",
         ],
         &[
-            "Peach", "Daisy", "Bowser", "Ice Climbers", "Sheik", "Zelda", "Dr. Mario", "Pichu",
-            "Falco", "Marth", "Lucina", "Young Link", "Ganondorf",
+            "Peach",
+            "Daisy",
+            "Bowser",
+            "Ice Climbers",
+            "Sheik",
+            "Zelda",
+            "Dr. Mario",
+            "Pichu",
+            "Falco",
+            "Marth",
+            "Lucina",
+            "Young Link",
+            "Ganondorf",
         ],
         &[
-            "Mewtwo", "Roy", "Chrom", "Mr. Game & Watch", "Meta Knight", "Pit", "Dark Pit",
-            "Zero Suit Samus", "Wario", "Snake", "Ike", "Squirtle", "Diddy Kong",
+            "Mewtwo",
+            "Roy",
+            "Chrom",
+            "Mr. Game & Watch",
+            "Meta Knight",
+            "Pit",
+            "Dark Pit",
+            "Zero Suit Samus",
+            "Wario",
+            "Snake",
+            "Ike",
+            "Squirtle",
+            "Diddy Kong",
         ],
         &[
-            "Lucas", "Sonic", "King Dedede", "Olimar", "Lucario", "R.O.B.", "Toon Link", "Wolf",
-            "Villager", "Mega Man", "Wii Fit Trainer", "Rosalina & Luma", "Little Mac",
+            "Lucas",
+            "Sonic",
+            "King Dedede",
+            "Olimar",
+            "Lucario",
+            "R.O.B.",
+            "Toon Link",
+            "Wolf",
+            "Villager",
+            "Mega Man",
+            "Wii Fit Trainer",
+            "Rosalina & Luma",
+            "Little Mac",
         ],
         &[
-            "Greninja", "Palutena", "PAC-MAN", "Robin", "Shulk", "Bowser Jr.", "Duck Hunt", "Ryu",
-            "Ken", "Cloud", "Corrin", "Bayonetta", "Inkling",
+            "Greninja",
+            "Palutena",
+            "PAC-MAN",
+            "Robin",
+            "Shulk",
+            "Bowser Jr.",
+            "Duck Hunt",
+            "Ryu",
+            "Ken",
+            "Cloud",
+            "Corrin",
+            "Bayonetta",
+            "Inkling",
         ],
         &[
-            "Ridley", "Simon", "Richter", "King K. Rool", "Isabelle", "Incineroar",
-            "Piranha Plant", "Joker", "Hero", "Banjo & Kazooie", "Terry", "Byleth", "Min Min",
+            "Ridley",
+            "Simon",
+            "Richter",
+            "King K. Rool",
+            "Isabelle",
+            "Incineroar",
+            "Piranha Plant",
+            "Joker",
+            "Hero",
+            "Banjo & Kazooie",
+            "Terry",
+            "Byleth",
+            "Min Min",
         ],
         &[
-            "Steve", "Sephiroth", "Pyra", "Kazuya", "Sora", "Mii Brawler", "Mii Swordfighter",
-            "Mii Gunner", "Player/CPU",
+            "Steve",
+            "Sephiroth",
+            "Pyra",
+            "Kazuya",
+            "Sora",
+            "Mii Brawler",
+            "Mii Swordfighter",
+            "Mii Gunner",
+            "All",
         ],
     ];
 
@@ -536,7 +751,7 @@ mod tests {
             (6, 4, "Pyra"),
             (6, 6, "Sora"),
             (6, 7, "Mii Brawler"),
-            (6, 10, "Player/CPU"),
+            (6, 10, "All"),
         ] {
             assert_eq!(at(&grid_at(row, column)), (row, column, label));
         }
@@ -549,8 +764,8 @@ mod tests {
         for group in [Group::Aegis, Group::PokemonTrainer] {
             seen.extend(group.forms().iter().map(|(kind, _)| *kind));
         }
-        for cell in 0..CELLS {
-            if let Slot::Fighter(kind, _) = GRID[cell] {
+        for slot in GRID {
+            if let Slot::Fighter(kind, _) = slot {
                 seen.push(kind);
             }
         }
@@ -566,12 +781,14 @@ mod tests {
             .collect();
         assert_eq!(
             unsupported,
-            [
-                (1, 3, "Ice Climbers"),
+            &[
+                #[cfg(not(feature="mii-saved-alpha"))]
                 (6, 7, "Mii Brawler"),
+                #[cfg(not(feature="mii-saved-alpha"))]
                 (6, 8, "Mii Swordfighter"),
+                #[cfg(not(feature="mii-saved-alpha"))]
                 (6, 9, "Mii Gunner"),
-            ]
+            ] as &[(usize, usize, &str)]
         );
         for info in (0..CELLS).map(|cell| grid.info(cell).unwrap()) {
             let supported = matches!(info.content, CellContent::Fighter(_));
@@ -580,9 +797,9 @@ mod tests {
                 assert!(catalog_index(&CATALOG, info.kind().unwrap()).is_some());
             }
         }
-        assert_eq!(grid.info(CELLS - 1).unwrap().content, CellContent::RoleToggle);
+        assert_eq!(grid.info(CELLS - 1).unwrap().content, CellContent::All);
         assert_eq!(catalog_index(&CATALOG, 0x5a), Some(80));
-        assert_eq!(catalog_index(&CATALOG, 0x48), None);
+        assert_eq!(catalog_index(&CATALOG, 0x48), cfg!(feature="mii-saved-alpha").then_some(87));
     }
 
     #[test]
@@ -596,7 +813,7 @@ mod tests {
         grid.step(Direction::Right);
         assert_eq!(at(&grid), (6, 2, "Steve"));
         grid.step(Direction::Left);
-        assert_eq!(at(&grid), (6, 10, "Player/CPU"));
+        assert_eq!(at(&grid), (6, 10, "All"));
         grid.step(Direction::Left);
         assert_eq!(at(&grid), (6, 9, "Mii Gunner"));
         // Unsupported placeholders are ordinary stops.
@@ -622,9 +839,9 @@ mod tests {
             (2, (6, 2, "Steve")),
             (4, (6, 4, "Pyra")),
             (9, (6, 9, "Mii Gunner")),
-            (10, (6, 10, "Player/CPU")),
-            (11, (6, 10, "Player/CPU")),
-            (12, (6, 10, "Player/CPU")),
+            (10, (6, 10, "All")),
+            (11, (6, 10, "All")),
+            (12, (6, 10, "All")),
         ] {
             let mut grid = grid_at(5, from);
             grid.step(Direction::Down);
@@ -634,17 +851,23 @@ mod tests {
         for column in 2..=10 {
             let mut grid = grid_at(6, column);
             grid.step(Direction::Up);
-            assert_eq!((grid.cursor_info().row, grid.cursor_info().column), (5, column));
+            assert_eq!(
+                (grid.cursor_info().row, grid.cursor_info().column),
+                (5, column)
+            );
             let mut grid = grid_at(6, column);
             grid.step(Direction::Down);
-            assert_eq!((grid.cursor_info().row, grid.cursor_info().column), (0, column));
+            assert_eq!(
+                (grid.cursor_info().row, grid.cursor_info().column),
+                (0, column)
+            );
         }
         let mut grid = grid_at(0, 0);
         grid.step(Direction::Up);
         assert_eq!(at(&grid), (6, 2, "Steve"));
         let mut grid = grid_at(0, 12);
         grid.step(Direction::Up);
-        assert_eq!(at(&grid), (6, 10, "Player/CPU"));
+        assert_eq!(at(&grid), (6, 10, "All"));
     }
 
     #[test]
@@ -680,7 +903,7 @@ mod tests {
     fn form_cycling_ignores_other_cells_and_never_edits_a_roster() {
         let mut grid = RosterGrid::new(Role::Player);
         let before = grid;
-        for label in ["Mario", "Ice Climbers", "Mii Gunner", "Player/CPU", "Sora"] {
+        for label in ["Mario", "Ice Climbers", "Mii Gunner", "All", "Sora"] {
             go_to(&mut grid, label);
             let moved = grid;
             assert!(!grid.cycle_form(), "{label}");
@@ -695,23 +918,32 @@ mod tests {
         assert_eq!(untouched, values);
         // Only A commits the displayed form.
         grid.cycle_form();
-        assert_eq!(grid.confirm(&CATALOG, &mut untouched), Outcome::RosterChanged);
+        assert_eq!(
+            grid.confirm(&CATALOG, &mut untouched),
+            Outcome::RosterChanged
+        );
         assert_eq!(rank(&untouched, 81), Some(2));
         assert_eq!(rank(&untouched, 80), None);
     }
 
     #[test]
-    fn role_toggle_cell_flips_role_without_touching_either_roster() {
+    fn all_cell_changes_only_the_active_roster_and_role_switch_is_separate() {
         let mut rosters = [explicit_mode(&[0, 1]), explicit_mode(&[7])];
         let snapshot = rosters.clone();
         let mut grid = RosterGrid::new(Role::Player);
-        go_to(&mut grid, "Player/CPU");
+        go_to(&mut grid, "All");
         for expected in [Role::Cpu, Role::Player, Role::Cpu] {
-            let active = grid.role() as usize;
-            assert_eq!(grid.confirm(&CATALOG, &mut rosters[active]), Outcome::RoleToggled);
+            grid.toggle_role();
             assert_eq!(grid.role(), expected);
         }
         assert_eq!(rosters, snapshot);
+        assert_eq!(
+            grid.confirm(&CATALOG, &mut rosters[1]),
+            Outcome::RosterChanged
+        );
+        assert_eq!(rosters[1], all_mode());
+        assert_eq!(rosters[0], snapshot[0]);
+        rosters = snapshot.clone();
         assert_eq!(grid.cursor_info().kind(), None);
         assert!(!grid.remove(&CATALOG, &mut rosters[0]));
         assert_eq!(rosters, snapshot);
@@ -719,14 +951,26 @@ mod tests {
         let mut grid = RosterGrid::new(Role::Player);
         go_to(&mut grid, "Pyra");
         let active = grid.role() as usize;
-        assert_eq!(grid.confirm(&CATALOG, &mut rosters[active]), Outcome::RosterChanged);
+        assert_eq!(
+            grid.confirm(&CATALOG, &mut rosters[active]),
+            Outcome::RosterChanged
+        );
         grid.toggle_role();
         grid.cycle_form();
         let active = grid.role() as usize;
-        assert_eq!(grid.confirm(&CATALOG, &mut rosters[active]), Outcome::RosterChanged);
+        assert_eq!(
+            grid.confirm(&CATALOG, &mut rosters[active]),
+            Outcome::RosterChanged
+        );
         // Both badges read the shown kind's ranks, whichever role is active.
-        assert_eq!((rank(&rosters[0], 80), rank(&rosters[1], 80)), (Some(3), None));
-        assert_eq!((rank(&rosters[0], 81), rank(&rosters[1], 81)), (None, Some(2)));
+        assert_eq!(
+            (rank(&rosters[0], 80), rank(&rosters[1], 80)),
+            (Some(3), None)
+        );
+        assert_eq!(
+            (rank(&rosters[0], 81), rank(&rosters[1], 81)),
+            (None, Some(2))
+        );
     }
 
     #[test]
@@ -775,7 +1019,10 @@ mod tests {
         assert!(deselect_kind(&mut values, 2));
         assert_eq!(explicit(&values), [8]);
         let last = values.clone();
-        assert!(!deselect_kind(&mut values, 8), "final explicit member stays");
+        assert!(
+            !deselect_kind(&mut values, 8),
+            "final explicit member stays"
+        );
         assert_eq!(values, last);
         assert_valid(&values);
         // All mode has nothing to remove.
@@ -825,9 +1072,18 @@ mod tests {
         assert_eq!(rank(&values, 84), Some(3));
         assert_eq!(grid.confirm(&CATALOG, &mut values), Outcome::Unchanged);
         assert_eq!(explicit(&values), [0, 79, 84]);
-        go_to(&mut grid, "Ice Climbers");
-        assert_eq!(grid.confirm(&CATALOG, &mut values), Outcome::Unchanged);
-        assert!(!grid.remove(&CATALOG, &mut values));
+        go_to(&mut grid, "Mii Brawler");
+        #[cfg(not(feature="mii-saved-alpha"))]
+        {
+            assert_eq!(grid.confirm(&CATALOG, &mut values), Outcome::Unchanged);
+            assert!(!grid.remove(&CATALOG, &mut values));
+        }
+        #[cfg(feature="mii-saved-alpha")]
+        {
+            assert_eq!(grid.confirm(&CATALOG, &mut values), Outcome::RosterChanged);
+            assert_eq!(rank(&values, 87), Some(4)); // App enforces current saved-class admission.
+            assert!(grid.remove(&CATALOG, &mut values));
+        }
         go_to(&mut grid, "Sora");
         assert!(grid.remove(&CATALOG, &mut values));
         assert_eq!(explicit(&values), [0, 84]);

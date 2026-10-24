@@ -477,9 +477,31 @@ macro_rules! daikon_replace {
 
             #[skyline::hook(replace = [<$char daikon_ $num _prob>])]
             pub unsafe fn [<handle_ $char daikon_ $num _prob>]() -> f32 {
+                // Capture native LR before the original getter or logging.
+                // The candidate build must verify this ordering in assembly.
+                #[cfg(feature = "item-state-probe")]
+                let caller = {
+                    let lr: usize;
+                    core::arch::asm!("mov {}, x30", out(reg) lr,
+                        options(nomem, nostack, preserves_flags));
+                    lr
+                };
                 let orig = original!()();
                 if is_training_mode() {
                     let turnip_chosen = read(&TURNIP_CHOSEN);
+                    #[cfg(feature = "item-state-probe")]
+                    if $num == 1 {
+                        crate::turnip_face_caller_probe::on_probability(
+                            stringify!($char), caller, turnip_chosen);
+                    }
+
+                    #[cfg(feature = "item-state-probe")]
+                    if turnip_chosen.is_some() {
+                        crate::logging::diagnostic(format_args!(
+                            "[ItemStateProbe] probability char={} face={} forced={:?}",
+                            stringify!($char), $num, turnip_chosen
+                        ));
+                    }
                     if turnip_chosen == Some($num) {
                         return 58.0;
                     } else if turnip_chosen != None {

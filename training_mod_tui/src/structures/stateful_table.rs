@@ -27,16 +27,17 @@ impl<T: Clone + Serialize> StatefulTable<T> {
             })
             .sum()
     }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     pub fn full_len(&self) -> usize {
         self.rows * self.cols
     }
     pub fn as_vec(&self) -> Vec<T> {
         let mut v = Vec::with_capacity(self.len());
         for row in self.items.iter() {
-            for item in row.iter() {
-                if let Some(i) = item {
-                    v.push(i.clone());
-                }
+            for item in row.iter().flatten() {
+                v.push(item.clone());
             }
         }
         v
@@ -49,8 +50,8 @@ impl<T: Clone + Serialize> StatefulTable<T> {
         Self {
             state: TableState::default().with_selected(Some(TableSelection::default())),
             items: vec![vec![None; cols]; rows],
-            rows: rows,
-            cols: cols,
+            rows,
+            cols,
         }
     }
     pub fn with_items(rows: usize, cols: usize, v: Vec<T>) -> Self {

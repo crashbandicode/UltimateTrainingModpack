@@ -802,6 +802,14 @@
       "url": "https://ssb.wiki.gallery/images/3/3d/MiiGunnerHeadSSBU.png",
       "sha256": "8c6db53ba4cf9ee580e7e3840bd3797fee68d3cfab3a9cbcde93db4378e2bcb3",
       "bytes": 3908
+    },
+    {
+      "kind": 94,
+      "name": "All (Smash Ball)",
+      "filename": "all-smash-ball.png",
+      "source": "Deterministic symbol drawn by scripts/roster-grid/make_all_icon.py",
+      "sha256": "d15c8c64097085299e0770e89b0690b98ddee6aee0a885cf746d7359d678975c",
+      "bytes": 776
     }
   ]
 }

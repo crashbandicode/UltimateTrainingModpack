@@ -19,7 +19,7 @@ use std::{
 
 use serde::Deserialize;
 
-use crate::recording::{MacroError, MacroRecording, SCHEMA_VERSION};
+use crate::recording::{MacroError, MacroRecording, SCHEMA_VERSION, MII_SCHEMA_VERSION};
 
 /// Longest id accepted, in characters.
 pub const MAX_ID_CHARS: usize = 48;
@@ -230,7 +230,7 @@ fn decode(data: &[u8]) -> Result<MacroRecording, MacroError> {
                 schema_version: u32,
             }
             match serde_json::from_slice::<Header>(data) {
-                Ok(header) if header.schema_version != SCHEMA_VERSION => {
+                Ok(header) if !matches!(header.schema_version, SCHEMA_VERSION | MII_SCHEMA_VERSION) => {
                     Err(MacroError::UnsupportedVersion {
                         found: header.schema_version,
                     })

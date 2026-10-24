@@ -9,23 +9,146 @@ use training_mod_consts::{OnOff, TrainingModpackMenu, TrioFighter, MENU};
 use training_mod_sync::{lock_write, read as setting};
 
 use crate::character_memory::WaitingSession;
-use training_mod_consts::character_forms::{EntryState, Forms};
 use crate::common::{
     button_config, game_mode,
     input::{Buttons, MappedInputs},
     menu,
 };
 use crate::training::{self, lobby};
+use training_mod_consts::character_forms::{next_cycle, EntryState, Forms};
+
+#[path = "native_service.rs"]
+mod native_service;
+use native_service::ServiceEntryContext;
+
+#[path = "native_install.rs"]
+mod native_install;
+use native_install::{InstallGate, InstallToken};
+
+#[path = "native_source.rs"]
+mod native_source;
+#[cfg(any(
+    feature = "source-capacity-probe",
+    feature = "managed-third-source-alpha"
+))]
+#[path = "native_source_capacity.rs"]
+mod native_source_capacity;
+#[path = "character_sources.rs"]
+pub mod sources;
+
+#[cfg(feature = "source-lifecycle-probe")]
+#[path = "source_lifecycle_probe.rs"]
+pub mod source_lifecycle_probe;
+
+#[cfg(feature = "source-capacity-probe")]
+#[path = "source_capacity_probe.rs"]
+pub mod source_capacity_probe;
+
+#[cfg(feature = "source-ldn-capacity-probe")]
+#[path = "source_ldn_capacity_probe.rs"]
+mod source_ldn_capacity_probe;
+
+#[cfg(feature = "source-owner-probe")]
+#[path = "source_owner_probe.rs"]
+pub mod source_owner_probe;
 
 macro_rules! trace {
     ($($arg:tt)*) => { crate::logging::diagnostic(format_args!($($arg)*)) };
 }
 
+#[cfg(feature = "mii-pool-observer")]
+#[path = "mii_pool_observer.rs"]
+pub mod mii_pool_observer;
+#[cfg(feature = "mii-origin-observer")]
+#[path = "mii_origin_observer.rs"]
+mod mii_origin_observer;
+
+#[cfg(feature="mii-saved-alpha")]
+#[path="mii_saved_alpha.rs"]
+pub(crate) mod mii_saved_alpha;
+#[cfg(feature="mii-saved-alpha")]
+#[path="mii_backend.rs"]
+mod mii_backend;
+#[cfg(feature="mii-saved-alpha")]
+#[path="mii_saved_fingerprints.rs"]
+mod mii_saved_fingerprints;
+
+#[cfg(feature="mii-ordinary-player-alpha")]
+#[path="mii_ordinary_player.rs"]
+mod mii_ordinary_player;
+#[cfg(feature="mii-ordinary-cpu-alpha")]
+#[path="mii_ordinary_cpu.rs"]
+mod mii_ordinary_cpu;
+#[cfg(feature="mii-ordinary-cpu-alpha")]
+#[path="mii_selector_native.rs"]
+mod mii_selector_native;
+#[cfg(feature="mii-ldn-qualification-probe")]
+#[path="mii_ldn_qualification.rs"]
+mod mii_ldn_qualification;
+#[cfg(feature="mii-managed-helper-alpha")]
+#[path="mii_managed_helper.rs"]
+mod mii_managed_helper;
+#[cfg(feature="mii-ordinary-cpu-alpha")]
+#[path="mii_auto_init.rs"]
+mod mii_auto_init;
+#[cfg(feature="mii-ordinary-cpu-alpha")]
+#[path="mii_replay.rs"]
+pub(crate) mod mii_replay;
+
 static BASE: AtomicUsize = AtomicUsize::new(0);
-static BUSY: AtomicBool = AtomicBool::new(false);
+static INSTALL: InstallGate = InstallGate::new();
 static OWNED_BUTTONS: AtomicU32 = AtomicU32::new(0);
+// The first ready body of this native entry supplies its character-select kind.
+// Reloads retain the entry, so a practice replacement must not overwrite this.
+static ORIGINAL_KINDS: [AtomicU32; 2] = [AtomicU32::new(u32::MAX), AtomicU32::new(u32::MAX)];
+static SOLO_ACTIVE: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
 static STATES: [Mutex<State>; 2] = [Mutex::new(State::empty()), Mutex::new(State::empty())];
-static WAITING_MEMORY: Mutex<WaitingSession<TrioFighter>> = Mutex::new(WaitingSession::empty());
+static WAITING_MEMORY: Mutex<WaitingSession<WaitingValue>> = Mutex::new(WaitingSession::empty());
+type WaitingValue=training_mod_consts::mii::remembered::Value<TrioFighter,Forms>;
+#[cfg(feature="mii-saved-alpha")]
+fn remember_owned(role:Role,generation:u64,kind:u32,forms:Forms,
+    configuration:Option<training_mod_consts::mii::lifetime::Configuration>,cursor:Option<usize>,original:bool) {
+    let mut memory=WAITING_MEMORY.lock().unwrap();
+    if mii_backend::current()!=Some(mii_backend::Layout::Ldn)
+        || mii_saved_alpha::current_generation(role as u32)!=generation {return;}
+    if let Some(fighter)=TrioFighter::from_kind(kind) {
+        memory.commit(role as usize,
+            WaitingValue {fighter,forms,cursor,configuration,owned:true,original});
+        drop(memory);
+        crate::kirby_hats::fighter_committed(role as usize, kind);
+    }
+}
+fn restore_owned(role:Role,value:WaitingValue)->bool {
+    // Evaluate the role adapter even when the remembered value is already owned.
+    // Missing qualification never falls through to a kind-only Mii load.
+    match role {
+        Role::Player => {
+            #[cfg(feature="mii-ordinary-player-alpha")]
+            { value.owned | mii_ordinary_player::request_restore(value) }
+            #[cfg(not(feature="mii-ordinary-player-alpha"))]
+            { value.owned }
+        }
+        Role::Cpu => {
+            #[cfg(feature="mii-ordinary-cpu-alpha")]
+            { value.owned | mii_ordinary_cpu::request_restore(value) }
+            #[cfg(not(feature="mii-ordinary-cpu-alpha"))]
+            { value.owned }
+        }
+    }
+}
+#[cfg(feature="mii-saved-alpha")]
+fn observe_mii_origin(role:Role,generation:u64,kind:u32,forms:Forms,
+    configuration:Option<training_mod_consts::mii::lifetime::Configuration>) {
+    let (Some(configuration),Some(fighter))=(configuration,TrioFighter::from_kind(kind)) else{return;};
+    let mut memory=WAITING_MEMORY.lock().unwrap();
+    if mii_backend::current()!=Some(mii_backend::Layout::Ldn)
+        || mii_saved_alpha::current_generation(role as u32)!=generation {return;}
+    // observe preserves a same-lobby remembered choice; a fresh room clears both roles.
+    let fresh = memory.observe(role as usize,WaitingValue {fighter,forms,cursor:None,
+        configuration:Some(configuration),owned:true,original:true});
+    drop(memory);
+    if fresh { crate::kirby_hats::fresh_lobby(); }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Role {
@@ -72,6 +195,7 @@ impl Scope {
 enum Selection {
     Direct(TrioFighter),
     Cycle,
+    RefreshPartners,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -86,11 +210,13 @@ struct Request {
 
 #[derive(Clone, Copy, Debug)]
 struct Active {
+    install: InstallToken,
     scope: Scope,
     epoch: usize,
     revision: usize,
     entry: usize,
     target: TrioFighter,
+    forms: Forms,
     slot: Option<usize>,
     ticks: usize,
     phase: u32,
@@ -142,7 +268,98 @@ fn scope(role: Role) -> Option<Scope> {
 }
 
 pub fn busy() -> bool {
-    BUSY.load(Ordering::Acquire)
+    INSTALL.suspends_practice()
+}
+
+/// Hat continuation waits for the remembered practice fighter, including owned
+/// Mii transitions, instead of acting on a briefly ready CSS body after return.
+pub fn waiting_choice_settled(role: usize) -> bool {
+    if busy() { return false; }
+    if STATES[role].lock().unwrap().observed.is_none_or(|(_, kind)| kind != 6) {
+        return false;
+    }
+    // The other role's automatic replacement would cancel a newly queued hat.
+    // Wait for both, without nesting roster/memory locks into hat acquisition.
+    if STATES.iter().any(|state| {
+        let state = state.lock().unwrap();
+        state.pending.is_some() || state.active.is_some()
+    }) { return false; }
+    let memory = WAITING_MEMORY.lock().unwrap();
+    !memory.restoration_pending([Role::Player.enabled(), Role::Cpu.enabled()])
+}
+
+fn finish_install(token: InstallToken, reason: &str) -> bool {
+    let finished = INSTALL.finish(token);
+    #[cfg(feature = "source-ldn-capacity-link-probe")]
+    if reason == "capacity Link native destruction" {
+        trace!("[NativeInstall] capacity Link destructor token={:?} finished={} gate_active_after={}",
+            token, finished, INSTALL.active());
+    }
+    #[cfg(feature = "managed-third-source-alpha")]
+    if reason == "managed source destroyed" {
+        trace!(
+            "[NativeInstall] managed destructor token={:?} finished={} gate_active_after={}",
+            token,
+            finished,
+            INSTALL.active()
+        );
+    }
+    if !finished {
+        trace!(
+            "[NativeInstall] ignored stale completion token={:?} reason={}",
+            token,
+            reason
+        );
+    }
+    finished
+}
+
+fn original_kind(role: Role) -> Option<u32> {
+    let kind = ORIGINAL_KINDS[role as usize].load(Ordering::Acquire);
+    (kind != u32::MAX).then_some(kind)
+}
+
+/// Original native P1 selection, not the current practice replacement.
+pub fn original_player_kind() -> Option<u32> {
+    scope(Role::Player).and_then(|_| original_kind(Role::Player))
+}
+
+/// Native CPU choice for the hat picker; practice swaps do not replace it.
+pub fn original_cpu_kind() -> Option<u32> {
+    scope(Role::Cpu).and_then(|_| original_kind(Role::Cpu))
+}
+
+/// Published only from a ready native descriptor, not from an unapplied preference.
+pub fn solo_popo_active(cpu: bool) -> bool {
+    let role = if cpu { Role::Cpu } else { Role::Player };
+    scope(role).is_some() && SOLO_ACTIVE[role as usize].load(Ordering::Acquire)
+}
+
+fn requested_forms(m: &TrainingModpackMenu, role: Role, kind: u32) -> Forms {
+    let solo = match role {
+        Role::Cpu => m.solo_popo_cpu,
+        Role::Player if original_kind(role) == Some(0x4b) => m.solo_popo_original,
+        Role::Player => m.solo_popo_player_cycle,
+    };
+    if kind == 0x4b && solo == OnOff::ON {
+        Forms::solo_popo()
+    } else {
+        Forms::starting(kind)
+    }
+}
+
+fn publish_partners(role: Role, forms: Forms) {
+    SOLO_ACTIVE[role as usize].store(forms == Forms::solo_popo(), Ordering::Release);
+}
+
+fn selection_label(role: Role, fighter: TrioFighter, slot: Option<usize>) -> String {
+    match slot {
+        Some(index) => format!("{}. {}", index + 1, fighter.name()),
+        None if role == Role::Player && original_kind(role) == Some(fighter.kind()) => {
+            format!("0. {}", fighter.name())
+        }
+        None => fighter.name().into(),
+    }
 }
 
 fn roster(m: &TrainingModpackMenu, role: Role) -> Vec<TrioFighter> {
@@ -150,7 +367,11 @@ fn roster(m: &TrainingModpackMenu, role: Role) -> Vec<TrioFighter> {
         Role::Player => m.player_roster,
         Role::Cpu => m.cpu_roster,
     }
-    .fighters()
+    .fighters_excluding(if role == Role::Player {
+        original_kind(role)
+    } else {
+        None
+    }).into_iter().filter(|f| !(0x48..=0x4a).contains(&f.kind())).collect()
 }
 
 fn notify(role: Role, message: String) {
@@ -164,7 +385,8 @@ fn notify(role: Role, message: String) {
 
 /// Called after committing menu values. Editing an unrelated option must not
 /// replace a fighter, and navigating/highlighting a fighter is not a request.
-pub fn settings_changed(previous: &TrainingModpackMenu) {
+pub fn settings_changed(previous: &TrainingModpackMenu,
+    manual: Option<(training_mod_tui::roster_grid::Role, u32)>) {
     let current = setting(&MENU);
     for role in [Role::Player, Role::Cpu] {
         if roster(previous, role) != roster(&current, role) {
@@ -181,7 +403,15 @@ pub fn settings_changed(previous: &TrainingModpackMenu) {
                     .collect::<Vec<_>>()
             );
         }
-        if role.selected(previous) != role.selected(&current) {
+        let player_just_enabled = role == Role::Player
+            && previous.trio_practice != OnOff::ON
+            && current.trio_practice == OnOff::ON;
+        // A portrait press is an action even when its one-hot setting is unchanged
+        // (e.g. retrying a previously refused request). Dispatch it exactly once.
+        let explicit = manual.is_some_and(|(picked_role, kind)|
+            (picked_role == training_mod_tui::roster_grid::Role::Player) == (role == Role::Player)
+                && kind == role.selected(&current).kind());
+        if explicit || role.selected(previous) != role.selected(&current) || player_just_enabled {
             queue(role, Selection::Direct(role.selected(&current)));
         }
     }
@@ -192,7 +422,7 @@ fn queue(role: Role, selection: Selection) {
 }
 
 fn queue_request(role: Role, selection: Selection, restoring: bool) {
-    if !role.enabled() {
+    if !role.enabled() && !matches!(selection, Selection::RefreshPartners) {
         return;
     }
     if BASE.load(Ordering::Acquire) == 0 || !crate::character_lifecycle::native_hooks_ready() {
@@ -208,12 +438,20 @@ fn queue_request(role: Role, selection: Selection, restoring: bool) {
         || lobby::native_ui_busy()
         || button_config::has_pending_request()
     {
-        if !restoring {
+        if !restoring && !matches!(selection, Selection::RefreshPartners) {
             trace!("[CharacterRoster] request rejected: another operation owns practice");
             notify(role, "Finish the current practice action first".into());
         }
         return;
     }
+    #[cfg(any(feature="mii-ordinary-player-alpha",feature="mii-ordinary-cpu-alpha"))]
+    let user_request=!restoring && !matches!(selection,Selection::RefreshPartners);
+    #[cfg(feature="mii-ordinary-player-alpha")]
+    if mii_ordinary_player::intercept(role,selection,user_request)==Some(true){return;}
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    if mii_ordinary_cpu::intercept(role,selection,user_request)==Some(true){return;}
+    #[cfg(feature="mii-saved-alpha")]
+    if mii_saved_alpha::intercept(role,selection){return;}
     let mut state = state_for(role).lock().unwrap();
     // The callback's restore peek may race a manual request. The role lock also
     // protects manual enqueue/cancellation: never overwrite newer explicit intent.
@@ -221,17 +459,19 @@ fn queue_request(role: Role, selection: Selection, restoring: bool) {
         && (state.pending.is_some()
             || state.active.is_some()
             || !matches!(selection, Selection::Direct(target)
-                if WAITING_MEMORY.lock().unwrap().restore_target(role as usize) == Some(target)))
+                if WAITING_MEMORY.lock().unwrap().restore_target(role as usize).is_some_and(|v|!v.owned && v.fighter==target)))
     {
         return;
     }
     let Some((entry, _)) = state.observed else {
         drop(state);
         trace!("[CharacterRoster] request rejected: no current practice entry");
-        notify(
-            role,
-            "Wait for the practice character to finish loading".into(),
-        );
+        if !matches!(selection, Selection::RefreshPartners) {
+            notify(
+                role,
+                "Wait for the practice character to finish loading".into(),
+            );
+        }
         return;
     };
     state.pending = Some(Request {
@@ -242,7 +482,7 @@ fn queue_request(role: Role, selection: Selection, restoring: bool) {
         age: 0,
         restoring,
     });
-    if scope.waiting() && !restoring {
+    if scope.waiting() && !restoring && !matches!(selection, Selection::RefreshPartners) {
         WAITING_MEMORY.lock().unwrap().manual_request(role as usize);
     }
     trace!(
@@ -319,12 +559,35 @@ pub fn suppress_owned_buttons(out: &mut MappedInputs) {
 /// Cancel plugin intent immediately. An already installed native reload belongs
 /// to the native scene teardown; never clear its flags or force its state ahead.
 pub fn scene_changed(mode: game_mode::Mode) {
-    WAITING_MEMORY
+    #[cfg(feature="mii-saved-alpha")]
+    mii_saved_alpha::scene_changed();
+    #[cfg(feature = "mii-origin-observer")]
+    mii_origin_observer::scene_changed();
+    #[cfg(feature = "mii-pool-observer")]
+    mii_pool_observer::scene_changed();
+    #[cfg(feature = "source-ldn-capacity-probe")]
+    source_ldn_capacity_probe::scene_changed();
+    #[cfg(feature="mii-ldn-qualification-probe")]
+    mii_ldn_qualification::scene_changed();
+    #[cfg(feature = "source-capacity-probe")]
+    source_capacity_probe::scene_changed();
+    sources::scene_changed();
+    #[cfg(feature = "source-owner-probe")]
+    source_owner_probe::scene_changed();
+    crate::character_items::scene_changed();
+    #[cfg(feature = "mii-identity-probe")]
+    crate::mii_identity_probe::forget(std::ptr::null());
+    #[cfg(feature = "mii-identical-reload-probe")]
+    mii_reload_probe::scene_changed();
+    let same_lobby = WAITING_MEMORY
         .lock()
         .unwrap()
         .scene_changed(mode.initialized, mode.melee, mode.mode);
+    crate::kirby_hats::scene_changed(same_lobby);
     OWNED_BUTTONS.store(0, Ordering::Relaxed);
     for role in [Role::Player, Role::Cpu] {
+        ORIGINAL_KINDS[role as usize].store(u32::MAX, Ordering::Release);
+        SOLO_ACTIVE[role as usize].store(false, Ordering::Release);
         let mut state = state_for(role).lock().unwrap();
         state.epoch = state.epoch.wrapping_add(1);
         state.pending = None;
@@ -352,17 +615,26 @@ unsafe fn active_body(entry: *const u8, owner: u32, kind: u32) -> bool {
 }
 
 unsafe fn ready_kind(entry: *const u8, owner: u32) -> Option<u32> {
+    ready_forms(entry, owner).map(|(_, kind)| kind)
+}
+
+unsafe fn ready_forms(entry: *const u8, owner: u32) -> Option<(Forms, u32)> {
     if !aligned(entry) || read::<u32>(entry, 0xe0) != owner {
         return None;
     }
     let state = EntryState {
         count: read(entry, 0x14),
         kinds: [read(entry, 0x18), read(entry, 0x1c), read(entry, 0x20)],
-        actor_count: read(entry, 0x28), installed: read(entry, 0x4150),
-        index: read(entry, 0x5918), previous_or_next: read(entry, 0x5919),
-        pending: read(entry, 0x591a), flags: read(entry, 0x591f),
-        outer: read(entry, 0x5920), loader: read(entry, 0x591c),
-        changing: read(entry, 0x5934), guard: read(entry, 0x5935),
+        actor_count: read(entry, 0x28),
+        installed: read(entry, 0x4150),
+        index: read(entry, 0x5918),
+        previous_or_next: read(entry, 0x5919),
+        pending: read(entry, 0x591a),
+        flags: read(entry, 0x591f),
+        outer: read(entry, 0x5920),
+        loader: read(entry, 0x591c),
+        changing: read(entry, 0x5934),
+        guard: read(entry, 0x5935),
     };
     TrioFighter::from_kind(state.kinds[0])?;
     let (forms, live_kind) = state.ready()?;
@@ -372,29 +644,147 @@ unsafe fn ready_kind(entry: *const u8, owner: u32) -> Option<u32> {
             || read::<usize>(body, 0) != BASE.load(Ordering::Acquire) + 0x4f80210
             || read::<u32>(body, 0xc) != forms.kinds[index]
             || read::<u64>(body, 0x10) != u64::from(owner)
-            || read::<u8>(body, 0x3a) != if index == state.index as usize { 4 } else { 3 }
+            || read::<u8>(body, 0x3a) != forms.body_state(index, state.index)
             || !aligned(read::<*const u8>(body, 0x20))
         {
             return None;
         }
     }
+    Some((forms, live_kind))
+}
+
+/// `ready_forms` without the roster catalog admission: single-kind Mii entries only.
+#[cfg(any(
+    feature = "mii-identical-reload-probe",
+    feature = "mii-pool-observer",
+    feature = "mii-origin-observer",
+    feature = "mii-saved-alpha"
+))]
+unsafe fn ready_single_mii(entry: *const u8, owner: u32) -> Option<u32> {
+    if !aligned(entry) || read::<u32>(entry, 0xe0) != owner {
+        return None;
+    }
+    let state = EntryState {
+        count: read(entry, 0x14),
+        kinds: [read(entry, 0x18), read(entry, 0x1c), read(entry, 0x20)],
+        actor_count: read(entry, 0x28),
+        installed: read(entry, 0x4150),
+        index: read(entry, 0x5918),
+        previous_or_next: read(entry, 0x5919),
+        pending: read(entry, 0x591a),
+        flags: read(entry, 0x591f),
+        outer: read(entry, 0x5920),
+        loader: read(entry, 0x591c),
+        changing: read(entry, 0x5934),
+        guard: read(entry, 0x5935),
+    };
+    if !(0x48..=0x4a).contains(&state.kinds[0]) {
+        return None;
+    }
+    let (forms, live_kind) = state.ready()?;
+    if forms.count != 1 {
+        return None;
+    }
+    let body = read::<*const u8>(entry, 0x4160);
+    if !aligned(body)
+        || read::<usize>(body, 0) != BASE.load(Ordering::Acquire) + 0x4f80210
+        || read::<u32>(body, 0xc) != live_kind
+        || read::<u64>(body, 0x10) != u64::from(owner)
+        || read::<u8>(body, 0x3a) != forms.body_state(0, state.index)
+        || !aligned(read::<*const u8>(body, 0x20))
+    {
+        return None;
+    }
     Some(live_kind)
+}
+
+/// Existing readiness readers only; no native calls or Rust mutexes (also used under G lock).
+#[cfg(feature = "mii-cpu-adapter-probe")]
+pub(crate) unsafe fn mii_cpu_probe_visible_ready(entry: *const u8, owner: u32) -> bool {
+    mii_saved_cpu_visible_ready(entry, owner, 0x49)
+}
+
+#[cfg(any(feature = "mii-cpu-adapter-probe", feature = "mii-saved-alpha"))]
+pub(crate) unsafe fn mii_saved_cpu_visible_ready(entry: *const u8, owner: u32, kind: u32) -> bool {
+    if !(0x48..=0x4a).contains(&kind) { return false; }
+    match owner {
+        0 => ready_forms(entry, owner).is_some_and(|(_, kind)| kind == 9),
+        1 => ready_single_mii(entry, owner) == Some(kind),
+        _ => false,
+    }
+}
+
+/// Called before G lock; the current probe may already own INSTALL, never a roster replacement.
+#[cfg(any(feature = "mii-cpu-adapter-probe",feature="mii-saved-alpha"))]
+pub(crate) unsafe fn mii_cpu_probe_roster_idle() -> bool {
+    native_source::training_cpu_quantity() == Some(1)
+        && STATES.iter().all(|state| {
+            let state = state.lock().unwrap();
+            state.active.is_none() && state.pending.is_none() && state.loaded.is_none()
+        })
 }
 
 // This current native callback owns entry lifetime. Cached numeric identities
 // below are compared only; no saved fighter/entry/module pointer is dereferenced.
-#[skyline::hook(offset = 0x650010, inline)]
-unsafe fn service(ctx: &mut InlineCtx) {
+// Pre-service dispatch only. Returning here never suppresses the native call.
+unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8) {
     crate::hang_trace::ROSTER_SERVICE.hit();
-    let entry = ctx.registers[0].x() as *mut u8;
     if !aligned(entry) {
         return;
     }
     let owner = read::<u32>(entry, 0xe0);
+    #[cfg(feature = "mii-pool-observer")]
+    mii_pool_observer::service(entry, owner);
+    #[cfg(feature = "mii-origin-observer")]
+    mii_origin_observer::service(entry, owner);
+    #[cfg(feature = "source-ldn-capacity-probe")]
+    source_ldn_capacity_probe::service(ctx, entry, owner);
+    #[cfg(feature="mii-ldn-qualification-probe")]
+    mii_ldn_qualification::service(entry, owner);
+    #[cfg(feature = "source-lifecycle-probe")]
+    source_lifecycle_probe::service(entry, owner);
+    #[cfg(feature = "source-capacity-probe")]
+    if source_capacity_probe::service(ctx, entry, owner) {
+        return;
+    }
+    sources::service(ctx, entry, owner);
+    #[cfg(feature = "source-owner-probe")]
+    if owner == 0 {
+        source_owner_probe::observe_rules();
+    }
+    #[cfg(feature = "source-owner-probe")]
+    if owner == 2 && !cfg!(feature = "managed-sources") {
+        source_owner_probe::service(entry);
+        return;
+    }
+    service_body(entry,owner,ctx.caller_lr());
+}
+
+unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
+    #[cfg(feature = "console-swap-trace")]
+    let _swap_stack = crate::practice_trace::scope(0x1080000);
     if !matches!(owner, 0 | 1 | 4) {
         return;
     }
     let role = if owner == 0 { Role::Player } else { Role::Cpu };
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    mii_auto_init::service(entry,owner);
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    mii_replay::service(entry,owner);
+    #[cfg(feature="mii-ordinary-player-alpha")]
+    if mii_ordinary_player::service(entry,owner){return;}
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    if mii_ordinary_cpu::service(entry,owner){return;}
+    #[cfg(feature="mii-saved-alpha")]
+    if mii_saved_alpha::service(entry,owner){return;}
+    #[cfg(feature = "mii-identity-probe")]
+    crate::mii_identity_probe::observe_entry(entry, owner);
+    #[cfg(feature = "mii-saved-file-probe")]
+    crate::mii_saved_file_probe::on_service(entry, owner);
+    #[cfg(feature = "mii-identical-reload-probe")]
+    if mii_reload_probe::service(entry, owner, role, _caller_lr) {
+        return;
+    }
     let active = state_for(role).lock().unwrap().active;
     if let Some(mut active) = active {
         if active.entry != entry as usize || active.scope.owner != owner {
@@ -418,12 +808,14 @@ unsafe fn service(ctx: &mut InlineCtx) {
         }
         if !active.departed
             && scope(role) == Some(active.scope)
-            && active_body(entry, owner, active.target.kind())
+            && ready_forms(entry, owner) == Some((active.forms, active.target.kind()))
             && read::<u32>(entry, 0x18) == active.target.kind()
             && read::<u8>(entry, 0x5918) == 0
         {
             let mut state = state_for(role).lock().unwrap();
-            if state.epoch != active.epoch {
+            if state.epoch != active.epoch
+                || state.active.map(|current| current.install) != Some(active.install)
+            {
                 return;
             }
             state.active = None;
@@ -436,23 +828,45 @@ unsafe fn service(ctx: &mut InlineCtx) {
                 WAITING_MEMORY
                     .lock()
                     .unwrap()
-                    .commit(role as usize, active.target);
+                    .commit(role as usize, WaitingValue::ordinary(active.target,active.forms,active.slot));
             }
             drop(state);
+            if active.scope.waiting() {
+                crate::kirby_hats::fighter_committed(role as usize, active.target.kind());
+            }
+            publish_partners(role, active.forms);
             role.sync_selection(active.target);
             refresh_hud(entry, owner, active.target.kind());
-            BUSY.store(false, Ordering::Release);
+            #[cfg(feature = "mii-ordinary-player-alpha")]
+            if owner == 0 {
+                mii_ordinary_player::complete_generic(entry, active.install, active.target.kind());
+            }
+            #[cfg(feature = "mii-ordinary-cpu-alpha")]
+            if role == Role::Cpu {
+                mii_ordinary_cpu::complete_generic(entry, active.install, active.target.kind(), active.slot);
+            }
+            finish_install(active.install, "roster ready");
             trace!("[CharacterRoster] complete owner={} target={} kind=0x{:x} slot={:?} ticks={} body_id=0x{:x}",
                 owner, active.target.name(), active.target.kind(), active.slot.map(|i| i+1),
                 active.ticks, read::<u32>(read::<*const u8>(entry, 0x4160), 8));
-            notify(
-                role,
-                match active.slot {
-                    Some(index) => format!("{}. {}", index + 1, active.target.name()),
-                    None => active.target.name().into(),
-                },
-            );
+            notify(role, selection_label(role, active.target, active.slot));
         } else {
+            // Departure cancels plugin intent, but the native entry may finish
+            // before it is destroyed. Release only serialization; never publish
+            // its old selection, HUD or readiness into the new scene.
+            if active.departed
+                && ready_forms(entry, owner) == Some((active.forms, active.target.kind()))
+                && read::<u8>(entry, 0x5918) == 0
+            {
+                let mut state = state_for(role).lock().unwrap();
+                if state.active.map(|current| current.install) == Some(active.install) {
+                    state.active = None;
+                    drop(state);
+                    finish_install(active.install, "departed roster completed");
+                    trace!("[CharacterRoster] departed install completed owner={}; selection remains cancelled", owner);
+                }
+                return;
+            }
             if active.ticks == 600 {
                 trace!("[CharacterRoster] reload stalled owner={} phase=0x{:x} departed={}; no forced native advance", owner, phase, active.departed);
             }
@@ -467,7 +881,7 @@ unsafe fn service(ctx: &mut InlineCtx) {
         }
         return;
     }
-    if busy() {
+    if INSTALL.active() {
         return;
     } // Serialize player and CPU resource mutations.
     let request = state_for(role).lock().unwrap().pending;
@@ -477,7 +891,9 @@ unsafe fn service(ctx: &mut InlineCtx) {
         if let Some(current_scope) =
             scope(role).filter(|s| s.owner == owner && !menu::captures_input())
         {
-            let Some(kind) = ready_kind(entry, owner) else { return; };
+            let Some((forms, kind)) = ready_forms(entry, owner) else {
+                return;
+            };
             if let Some(fighter) = TrioFighter::from_kind(kind) {
                 let mut state = state_for(role).lock().unwrap();
                 // A new same-owner preview can coexist with a departing entry
@@ -491,8 +907,16 @@ unsafe fn service(ctx: &mut InlineCtx) {
                 }
                 let newly_observed = state.observed != Some((entry as usize, kind));
                 if newly_observed {
+                    let _ = ORIGINAL_KINDS[role as usize].compare_exchange(
+                        u32::MAX,
+                        kind,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    );
                     state.observed = Some((entry as usize, kind));
-                    if state.loaded.is_some_and(|(identity, loaded_owner, _)| identity == entry as usize && loaded_owner == owner) {
+                    if state.loaded.is_some_and(|(identity, loaded_owner, _)| {
+                        identity == entry as usize && loaded_owner == owner
+                    }) {
                         state.loaded = Some((entry as usize, owner, kind));
                     }
                     trace!(
@@ -504,25 +928,51 @@ unsafe fn service(ctx: &mut InlineCtx) {
                     );
                 }
                 drop(state);
+                publish_partners(role, forms);
                 if newly_observed {
-                    if current_scope.waiting()
+                    // Exact native origin capture supplies a saved Mii default. A kind-only
+                    // observation must not suppress its configuration on a later return.
+                    #[cfg(feature="mii-saved-alpha")]
+                    let exact_origin_pending=mii_backend::current()==Some(mii_backend::Layout::Ldn)
+                        && (0x48..=0x4a).contains(&kind)
+                        && ((role==Role::Player && cfg!(feature="mii-ordinary-player-alpha"))
+                            || (role==Role::Cpu && cfg!(feature="mii-ordinary-cpu-alpha")));
+                    #[cfg(not(feature="mii-saved-alpha"))]
+                    let exact_origin_pending=false;
+                    let fresh_lobby = current_scope.waiting()
+                        && !exact_origin_pending
                         && WAITING_MEMORY
                             .lock()
                             .unwrap()
-                            .observe(role as usize, fighter)
-                    {
+                            .observe(role as usize, WaitingValue::ordinary(fighter,forms,None));
+                    if fresh_lobby {
                         trace!("[CharacterRoster] fresh waiting entry lifetime; cleared both practice choices");
+                        crate::kirby_hats::fresh_lobby();
                     }
                     role.sync_selection(fighter);
+                }
+                // A ready entry can precede the scene's first gameplay frame.
+                // Reloading it during stage initialization races the native
+                // fighter/script setup. Reconcile persisted Solo only once the
+                // match is active; menu changes use the same native boundary.
+                if kind == 0x4b
+                    && crate::common::is_ready_go()
+                    && forms != requested_forms(&setting(&MENU), role, kind)
+                {
+                    queue(role, Selection::RefreshPartners);
+                    return;
                 }
                 if current_scope.waiting() && role.enabled() {
                     let target = WAITING_MEMORY.lock().unwrap().restore_target(role as usize);
                     if let Some(target) = target {
-                        if target.kind() == kind {
+                        if restore_owned(role,target) {return;}
+                        if target.fighter.kind() == kind && target.forms==forms {
                             WAITING_MEMORY.lock().unwrap().commit(role as usize, target);
-                            role.sync_selection(target);
+                            crate::kirby_hats::fighter_committed(role as usize, kind);
+                            state_for(role).lock().unwrap().cursor=target.cursor;
+                            role.sync_selection(target.fighter);
                         } else {
-                            queue_request(role, Selection::Direct(target), true);
+                            queue_request(role, Selection::Direct(target.fighter), true);
                         }
                     }
                 }
@@ -534,7 +984,10 @@ unsafe fn service(ctx: &mut InlineCtx) {
         return;
     }
     let mut state = state_for(role).lock().unwrap();
-    if request.epoch != state.epoch || scope(role) != Some(request.scope) || !role.enabled() {
+    if request.epoch != state.epoch
+        || scope(role) != Some(request.scope)
+        || (!role.enabled() && !matches!(request.selection, Selection::RefreshPartners))
+    {
         state.pending = None;
         trace!("[CharacterRoster] dropped stale request at native boundary");
         return;
@@ -565,35 +1018,42 @@ unsafe fn service(ctx: &mut InlineCtx) {
     }
     let current = current.unwrap();
     let m = setting(&MENU);
-    let choices = roster(&m, role);
-    let count = choices.len();
     let (target, slot) = match request.selection {
         Selection::Direct(target) => (target, None),
+        Selection::RefreshPartners => (TrioFighter::from_kind(current).unwrap(), state.cursor),
         Selection::Cycle => {
-            let next = state
-                .cursor
-                .filter(|i| *i < count && Forms::starting(choices[*i].kind()).same_group(current))
-                .or_else(|| choices[..count].iter().position(|f| f.kind() == current))
-                .or_else(|| choices[..count].iter().position(|f| Forms::starting(f.kind()).same_group(current)))
-                .map_or(0, |i| (i + 1) % count);
-            (choices[next], Some(next))
+            let choices = roster(&m, role);
+            let kinds: Vec<_> = choices.iter().map(|fighter| fighter.kind()).collect();
+            let original = if role == Role::Player {
+                original_kind(role)
+            } else {
+                None
+            };
+            let Some((kind, slot)) = next_cycle(current, state.cursor, &kinds, original) else {
+                drop(state);
+                notify(role, "Select a character for this cycle".into());
+                return;
+            };
+            let Some(target) = TrioFighter::from_kind(kind) else {
+                return;
+            };
+            (target, slot)
         }
     };
-    if target.kind() == current {
+    let remembered=if request.restoring {WAITING_MEMORY.lock().unwrap().restore_target(role as usize)}else{None};
+    let slot=remembered.map_or(slot,|v|v.cursor);
+    let forms = remembered.map_or_else(||requested_forms(&m, role, target.kind()),|v|v.forms);
+    if ready_forms(entry, owner) == Some((forms, target.kind())) {
         state.cursor = slot;
         if request.scope.waiting() {
-            WAITING_MEMORY.lock().unwrap().commit(role as usize, target);
+            WAITING_MEMORY.lock().unwrap().commit(role as usize, WaitingValue::ordinary(target,forms,slot));
         }
         drop(state);
+        if request.scope.waiting() {
+            crate::kirby_hats::fighter_committed(role as usize, target.kind());
+        }
         role.sync_selection(target);
-        notify(
-            role,
-            format!(
-                "{}{}",
-                slot.map_or(String::new(), |i| format!("{}. ", i + 1)),
-                target.name()
-            ),
-        );
+        notify(role, selection_label(role, target, slot));
         trace!(
             "[CharacterRoster] already active owner={} kind=0x{:x} slot={:?}",
             owner,
@@ -602,24 +1062,23 @@ unsafe fn service(ctx: &mut InlineCtx) {
         );
         return;
     }
+    let Some(install_token) = INSTALL.try_begin(true) else {
+        state.pending = Some(request);
+        return;
+    };
     let active = Active {
+        install: install_token,
         scope: request.scope,
         epoch: state.epoch,
         revision: state.revision,
         entry: entry as usize,
         target,
+        forms,
         slot,
         ticks: 0,
         phase: u32::MAX,
         departed: false,
     };
-    if BUSY
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        state.pending = Some(request);
-        return;
-    }
     state.loaded = None;
     state.active = Some(active);
     drop(state);
@@ -628,18 +1087,34 @@ unsafe fn service(ctx: &mut InlineCtx) {
     let mut descriptor = [0u64; 14];
     std::ptr::copy_nonoverlapping(entry, descriptor.as_mut_ptr().cast::<u8>(), 0x70);
     let raw = descriptor.as_mut_ptr().cast::<u8>();
-    let forms = Forms::starting(target.kind());
     std::ptr::write(raw.add(0x14).cast::<u32>(), forms.count);
     for (index, kind) in forms.kinds.iter().copied().enumerate() {
         std::ptr::write(raw.add(0x18 + index * 4).cast::<u32>(), kind);
     }
+    std::ptr::write(raw.add(0x28).cast::<u32>(), forms.actor_count);
     std::ptr::write(raw.add(0x43), 0); // Requested starting form is kinds[0].
     training::clear_session_state();
     trace!("[CharacterRoster] install owner={} entry=0x{:x} from=0x{:x} to=0x{:x} slot={:?} epoch={} mode=0x{:x}",
         owner, entry as usize, current, target.kind(), slot.map(|i| i+1), active.epoch, active.scope.mode);
+    #[cfg(feature = "console-swap-trace")]
+    crate::practice_trace::checkpoint(901, [entry as u64, u64::from(owner), u64::from(current), u64::from(target.kind()), active.epoch as u64]);
+    #[cfg(feature = "mii-ordinary-player-alpha")]
+    if owner == 0 {
+        mii_ordinary_player::begin_generic(entry, install_token, &*(raw as *const [u8; 0x70]));
+    }
+    #[cfg(feature = "mii-ordinary-cpu-alpha")]
+    if role == Role::Cpu {
+        mii_ordinary_cpu::begin_generic(entry, install_token, &*(raw as *const [u8; 0x70]));
+    }
+    #[cfg(feature = "console-swap-trace")]
+    crate::practice_trace::checkpoint(902, [entry as u64, u64::from(owner), u64::from(current), u64::from(target.kind()), active.epoch as u64]);
     let install: unsafe extern "C" fn(*mut u8, *const u64, *const u8) =
         std::mem::transmute(BASE.load(Ordering::Acquire) + 0x653240);
+    #[cfg(feature = "native-unlink-probe")]
+    crate::native_unlink_probe::arm(entry as usize, owner, current, target.kind());
     install(entry, descriptor.as_ptr(), [1u8, 0, 0].as_ptr());
+    #[cfg(feature = "console-swap-trace")]
+    crate::practice_trace::checkpoint(903, [entry as u64, u64::from(owner), u64::from(current), u64::from(target.kind()), active.epoch as u64]);
 }
 
 /// Called before native entry destruction, while that argument is still owned.
@@ -648,11 +1123,46 @@ pub unsafe fn on_destroy(entry: *const u8) {
         return;
     }
     let owner = read::<u32>(entry, 0xe0);
+    #[cfg(feature="mii-saved-alpha")]
+    mii_saved_alpha::on_destroy(entry,owner);
+    #[cfg(feature="mii-ordinary-player-alpha")]
+    mii_ordinary_player::on_destroy(entry);
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    mii_ordinary_cpu::on_destroy(entry);
+    #[cfg(feature = "mii-pool-observer")]
+    mii_pool_observer::on_destroy(owner);
+    #[cfg(feature = "mii-origin-observer")]
+    mii_origin_observer::on_destroy(owner);
+    #[cfg(feature = "source-ldn-capacity-probe")]
+    source_ldn_capacity_probe::on_destroy(entry, owner);
+    #[cfg(feature="mii-ldn-qualification-probe")]
+    mii_ldn_qualification::on_destroy(entry, owner);
+    #[cfg(feature = "source-capacity-probe")]
+    source_capacity_probe::on_destroy(entry, owner);
+    #[cfg(feature = "source-lifecycle-probe")]
+    source_lifecycle_probe::destroy(entry, owner);
+    sources::on_destroy(entry, owner);
+    #[cfg(feature = "source-owner-probe")]
+    if owner == 2 && !cfg!(feature = "managed-sources") {
+        source_owner_probe::destroy(entry);
+        return;
+    }
     if !matches!(owner, 0 | 1 | 4) {
         return;
     }
     let role = if owner == 0 { Role::Player } else { Role::Cpu };
+    #[cfg(feature = "mii-identity-probe")]
+    crate::mii_identity_probe::forget(entry);
+    #[cfg(feature = "mii-identical-reload-probe")]
+    mii_reload_probe::on_destroy(entry);
     let mut state = state_for(role).lock().unwrap();
+    let practice_departure = role == Role::Player
+        && (state
+            .observed
+            .is_some_and(|(identity, _)| identity == entry as usize)
+            || state
+                .active
+                .is_some_and(|active| active.entry == entry as usize));
     if role == Role::Player
         && lobby::is_waiting_scene()
         && (state
@@ -692,13 +1202,59 @@ pub unsafe fn on_destroy(entry: *const u8) {
             entry as usize
         );
         state.observed = None;
+        ORIGINAL_KINDS[role as usize].store(u32::MAX, Ordering::Release);
+        SOLO_ACTIVE[role as usize].store(false, Ordering::Release);
     }
     if state.active.is_some_and(|a| a.entry == entry as usize) {
         trace!("[CharacterRoster] entry_destroy owner={} active={:?}; references invalidated before native destruction", owner, state.active);
-        state.active = None;
+        let active = state.active.take().unwrap();
         state.cursor = None;
-        BUSY.store(false, Ordering::Release);
+        finish_install(active.install, "roster destroyed");
     }
+    drop(state);
+    if practice_departure {
+        // Native Training -> CSS -> Training retains the same mode tuple. The
+        // actual P1 entry destructor is also a scene boundary for plugin intent.
+        #[cfg(feature = "source-capacity-probe")]
+        source_capacity_probe::scene_changed();
+        sources::scene_changed();
+        crate::kirby_hats::practice_departed(lobby::is_waiting_scene());
+        crate::character_items::scene_changed();
+        trace!("[CharacterRoster] practice consumers invalidated on P1 entry destruction");
+    }
+}
+
+/// Called only after a Mii adapter accepts its exact completion, while its
+/// current callback and INSTALL token are still owned. Publish presentation only;
+/// original CSS identity and saved configuration/preferences remain untouched.
+#[cfg(feature = "mii-saved-alpha")]
+unsafe fn publish_mii_presentation(entry: *const u8, owner: u32, generation: u64, kind: u32) {
+    let Some(logical)=mii_backend::current().and_then(|l|l.logical(owner)) else{return;};
+    let role = if owner == 0 { Role::Player } else { Role::Cpu };
+    let Some(fighter) = TrioFighter::from_kind(kind) else { return; };
+    if scope(role).is_none_or(|s|s.owner!=owner)
+        || mii_saved_alpha::current_generation(logical as u32) != generation
+        || !active_body(entry, owner, kind)
+        || read::<u32>(entry, 0x18) != kind
+        || read::<u8>(entry, 0x5918) != 0
+    {
+        return;
+    }
+    let mut state = state_for(role).lock().unwrap();
+    if mii_saved_alpha::current_generation(logical as u32) != generation
+        || state.active.is_some()
+        || state.pending.is_some()
+        || state.observed.is_some_and(|(identity, _)| identity != entry as usize)
+        || state.loaded.is_some_and(|(identity, loaded_owner, _)| {
+            identity != entry as usize || loaded_owner != owner
+        })
+    {
+        return;
+    }
+    state.observed = Some((entry as usize, kind));
+    drop(state);
+    role.sync_selection(fighter);
+    refresh_hud(entry, owner, kind);
 }
 
 /// Native reset already owns the HUD lookup. Admit our fresh, active fighter body
@@ -1026,6 +1582,14 @@ unsafe fn load_online_waiting_icons(context: *const u8) {
 }
 
 unsafe fn preload_waiting_icons(context: *const u8) {
+    // Settings are loaded before waiting entry. The practice menu cannot open
+    // while Lobby Practice is off; enabling it takes effect on the next entry.
+    // Check the persisted setting here, not scene/UI readiness: this callback
+    // runs before the waiting HUD's native loading barrier and pane creation.
+    if setting(&MENU).lobby_practice != OnOff::ON {
+        trace!("[CharacterRoster] waiting icon preload skipped: Lobby Practice off");
+        return;
+    }
     let Some(loader) = pointer_chain(context, &[0x50, 0, 8, 0, 0xcd0, 0x28]) else {
         trace!("[CharacterRoster] waiting icon preload skipped: no native loader");
         return;
@@ -1136,10 +1700,439 @@ pub fn init() {
             }
         }
         BASE.store(base, Ordering::Release);
-        skyline::install_hooks!(service);
+    #[cfg(feature="mii-saved-alpha")]
+    mii_saved_alpha::init(base);
+        #[cfg(feature = "source-lifecycle-probe")]
+        source_lifecycle_probe::install(base);
+        #[cfg(any(
+            feature = "source-capacity-probe",
+            feature = "managed-third-source-alpha"
+        ))]
+        native_source_capacity::init(base);
+        #[cfg(feature = "source-capacity-probe")]
+        source_capacity_probe::install(base);
+        #[cfg(feature="mii-ordinary-player-alpha")]
+        if !mii_ordinary_player::init(base) {return;}
+        #[cfg(feature="mii-ldn-qualification-probe")]
+        mii_ldn_qualification::init(base);
+        #[cfg(feature="mii-ordinary-cpu-alpha")]
+        mii_ordinary_cpu::init();
+        native_service::install(base);
+        #[cfg(feature = "mii-origin-observer")]
+        mii_origin_observer::init(base);
         if cfg!(feature = "waiting-roster-reload") {
             skyline::install_hooks!(load_local_waiting_icons, load_online_waiting_icons);
         }
         trace!("[CharacterRoster] native async loader installed; ordinary P1/CPU1; waiting_enabled={}; one existing entry per role; no manual loader pumping", cfg!(feature = "waiting-roster-reload"));
+    }
+}
+
+/// Development-only one-shot identical-descriptor reload of P1's native Mii in Training.
+/// It observes whether a same-kind state-3 cycle re-creates the body and re-runs the native
+/// Mii resource rebuild. No descriptor byte, record, saved entry or information block is
+/// written, except that `mii-special-change-probe` writes the neutral special of the bound saved
+/// row and information block, and `mii-fullconfig-probe` writes the full alternate configuration
+/// (`crate::mii_fullconfig_probe`, shot 1) and restores it (shot 2) on the same live entry.
+/// The install token is held until native completion or entry destruction.
+#[cfg(feature = "mii-identical-reload-probe")]
+pub(crate) mod mii_reload_probe {
+    use super::*;
+    #[cfg(feature = "mii-cpu-adapter-probe")]
+    use crate::mii_fullconfig_probe::{ack, ack_phase};
+
+    const ARM_FILE: &str = "sd:/ultimate/TrainingModpack/mii_probe.arm";
+    /// Second arm file required by the special-change variant; both must exist.
+    const CHANGE_ARM_FILE: &str = "sd:/ultimate/TrainingModpack/mii_special_probe.arm";
+    const CHANGE: bool = cfg!(feature = "mii-special-change-probe");
+    /// Full-configuration variant: both shots go through `crate::mii_fullconfig_probe::step`.
+    const FULL: bool = cfg!(feature = "mii-fullconfig-probe");
+    const TARGET_OWNER: u32 = if cfg!(feature = "mii-cpu-adapter-probe") { 1 } else { 0 };
+    /// Identical reload: one shot. Special change: shot 1 changes, shot 2 restores.
+    const MAX_SHOTS: usize = if CHANGE || FULL { 2 } else { 1 };
+
+    #[derive(Clone, Copy, Debug)]
+    struct Track {
+        token: InstallToken,
+        entry: usize,
+        kind: u32,
+        ticks: usize,
+        phase: u32,
+        saw_reload: bool,
+        departed: bool,
+    }
+
+    static ARMED: AtomicBool = AtomicBool::new(false);
+    static FIRED: AtomicBool = AtomicBool::new(false);
+    static SHOTS: AtomicUsize = AtomicUsize::new(0);
+
+    /// Shot-1 record. `fe` is the live entry's identity only: it is compared with callback
+    /// arguments and never dereferenced. `original` held equal `E+0x1b2..` and `D+0x390..` values.
+    #[derive(Clone, Copy, Debug)]
+    struct ChangeState {
+        fe: usize,
+        id: u32,
+        e: usize,
+        original: [u8; 4],
+        written: u8,
+        changed: bool,
+    }
+
+    impl ChangeState {
+        /// Saved-row specials expected while shot 1 is in effect.
+        fn changed_tuple(&self) -> [u8; 4] {
+            [self.written, self.original[1], self.original[2], self.original[3]]
+        }
+    }
+    static ORIGINAL: Mutex<Option<ChangeState>> = Mutex::new(None);
+    static REQUESTED: AtomicBool = AtomicBool::new(false);
+    static HELD: AtomicBool = AtomicBool::new(false);
+    static TRACK: Mutex<Option<Track>> = Mutex::new(None);
+
+    pub fn init() {
+        let armed = std::path::Path::new(ARM_FILE).exists()
+            && (!CHANGE || std::path::Path::new(CHANGE_ARM_FILE).exists());
+        // Third arm file and the fingerprint-gated hook installation of the full-configuration probe.
+        #[cfg(feature = "mii-fullconfig-probe")]
+        let armed = armed && crate::mii_fullconfig_probe::armed();
+        #[cfg(feature = "mii-cpu-adapter-probe")]
+        let armed = armed && ack::init();
+        ARMED.store(armed, Ordering::Relaxed);
+        #[cfg(feature = "mii-cpu-adapter-probe")]
+        trace!("[MiiCpuAdapter] armed={} target_owner=1 native_training_only=true ordinary_observation_once=true old_p1_mutation_disabled=true", armed);
+        trace!("[MiiReloadProbe] armed={} arm_file={} change={} change_arm_file={} full={} max_shots={}",
+            armed, ARM_FILE, CHANGE, CHANGE_ARM_FILE, FULL, MAX_SHOTS);
+    }
+
+    unsafe fn permitted() -> bool {
+        crate::common::is_native_training_mode()
+            && crate::common::is_ready_go()
+            && !menu::captures_input()
+            && !INSTALL.active()
+            && !training::save_states::is_loading()
+            && !training::recording_or_playback()
+            && !crate::replay_preview::occupied()
+    }
+
+    /// L3+X edge while permitted requests the one shot; the chord is consumed like the
+    /// item-state probe does. Both features cannot be enabled together (lib.rs guard).
+    pub unsafe fn handle_input(out: &mut MappedInputs, click: bool, x: bool) {
+        let held = click && x;
+        let was_held = HELD.swap(held, Ordering::Relaxed);
+        if !held || !permitted() {
+            return;
+        }
+        *out = MappedInputs::empty();
+        #[cfg(feature = "mii-cpu-adapter-probe")]
+        if !ack::inputs_enabled() { return; }
+        if held && !was_held && ARMED.load(Ordering::Relaxed) && !FIRED.load(Ordering::Relaxed)
+            && SHOTS.load(Ordering::Relaxed) < MAX_SHOTS
+        {
+            REQUESTED.store(true, Ordering::Relaxed);
+            trace!("[MiiReloadProbe] requested; waiting for a ready native Mii entry for owner {}", TARGET_OWNER);
+        }
+    }
+
+    unsafe fn info_block(entry: *const u8) -> (u16, u8, u16) {
+        let d = read::<*const u8>(entry, 0xf8);
+        if aligned(d) {
+            (read::<u16>(d, 0x72), read::<u8>(d, 0x94), read::<u16>(entry, 0x46))
+        } else {
+            (u16::MAX, u8::MAX, read::<u16>(entry, 0x46))
+        }
+    }
+
+    /// Runs inside the native service callback with the live entry. Returns true while this
+    /// probe owns the entry's reload so the roster path leaves that tick alone.
+    pub(super) unsafe fn service(entry: *mut u8, owner: u32, role: Role, _service_entry_lr: usize) -> bool {
+        #[cfg(feature = "mii-cpu-adapter-probe")]
+        if owner == 0 && ARMED.load(Ordering::Relaxed)
+            && crate::mii_fullconfig_probe::cpu_ordinary_pending() && permitted()
+        {
+            crate::mii_fullconfig_probe::observe_cpu_ordinary(entry);
+        }
+        let tracked = *TRACK.lock().unwrap();
+        if let Some(mut track) = tracked {
+            if track.entry != entry as usize {
+                return false;
+            }
+            track.ticks += 1;
+            let phase = u32::from(read::<u8>(entry, 0x5920))
+                | (u32::from(read::<u8>(entry, 0x591c)) << 8)
+                | (u32::from(read::<u8>(entry, 0x5935)) << 16);
+            if phase & 255 == 3 {
+                track.saw_reload = true;
+            }
+            if phase != track.phase {
+                track.phase = phase;
+                trace!(
+                    "[MiiReloadProbe] phase owner={} outer={} loader={} guard={} tick={}",
+                    owner, phase & 255, (phase >> 8) & 255, phase >> 16, track.ticks
+                );
+            }
+            if track.saw_reload
+                && ready_single_mii(entry, owner) == Some(track.kind)
+                && read::<u8>(entry, 0x5918) == 0
+            {
+                let body = read::<*const u8>(entry, 0x4160);
+                let body_id = read::<u32>(body, 8);
+                let (d72, d94, fe46) = info_block(entry);
+                trace!(
+                    "[MiiReloadProbe] complete owner={} kind=0x{:x} ticks={} body_id=0x{:x} fe46=0x{:x} d72=0x{:x} d94={}",
+                    owner, track.kind, track.ticks, body_id, fe46, d72, d94
+                );
+                #[cfg(feature = "mii-fullconfig-probe")]
+                crate::mii_fullconfig_probe::on_complete(entry, _service_entry_lr);
+                #[cfg(not(feature = "mii-cpu-adapter-probe"))]
+                finish_install(track.token, "identical reload probe complete");
+                #[cfg(feature = "mii-cpu-adapter-probe")]
+                let finished = finish_install(track.token, "identical reload probe complete");
+                *TRACK.lock().unwrap() = None;
+                #[cfg(feature = "mii-cpu-adapter-probe")]
+                ack::complete(ack_phase(), serde_json::json!({"owner":owner,"kind":track.kind,
+                    "entry":ack::hex(entry as usize),"ticks":track.ticks,"saw_reload":track.saw_reload,
+                    "departed":track.departed,"body_id":body_id,
+                    "fe46":fe46,"d72":d72,"d94":d94}), finished, INSTALL.active());
+                return true;
+            }
+            if track.ticks == 600 {
+                #[cfg(feature = "mii-cpu-adapter-probe")]
+                ack::terminal(ack::STALLED, ack_phase(), "native_reload_stalled",
+                    serde_json::json!({"entry":ack::hex(entry as usize),"ticks":track.ticks,
+                        "native_phase":phase,"departed":track.departed,"install_active":INSTALL.active()}));
+                trace!(
+                    "[MiiReloadProbe] stalled owner={} phase=0x{:x} departed={}; token retained until native completion or destruction",
+                    owner, phase, track.departed
+                );
+            }
+            // Preserve a departure recorded by the scene callback while this
+            // service tick observed the native loader.
+            if let Some(current) = TRACK.lock().unwrap().as_mut() {
+                if current.entry == track.entry && current.token == track.token {
+                    current.ticks = track.ticks;
+                    current.phase = track.phase;
+                    current.saw_reload = track.saw_reload;
+                }
+            }
+            return true;
+        }
+        let target_role = if TARGET_OWNER == 0 { Role::Player } else { Role::Cpu };
+        if !REQUESTED.load(Ordering::Relaxed) || owner != TARGET_OWNER || role != target_role {
+            return false;
+        }
+        // Native Training only; the waiting room and LDN scopes are out of this probe's scope.
+        if scope(role).is_none_or(|s| s.waiting()) || !permitted() {
+            return false;
+        }
+        let Some(kind) = ready_single_mii(entry, owner) else {
+            return false;
+        };
+        {
+            let state = state_for(role).lock().unwrap();
+            if state.active.is_some() || state.pending.is_some() {
+                return false;
+            }
+        }
+        let Some(token) = INSTALL.try_begin(true) else {
+            return false;
+        };
+        REQUESTED.store(false, Ordering::Relaxed);
+        if CHANGE {
+            // Writes exactly u8 E+0x1b2 and u32 D+0x390 (shot 1: (n+1)%3; shot 2: originals) after the
+            // table-based binding verified the row. Nothing else is written. Failure releases the
+            // token immediately because no install was issued.
+            if !change_step(entry) {
+                finish_install(token, "special change probe refused (binding or shot state)");
+                return false;
+            }
+        }
+        // Full configuration: shot 0 applies the alternate saved configuration, shot 1 restores the
+        // captured one. Both run before the descriptor copy below so the copy carries the written
+        // tokens. A refusal writes nothing and releases the token (no install was issued).
+        #[cfg(feature = "mii-fullconfig-probe")]
+        if !crate::mii_fullconfig_probe::step(entry, SHOTS.load(Ordering::Relaxed), _service_entry_lr) {
+            #[cfg(not(feature = "mii-cpu-adapter-probe"))]
+            finish_install(token, "full configuration probe refused (see [MiiFullProbe] lines)");
+            #[cfg(feature = "mii-cpu-adapter-probe")]
+            {
+                let finished = finish_install(token, "full configuration probe refused (see [MiiFullProbe] lines)");
+                ack::terminal(ack::REFUSED, (SHOTS.load(Ordering::Relaxed) + 1) as u8, "step_refused", serde_json::json!({
+                    "reason":ack::take_refusal(),"entry":ack::hex(entry as usize),"writes_committed":false,
+                    "committed_phase":ack_phase(),
+                    "install_finished":finished,"install_active_after":INSTALL.active()}));
+            }
+            return false;
+        }
+        let shots = SHOTS.fetch_add(1, Ordering::Relaxed) + 1;
+        if shots >= MAX_SHOTS {
+            FIRED.store(true, Ordering::Relaxed);
+        }
+        // Identical descriptor: the live 0x70-byte descriptor is copied without any change.
+        let mut descriptor = [0u64; 14];
+        std::ptr::copy_nonoverlapping(entry as *const u8, descriptor.as_mut_ptr().cast::<u8>(), 0x70);
+        let (d72, d94, fe46) = info_block(entry);
+        trace!(
+            "[MiiReloadProbe] install owner={} entry=0x{:x} kind=0x{:x} count={} fe46=0x{:x} d72=0x{:x} d94={} body_id=0x{:x}",
+            owner, entry as usize, kind, read::<u32>(entry, 0x14), fe46, d72, d94,
+            read::<u32>(read::<*const u8>(entry, 0x4160), 8)
+        );
+        *TRACK.lock().unwrap() = Some(Track {
+            token,
+            entry: entry as usize,
+            kind,
+            ticks: 0,
+            phase: u32::MAX,
+            saw_reload: false,
+            departed: false,
+        });
+        training::clear_session_state();
+        let install: unsafe extern "C" fn(*mut u8, *const u64, *const u8) =
+            std::mem::transmute(BASE.load(Ordering::Acquire) + 0x653240);
+        install(entry, descriptor.as_ptr(), [1u8, 0, 0].as_ptr());
+        true
+    }
+
+    unsafe fn row_specials(e: usize) -> [u8; 4] {
+        let e = e as *const u8;
+        [read(e, 0x1b2), read(e, 0x1b3), read(e, 0x1b4), read(e, 0x1b5)]
+    }
+
+    /// Shot 1 writes the neutral special (`E+0x1b2`, `D+0x390`) to `(n+1)%3` when all four bound
+    /// specials are within 0..=2. Shot 2 restores both on the same live entry, only while the row
+    /// still holds the shot-1 tuple. Both shots require a fresh table binding of the live callback
+    /// argument; any mismatch writes nothing.
+    unsafe fn change_step(entry: *mut u8) -> bool {
+        let Some(bound) = crate::mii_identity_probe::bind_saved_entry(entry) else {
+            trace!("[MiiSpecialProbe] refused: live entry could not be bound to a consistent saved row");
+            return false;
+        };
+        let d = read::<*const u8>(entry, 0xf8);
+        if !aligned(d) {
+            return false;
+        }
+        let d = d as usize;
+        let fe = entry as usize;
+        // The binding guarantees `D+0x390..` equals these values.
+        let current = row_specials(bound.e);
+        let mut original = ORIGINAL.lock().unwrap();
+        match (SHOTS.load(Ordering::Relaxed), *original) {
+            (0, None) if current.iter().all(|&n| n <= 2) => {
+                let written = (current[0] + 1) % 3;
+                std::ptr::write_volatile((bound.e + 0x1b2) as *mut u8, written);
+                std::ptr::write_volatile((d + 0x390) as *mut u32, u32::from(written));
+                *original = Some(ChangeState { fe, id: bound.id, e: bound.e, original: current, written, changed: true });
+                trace!("[MiiSpecialProbe] shot1 id={} fe=0x{:x} e=0x{:x} kind=0x{:x} neutral {} -> {} (E+0x1b2, D+0x390 written; identical reload follows)",
+                    bound.id, fe, bound.e, bound.kind, current[0], written);
+                true
+            }
+            (1, Some(o)) if o.changed && o.fe == fe && o.id == bound.id && o.e == bound.e
+                && current == o.changed_tuple() =>
+            {
+                std::ptr::write_volatile((bound.e + 0x1b2) as *mut u8, o.original[0]);
+                std::ptr::write_volatile((d + 0x390) as *mut u32, u32::from(o.original[0]));
+                *original = Some(ChangeState { changed: false, ..o });
+                trace!("[MiiSpecialProbe] shot2 id={} fe=0x{:x} restored neutral {} (E+0x1b2, D+0x390; identical reload follows)",
+                    bound.id, fe, o.original[0]);
+                true
+            }
+            (shot, state) => {
+                trace!("[MiiSpecialProbe] refused: shot={} state={:?} bound=({}, 0x{:x}) fe=0x{:x} current={:?}",
+                    shot, state, bound.id, bound.e, fe, current);
+                false
+            }
+        }
+    }
+
+    /// The exact shot-1 entry is being destroyed: end the experiment and consume its record. A row
+    /// still holding the shot-1 tuple is restored only through a fresh table binding of this live
+    /// argument; otherwise nothing is written. `D` belongs to the dying entry and is never written.
+    unsafe fn end_change_on_destroy(entry: *const u8) {
+        let Some(o) = ORIGINAL.lock().unwrap().take_if(|o| o.fe == entry as usize) else {
+            return;
+        };
+        FIRED.store(true, Ordering::Relaxed);
+        if !o.changed {
+            trace!("[MiiSpecialProbe] ended on entry destruction id={} fe=0x{:x}; row already restored", o.id, o.fe);
+            return;
+        }
+        match crate::mii_identity_probe::bind_saved_entry(entry) {
+            Some(b) if b.id == o.id && b.e == o.e && row_specials(b.e) == o.changed_tuple() => {
+                std::ptr::write_volatile((o.e + 0x1b2) as *mut u8, o.original[0]);
+                trace!("[MiiSpecialProbe] restored E+0x1b2={} on entry destruction id={} fe=0x{:x}",
+                    o.original[0], o.id, o.fe);
+            }
+            bound => trace!(
+                "[MiiSpecialProbe] restore refused on entry destruction id={} fe=0x{:x} bound={:?}: saved-row ownership not re-established; E+0x1b2 not written (expected {})",
+                o.id, o.fe, bound.map(|b| (b.id, b.e)), o.written
+            ),
+        }
+    }
+
+    /// Native destruction ends the install like the roster path: the token is finished here,
+    /// never on a tick count.
+    pub unsafe fn on_destroy(entry: *const u8) {
+        if CHANGE {
+            end_change_on_destroy(entry);
+        }
+        #[cfg(feature = "mii-fullconfig-probe")]
+        crate::mii_fullconfig_probe::on_destroy(entry);
+        #[cfg(not(feature = "mii-cpu-adapter-probe"))]
+        {
+        let mut track = TRACK.lock().unwrap();
+        if track.is_some_and(|t| t.entry == entry as usize) {
+            let t = track.take().unwrap();
+            finish_install(t.token, "identical reload probe entry destroyed");
+            trace!(
+                "[MiiReloadProbe] entry destroyed entry=0x{:x} ticks={} departed={} saw_reload={}",
+                entry as usize, t.ticks, t.departed, t.saw_reload
+            );
+        }
+        }
+        #[cfg(feature = "mii-cpu-adapter-probe")]
+        {
+            let taken = {
+                let mut track = TRACK.lock().unwrap();
+                track.take_if(|t| t.entry == entry as usize)
+            };
+            if let Some(t) = taken {
+                let finished = finish_install(t.token, "identical reload probe entry destroyed");
+                trace!("[MiiReloadProbe] entry destroyed entry=0x{:x} ticks={} departed={} saw_reload={}",
+                    entry as usize, t.ticks, t.departed, t.saw_reload);
+                ack::terminal(ack::DESTROYED, ack_phase(), "entry_destroyed",
+                    serde_json::json!({"entry":ack::hex(entry as usize),"ticks":t.ticks,
+                        "departed":t.departed,"saw_reload":t.saw_reload,"install_finished":finished,
+                        "install_active_after":INSTALL.active(),"track_cleared":true}));
+            } else if ack::observed_entry() == entry as usize {
+                ack::terminal(ack::DESTROYED, ack_phase(), "entry_destroyed_no_pending_install",
+                    serde_json::json!({"entry":ack::hex(entry as usize),"install_active":INSTALL.active(),
+                        "cleanup_writes":false}));
+            }
+        }
+    }
+
+    pub fn scene_changed() {
+        REQUESTED.store(false, Ordering::Relaxed);
+        // No live entry here: end the experiment, but never write the static row from this callback.
+        if CHANGE {
+            if let Some(o) = *ORIGINAL.lock().unwrap() {
+                FIRED.store(true, Ordering::Relaxed);
+                trace!("[MiiSpecialProbe] ended on scene departure id={} changed={}; restoration left to entry 0x{:x} destruction",
+                    o.id, o.changed, o.fe);
+            }
+        }
+        #[cfg(feature = "mii-fullconfig-probe")]
+        crate::mii_fullconfig_probe::scene_changed();
+        if let Some(t) = TRACK.lock().unwrap().as_mut() {
+            t.departed = true;
+            trace!("[MiiReloadProbe] scene departure during reload; native teardown owns cancellation");
+        }
+        #[cfg(feature = "mii-cpu-adapter-probe")]
+        if ack::observed_entry() != 0 {
+            let tracked = *TRACK.lock().unwrap();
+            ack::terminal(ack::DEPARTED, ack_phase(), "scene_departure", serde_json::json!({
+                "observed_entry":ack::hex(ack::observed_entry()),
+                "pending_entry":tracked.map(|t| ack::hex(t.entry)),
+                "install_active":INSTALL.active(),"cleanup_writes":false,
+                "entry_destroyed":false}));
+        }
     }
 }

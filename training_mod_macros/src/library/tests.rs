@@ -266,7 +266,7 @@ fn corrupt_files_are_reported_and_never_lost_while_good_ones_still_list() {
         ("empty.json", Vec::new()),
         (
             "future.json",
-            edited_json(|v| v["schema_version"] = json!(2)),
+            edited_json(|v| v["schema_version"] = json!(3)),
         ),
         (
             "overflow.json",
@@ -308,7 +308,7 @@ fn corrupt_files_are_reported_and_never_lost_while_good_ones_still_list() {
             .as_str()
     };
     assert!(
-        reason("future.json").contains("unsupported schema version 2"),
+        reason("future.json").contains("unsupported schema version 3"),
         "{}",
         reason("future.json")
     );
@@ -354,13 +354,13 @@ fn load_reports_the_specific_failure() {
     let lib = Library::new(tmp.path());
     fs::write(
         tmp.path().join("future.json"),
-        edited_json(|v| v["schema_version"] = json!(2)),
+        edited_json(|v| v["schema_version"] = json!(3)),
     )
     .unwrap();
-    // A version-2 file whose layout this crate cannot parse is still a version error.
+    // A version-3 file whose layout this crate cannot parse is still a version error.
     fs::write(
         tmp.path().join("shape.json"),
-        br#"{"schema_version":2,"frames":"packed"}"#,
+        br#"{"schema_version":3,"frames":"packed"}"#,
     )
     .unwrap();
     fs::write(
@@ -372,11 +372,11 @@ fn load_reports_the_specific_failure() {
 
     assert!(matches!(
         lib.load("future"),
-        Err(MacroError::UnsupportedVersion { found: 2 })
+        Err(MacroError::UnsupportedVersion { found: 3 })
     ));
     assert!(matches!(
         lib.load("shape"),
-        Err(MacroError::UnsupportedVersion { found: 2 })
+        Err(MacroError::UnsupportedVersion { found: 3 })
     ));
     assert!(matches!(
         lib.load("big"),
@@ -535,4 +535,25 @@ fn start_state_survives_persistence_exactly() {
     let lib = Library::new(tmp.path());
     let id = lib.save_new(&recording("State")).unwrap();
     assert_eq!(lib.load(&id).unwrap().start, start());
+}
+
+#[test]
+fn exact_mii_library_restart_and_save_as_preserve_configuration() {
+    let tmp = TempDir::new();
+    let configuration = crate::test_util::exact_mii();
+    let mut rec = MacroRecording::new("Captured Brawler", "13.0.5", crate::StartState::neutral(0x48, 0, 1.0), frames(2)).unwrap();
+    rec.set_mii(configuration).unwrap();
+    let id = Library::new(tmp.path()).save_new(&rec).unwrap();
+    let reopened = Library::new(tmp.path());
+    assert_eq!(reopened.load(&id).unwrap(), rec);
+    assert!(reopened.list().unwrap().skipped.is_empty());
+    let mut copy = reopened.load(&id).unwrap();
+    copy.set_name("Brawler placed").unwrap();
+    copy.set_placement(Placement {delta_x: 4.0, ..Placement::default()}).unwrap();
+    let copy_id = reopened.save_new(&copy).unwrap();
+    assert_ne!(id, copy_id);
+    let final_copy = Library::new(tmp.path()).load(&copy_id).unwrap();
+    assert_eq!(final_copy, copy);
+    assert_eq!(final_copy.playback_target().unwrap().configuration(), Some(configuration));
+    assert_eq!(reopened.load(&id).unwrap(), rec);
 }

@@ -29,6 +29,7 @@
 use std::{collections::BTreeMap, fs::{self, File, OpenOptions}, io::{self, BufRead, BufReader},
     path::{Path, PathBuf}, sync::atomic::{AtomicU64, Ordering}};
 use smash_match_data::{archive::{self, ArchiveWriter}, model::*, validate::{self, StreamChecker}, WriteOptions};
+use training_mod_mii::replay::{ReplayMiis, MAX_ENCODED_LEN};
 use crate::{capture_archive::{decode_file_id, encode_file_id, validate_game_version,
     validate_replay_id, validate_replay_name, MAX_CAPTURE_TRACKS}, live_frame::{LiveFrame, LiveInput, LiveSession},
     CaptureArchive, CaptureSaveOutcome, ReplayFrame, ReplaySession, ReplayTrack, SavedCapture,
@@ -39,10 +40,11 @@ const MAX_MANIFEST: u64 = 1024 * 1024;
 const MAX_TIMELINE: u64 = 256 * 1024 * 1024;
 const MAX_LINE: usize = 16 * 1024;
 // State + input + possible form change per sample, raw per group, replacement
-// spawn/despawn per actor, two recording boundaries and one End.
-const MAX_EVENTS: u64 = (3 * MAX_CAPTURE_TRACKS * MAX_FRAMES + MAX_FRAMES + 2 * MAX_ACTORS + 3) as u64;
+// spawn/despawn per actor, optional Mii metadata, two recording boundaries and one End.
+const MAX_EVENTS: u64 = (3 * MAX_CAPTURE_TRACKS * MAX_FRAMES + MAX_FRAMES + 2 * MAX_ACTORS + 4) as u64;
 const LAYOUT: &str = "training_native_f32";
 const COUNTER: &str = "smash13_0_5_serializer_counter_u32le";
+const MII_REPLAY: &str = "training_mii_replay_v1";
 const PHASE_NOTE: &str = "State(Before) is the proposed pre-fighter-callback phase, NOT an acceptance claim; input application order and Effective inputs are pending runtime qualification.";
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
@@ -123,6 +125,13 @@ impl SharedCaptureArchive {
 
     pub fn save_with_outcome(&self, replay_id: &str, replay_name: &str, game_version: &str,
         session: &LiveSession) -> io::Result<CaptureSaveOutcome> {
+        self.save_with_miis(replay_id, replay_name, game_version, session, None)
+    }
+
+    /// The optional replay Mii payload and editor cache publish in the same bundle rename.
+    /// An existing capture keeps its original association, including unavailable metadata.
+    pub fn save_with_miis(&self, replay_id: &str, replay_name: &str, game_version: &str,
+        session: &LiveSession, miis: Option<&ReplayMiis>) -> io::Result<CaptureSaveOutcome> {
         self.require_absolute()?;
         validate_replay_id(replay_id).map_err(bad)?;
         validate_replay_name(replay_name).map_err(bad)?;
@@ -131,12 +140,12 @@ impl SharedCaptureArchive {
         let id = encode_file_id(replay_id);
         let final_dir = self.root.join(format!("{id}.smd"));
         if exists(&final_dir)? {
-            same_identity(&self.load(&id)?, replay_id, replay_name, game_version)?;
+            same_identity(&self.load(&id)?, replay_id, replay_name, game_version, miis)?;
             return Ok(CaptureSaveOutcome { id, created: false });
         }
         // A pre-existing legacy capture remains authoritative for its identity.
         if exists(&self.root.join(format!("{id}.tmrc")))? {
-            same_identity(&CaptureArchive::new(&self.root).load(&id)?, replay_id, replay_name, game_version)?;
+            same_identity(&CaptureArchive::new(&self.root).load(&id)?, replay_id, replay_name, game_version, miis)?;
             return Ok(CaptureSaveOutcome { id, created: false });
         }
         fs::create_dir_all(&self.root)?;
@@ -158,6 +167,11 @@ impl SharedCaptureArchive {
             Ok(())
         };
         emit(EventBody::Boundary(BoundaryKind::RecordingStart))?;
+        if let Some(miis) = miis {
+            emit(EventBody::Raw(RawUnit {
+                raw: RawBytes::new(MII_REPLAY, &miis.to_bytes()), source_offset: None,
+            }))?;
+        }
         let mut tracks: Vec<_> = session.tracks.iter().collect();
         tracks.sort_by_key(|t| t.entry);
         let mut active: [Option<(ActorId, ActorIdentity)>; 8] = std::array::from_fn(|_| None);
@@ -221,8 +235,8 @@ impl SharedCaptureArchive {
         // Switch cannot replace an existing destination with rename.
         fs::remove_file(staging.join(MANIFEST_FILE))?;
         archive::write_manifest(&staging, &manifest).map_err(bad)?;
-        let projected = projector.finish(session.truncated)?;
-        CaptureArchive::new(&staging).save_with_outcome(replay_id, replay_name, game_version, &projected)?;
+        let (projected, projected_miis) = projector.finish(session.truncated)?;
+        CaptureArchive::new(&staging).save_with_miis(replay_id, replay_name, game_version, &projected, projected_miis.as_ref())?;
         prescan(&staging.join(TIMELINE_FILE))?;
         bounded_file(&staging.join(MANIFEST_FILE), MAX_MANIFEST)?;
         // Caller serializes publication. Never replace a concurrently appearing path.
@@ -281,11 +295,11 @@ impl SharedCaptureArchive {
             || manifest.completion.events != Some(checker.accepted()) || manifest.completion.last_seq != checker.last_seq() {
             return Err(bad("manifest derived metadata disagrees with timeline"));
         }
-        let session = projector.finish(truncated)?;
+        let (session, miis) = projector.finish(truncated)?;
         let cache = CaptureArchive::new(&dir).load(id)?;
-        same_identity(&cache, &replay_id, name, version)?;
+        same_identity(&cache, &replay_id, name, version, miis.as_ref())?;
         if !same_projection(&session, &cache.session) { return Err(bad("compact cache disagrees with canonical timeline")); }
-        Ok(SavedCapture { replay_id, replay_name: name.into(), game_version: version.into(), session })
+        Ok(SavedCapture { replay_id, replay_name: name.into(), game_version: version.into(), session, miis })
     }
 }
 
@@ -315,8 +329,9 @@ fn prescan(path: &Path) -> io::Result<()> {
     if line != 0 || lines == 0 { return Err(bad("empty or unterminated timeline")); }
     Ok(())
 }
-fn same_identity(saved: &SavedCapture, id: &str, name: &str, version: &str) -> io::Result<()> {
+fn same_identity(saved: &SavedCapture, id: &str, name: &str, version: &str, miis: Option<&ReplayMiis>) -> io::Result<()> {
     if saved.replay_id != id || saved.replay_name != name || saved.game_version != version { return Err(bad("capture identity mismatch")); }
+    if saved.miis.as_ref() != miis { return Err(bad("capture Mii association mismatch")); }
     Ok(())
 }
 fn same_projection(a: &ReplaySession, b: &ReplaySession) -> bool {
@@ -332,6 +347,7 @@ fn same_projection(a: &ReplaySession, b: &ReplaySession) -> bool {
 
 struct ProjectedActor { identity: ActorIdentity, alive: bool }
 struct Projector {
+    miis: Option<ReplayMiis>,
     tracks: Vec<ReplayTrack>, slots: [Option<usize>; 8],
     actors: BTreeMap<ActorId, ProjectedActor>, active: [Option<ActorId>; 8],
     pending: Option<(ActorId, Kinematics, Situation)>,
@@ -349,7 +365,7 @@ impl Projector {
             slots[entry.entry as usize] = Some(tracks.len());
             tracks.push(ReplayTrack { entry: entry.entry as i32, frames: Vec::new(), quantized_analog: false });
         }
-        Ok(Self { tracks, slots, actors: BTreeMap::new(), active: [None; 8], pending: None,
+        Ok(Self { miis: None, tracks, slots, actors: BTreeMap::new(), active: [None; 8], pending: None,
             counter: None, group: 0, last_entry: None, group_samples: 0, started: false, stopped: false, ended: false, seq: 0 })
     }
 
@@ -361,6 +377,14 @@ impl Projector {
             EventBody::Boundary(BoundaryKind::RecordingStart) if !self.started && e.seq == 0 => self.started = true,
             EventBody::Boundary(BoundaryKind::RecordingEnd) if self.started && !self.stopped && self.group_samples > 0 => self.stopped = true,
             EventBody::End { events } if self.stopped && *events == e.seq => self.ended = true,
+            EventBody::Raw(raw) if raw.raw.encoding == MII_REPLAY => {
+                if !self.started || self.stopped || e.seq != 1 || self.miis.is_some()
+                    || self.counter.is_some() || raw.source_offset.is_some()
+                    || raw.raw.hex.len() > 2 * MAX_ENCODED_LEN {
+                    return Err(bad("invalid replay Mii placement or bounds"));
+                }
+                self.miis = Some(ReplayMiis::from_bytes(&raw.raw.bytes().map_err(bad)?).map_err(bad)?);
+            }
             EventBody::Raw(raw) if self.started && !self.stopped => {
                 if raw.raw.encoding != COUNTER || raw.source_offset != Some(0x200078) || raw.raw.hex.len() != 8 { return Err(bad("invalid serializer provenance")); }
                 let bytes: [u8;4] = raw.raw.bytes().map_err(bad)?.try_into().map_err(|_| bad("counter width"))?;
@@ -447,9 +471,9 @@ impl Projector {
         Ok(entry)
     }
 
-    fn finish(self, truncated: bool) -> io::Result<ReplaySession> {
+    fn finish(self, truncated: bool) -> io::Result<(ReplaySession, Option<ReplayMiis>)> {
         if !self.ended || self.pending.is_some() || self.tracks.iter().any(|t| t.frames.is_empty()) { return Err(bad("empty or unfinished projection")); }
-        Ok(ReplaySession { tracks: self.tracks, truncated })
+        Ok((ReplaySession { tracks: self.tracks, truncated }, self.miis))
     }
 }
 
@@ -497,6 +521,50 @@ mod tests {
             frame([-0.0, f32::from_bits(1), 0.49999997 / 120.0, 2.0]),
             frame([-2.0, -0.5 / 120.0, 0.5 / 120.0, f32::from_bits(0x80000001)]),
         ] }], truncated: false, first_counter: Some(123) }
+    }
+
+    #[test]
+    fn replay_miis_publish_with_the_canonical_timeline_and_cache() {
+        let mut raw = vec![0; 106];
+        raw[..4].copy_from_slice(&[1, 1, 1, 72]);
+        raw[20] = 0x5a;
+        raw[102] = 1;
+        for miis in [ReplayMiis::from_bytes(&[1, 0]).unwrap(), ReplayMiis::from_bytes(&raw).unwrap()] {
+            let f = Fixture::new();
+            let mut s = session();
+            for frame in &mut s.tracks[0].frames { frame.start.fighter_kind = 72; }
+            let saved = f.archive().save_with_miis("native-id", "Native title", "13.0.5", &s, Some(&miis)).unwrap();
+            assert!(saved.created);
+            let dir = f.0.join(format!("{}.smd", saved.id));
+            let canonical = f.load().unwrap();
+            let cache = CaptureArchive::new(&dir).load(&saved.id).unwrap();
+            assert_eq!(canonical.miis.as_ref(), Some(&miis));
+            assert_eq!(cache.miis, canonical.miis);
+            assert!(same_projection(&canonical.session, &cache.session));
+            let capture = Capture::load(&dir).unwrap();
+            let EventBody::Raw(event) = &capture.events[1].body else { panic!("missing Mii metadata") };
+            assert_eq!(event.raw.encoding, MII_REPLAY);
+            assert_eq!(event.raw.bytes().unwrap(), miis.to_bytes());
+            assert_eq!(event.source_offset, None);
+            let files = [MANIFEST_FILE.to_owned(), TIMELINE_FILE.to_owned(), format!("{}.tmrc", saved.id)];
+            let before: Vec<_> = files.iter().map(|p| fs::read(dir.join(p)).unwrap()).collect();
+            assert!(!f.archive().save_with_miis("native-id", "Native title", "13.0.5", &s, Some(&miis)).unwrap().created);
+            assert!(f.archive().save_with_outcome("native-id", "Native title", "13.0.5", &s).is_err());
+            for (file, bytes) in files.iter().zip(before) { assert_eq!(fs::read(dir.join(file)).unwrap(), bytes); }
+        }
+    }
+
+    #[test]
+    fn canonical_load_rejects_cache_that_loses_its_mii_association() {
+        let f = Fixture::new();
+        let s = session();
+        let miis = ReplayMiis::from_bytes(&[1, 0]).unwrap();
+        let saved = f.archive().save_with_miis("native-id", "Native title", "13.0.5", &s, Some(&miis)).unwrap();
+        let canonical = f.load().unwrap();
+        let dir = f.0.join(format!("{}.smd", saved.id));
+        fs::remove_file(dir.join(format!("{}.tmrc", saved.id))).unwrap();
+        CaptureArchive::new(&dir).save("native-id", "Native title", "13.0.5", &canonical.session).unwrap();
+        assert!(f.load().unwrap_err().to_string().contains("Mii association mismatch"));
     }
 
     #[test]

@@ -2,9 +2,19 @@
 >
 > Anyone, including the original developers, may reuse, analyze, redistribute, and otherwise use anything and everything in this repository as they see fit.
 
+**UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-experimental.20261023). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
+
 [Download this fork from Forgejo](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases). Version 7.1.2 reduces input-display work in Training; see the [performance checks](docs/input-display-performance.md).
 
 ## Features added in this fork
+
+### Solo Popo
+
+Practice with Popo alone in the enhancements development build. Use **Character Extras → Solo Popo** for Player 1's original Ice Climbers, or toggle the red/blue **S** on Ice Climbers in the cycle grid for the player cycle or CPU. The settings are independent and apply when the menu closes.
+
+[Solo Popo guide](docs/solo-popo.md)
+
+![Enabling Solo Popo for Player 1 in Training.](docs/fighter-hotswap/solo-popo.gif)
 
 ### Hot-swap Player 1 and the CPU
 
@@ -12,7 +22,7 @@ Change either fighter during Training without going back to the character select
 
 [Hot-swap guide](docs/fighter-hotswap.md), including a GIF recorded in Training. Waiting-room behavior is in [Lobby Practice](docs/lobby-practice.md).
 
-The development build adds a shared portrait grid with red player order and blue CPU order, including Pyra/Mythra and all three Pokémon starting forms. See the [development checks and limitations](docs/character-cycles-validation.md).
+The enhancements development build has one shared portrait grid: red P1 order at top-left, blue CPU order at top-right, **ZR** to switch roles, and **Y** on Ice Climbers for Solo Popo. P1 cycles through the numbered choices and back through its grey original **slot 0**; the CPU's original fighter remains selectable. Pyra/Mythra and Pokémon Trainer each occupy one slot with a chosen starting form, and normal transformations remain available. Ice Climbers and saved-Mii cycling are available in the experimental build; consult its feature limits above. See the [hot-swap controls](docs/fighter-hotswap.md) and [development checks and limitations](docs/character-cycles-validation.md).
 
 ![Player 1 and the CPU changing fighters during Training.](docs/fighter-hotswap/hotswap.gif)
 
@@ -30,7 +40,7 @@ The modpack menu and its practice tools work in the waiting room, not only in Tr
 
 [Lobby practice](docs/lobby-practice.md)
 
-![Shared character-cycle grid and a CPU swap from Charizard to Link in a local-wireless waiting room.](docs/lobby-practice/waiting-room.gif)
+![Player and CPU cycling from Solo Popo to other fighters in a local-wireless waiting room.](docs/lobby-practice/waiting-room.gif)
 
 *Captured in an emulator's local-wireless waiting room.*
 

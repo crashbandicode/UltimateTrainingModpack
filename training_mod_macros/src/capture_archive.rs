@@ -11,6 +11,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use training_mod_mii::replay::ReplayMiis;
 
 use crate::{
     InputFrame, ReplayFrame, ReplaySession, ReplayTrack, SkippedFile, StartState,
@@ -57,6 +58,9 @@ pub struct SavedCapture {
     pub replay_name: String,
     pub game_version: String,
     pub session: ReplaySession,
+    /// Owned native replay metadata. `None` means unavailable, including legacy files;
+    /// an empty `ReplayMiis` means the header was read and contained no Mii entries.
+    pub miis: Option<ReplayMiis>,
 }
 
 /// A duplicate keeps the already-published capture; it did not persist new samples.
@@ -201,6 +205,7 @@ impl CaptureArchive {
             replay_id,
             replay_name: header.replay_name,
             game_version: header.game_version,
+            miis: header.miis,
             session: ReplaySession {
                 tracks,
                 truncated: header.truncated,
@@ -228,13 +233,26 @@ impl CaptureArchive {
         game_version: &str,
         session: &ReplaySession,
     ) -> io::Result<CaptureSaveOutcome> {
+        self.save_with_miis(replay_id, replay_name, game_version, session, None)
+    }
+
+    /// Publishes replay metadata with the same atomic write as the input samples.
+    /// A conflicting association never replaces or upgrades a published capture.
+    pub fn save_with_miis(
+        &self,
+        replay_id: &str,
+        replay_name: &str,
+        game_version: &str,
+        session: &ReplaySession,
+        miis: Option<&ReplayMiis>,
+    ) -> io::Result<CaptureSaveOutcome> {
         validate_replay_id(replay_id).map_err(invalid_input)?;
         validate_replay_name(replay_name).map_err(invalid_input)?;
         validate_game_version(game_version).map_err(invalid_input)?;
         let id = encode_file_id(replay_id);
         if let Some(path) = self.shared_cache_path(&id)? {
             ensure_existing_identity(&path, &id, replay_id, replay_name, game_version,
-                fs::symlink_metadata(&path)?.file_type())?;
+                fs::symlink_metadata(&path)?.file_type(), miis)?;
             return Ok(CaptureSaveOutcome { id, created: false });
         }
         let destination = self.capture_path(&id);
@@ -247,6 +265,7 @@ impl CaptureArchive {
                 replay_name,
                 game_version,
                 file_type,
+                miis,
             )?;
             return Ok(CaptureSaveOutcome { id, created: false });
         }
@@ -257,6 +276,7 @@ impl CaptureArchive {
             replay_id: replay_id.to_owned(),
             replay_name: replay_name.to_owned(),
             game_version: game_version.to_owned(),
+            miis: miis.cloned(),
             truncated: session.truncated,
             tracks: session
                 .tracks
@@ -296,6 +316,7 @@ impl CaptureArchive {
                     replay_name,
                     game_version,
                     file_type,
+                    miis,
                 )?;
                 Ok(CaptureSaveOutcome { id, created: false })
             }
@@ -333,6 +354,8 @@ struct CaptureHeader {
     replay_id: String,
     replay_name: String,
     game_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    miis: Option<ReplayMiis>,
     truncated: bool,
     tracks: Vec<TrackHeader>,
 }
@@ -578,11 +601,15 @@ fn ensure_existing_identity(
     replay_name: &str,
     game_version: &str,
     file_type: FileType,
+    miis: Option<&ReplayMiis>,
 ) -> io::Result<()> {
     if !file_type.is_file() {
         return Err(invalid_data("capture path already exists and is not a regular file"));
     }
     let (_, header) = open_capture(path, file_id)?;
+    if header.miis.as_ref() != miis {
+        return Err(invalid_data("capture Mii association mismatch"));
+    }
     if header.replay_id != replay_id
         || header.replay_name != replay_name
         || header.game_version != game_version
@@ -855,6 +882,34 @@ mod tests {
     }
 
     #[test]
+    fn mii_metadata_roundtrips_and_conflicting_duplicates_preserve_the_capture() {
+        let empty = ReplayMiis::from_bytes(&[1, 0]).unwrap();
+        // Synthetic stored entry: Brawler, distinct appearance, neutral special 2.
+        let mut raw = vec![0; 106];
+        raw[..4].copy_from_slice(&[1, 1, 0, 72]);
+        raw[20] = 0x5a;
+        raw[102] = 1;
+        let opponent = ReplayMiis::from_bytes(&raw).unwrap();
+        for expected in [None, Some(&empty), Some(&opponent)] {
+            let temp = TestDir::new();
+            let archive = CaptureArchive::new(&temp.0);
+            let session = sample_session();
+            let saved = archive.save_with_miis("native-id", "Match", "13.0.5", &session, expected).unwrap();
+            assert!(saved.created);
+            assert_eq!(archive.load(&saved.id).unwrap().miis.as_ref(), expected);
+            let path = archive.capture_path(&saved.id);
+            let before = fs::read(&path).unwrap();
+            assert!(!archive.save_with_miis("native-id", "Match", "13.0.5", &session, expected).unwrap().created);
+            for conflict in [None, Some(&empty), Some(&opponent)] {
+                if conflict != expected {
+                    assert!(archive.save_with_miis("native-id", "Match", "13.0.5", &session, conflict).is_err());
+                }
+            }
+            assert_eq!(fs::read(path).unwrap(), before);
+        }
+    }
+
+    #[test]
     fn saves_and_reopens_explicit_samples_and_truncation_metadata() {
         let temp = TestDir::new();
         let archive = CaptureArchive::new(&temp.0);
@@ -975,6 +1030,7 @@ mod tests {
                 replay_id: (*replay_id).to_owned(),
                 replay_name: "Bad game version".to_owned(),
                 game_version: game_version.as_str().to_owned(),
+                miis: None,
                 truncated: false,
                 tracks: Vec::new(),
             };

@@ -311,6 +311,45 @@ byteflags! {
 
 impl_submenutrait!(OnOff);
 
+#[cfg(feature = "p1-cpu-control")]
+byteflags! {
+    pub struct P1CpuLevel {
+        pub L1 = "1",
+        pub L2 = "2",
+        pub L3 = "3",
+        pub L4 = "4",
+        pub L5 = "5",
+        pub L6 = "6",
+        pub L7 = "7",
+        pub L8 = "8",
+        pub L9 = "9",
+    }
+}
+
+#[cfg(feature = "p1-cpu-control")]
+impl_submenutrait!(P1CpuLevel);
+
+#[cfg(feature = "p1-cpu-control")]
+impl P1CpuLevel {
+    /// Single-choice menu value only; malformed/weighted/multiple selections
+    /// cannot silently become a native AI level.
+    pub fn as_level(self) -> Option<u8> {
+        match self {
+            Self::L1 => Some(1),
+            Self::L2 => Some(2),
+            Self::L3 => Some(3),
+            Self::L4 => Some(4),
+            Self::L5 => Some(5),
+            Self::L6 => Some(6),
+            Self::L7 => Some(7),
+            Self::L8 => Some(8),
+            Self::L9 => Some(9),
+            _ => None,
+        }
+    }
+}
+
+
 impl OnOff {
     pub fn from_val(val: u32) -> Option<Self> {
         match val {

@@ -63,3 +63,16 @@ pub fn start() -> StartState {
 pub fn recording(name: &str) -> MacroRecording {
     MacroRecording::new(name, "13.0.4", start(), frames(8)).unwrap()
 }
+
+pub fn exact_mii() -> training_mod_mii::lifetime::Configuration {
+    use training_mod_mii::inventory::{classify, MiiClass, RawSlot, TaggedId, CHARINFO_LEN, TAG_CHARA, TAG_HAT, TAG_OUTFIT};
+    let saved = classify(&RawSlot {
+        index: 0, slot_id: 13231, name_len: 1,
+        name_units: [65, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        charinfo: [7; CHARINFO_LEN], colour: 4, voice: 37, specials: [1, 0, 0, 0],
+        tag_outfit: TaggedId((u64::from(TAG_OUTFIT) << 56) | (1 << 40) | 0x1b_fef7_a5f7),
+        tag_hat: TaggedId((u64::from(TAG_HAT) << 56) | 0x0f_a9ef_a5ea),
+        tag_chara: TaggedId((u64::from(TAG_CHARA) << 56) | MiiClass::Brawler.chara_hash40()),
+    }).unwrap();
+    training_mod_mii::lifetime::Configuration::from_saved(&saved).unwrap()
+}

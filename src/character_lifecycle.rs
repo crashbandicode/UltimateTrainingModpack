@@ -89,6 +89,7 @@ unsafe fn descriptor(raw: *const u8) -> (u32, [u32; 3], u32, u8) {
 
 #[skyline::hook(offset = 0x678150, inline)]
 unsafe fn allocation_trace(ctx: &mut InlineCtx) {
+    crate::practice_trace::checkpoint(30, [ctx.registers[0].x(), ctx.registers[1].x(), ctx.registers[2].x(), ctx.registers[30].x(), 0]);
     crate::hang_trace::ALLOCATION.hit();
     let desc = ctx.registers[2].x() as *const u8;
     if aligned(desc) && bounded_log(&BOUNDARY_LOGS, 384) {
@@ -106,6 +107,7 @@ unsafe fn allocation_trace(ctx: &mut InlineCtx) {
 
 #[skyline::hook(offset = 0x653240, inline)]
 unsafe fn reload_trace(ctx: &mut InlineCtx) {
+    crate::practice_trace::checkpoint(31, [ctx.registers[0].x(), ctx.registers[1].x(), ctx.registers[2].x(), ctx.registers[30].x(), 0]);
     crate::hang_trace::RELOAD.hit();
     let entry = ctx.registers[0].x() as *const u8;
     let desc = ctx.registers[1].x() as *const u8;
@@ -116,9 +118,11 @@ unsafe fn reload_trace(ctx: &mut InlineCtx) {
 
 #[skyline::hook(offset = 0x652160, inline)]
 unsafe fn destruction_trace(ctx: &mut InlineCtx) {
+    crate::practice_trace::event(32, [ctx.registers[0].x(), ctx.registers[30].x(), 0, 0, 0]);
     crate::hang_trace::DESTROY.hit();
     let entry = ctx.registers[0].x() as *const u8;
     crate::character_roster::on_destroy(entry);
+    crate::practice_trace::checkpoint(33, [entry as u64, 0, 0, 0, 0]);
     if aligned(entry) && bounded_log(&BOUNDARY_LOGS, 384) {
         trace!("[TrioBoundary] destroy entry=0x{:x} owner={} active={:x?} pending={:x?} installed={} mode={:?}", entry as usize, read::<u32>(entry, 0xe0), descriptor(entry), descriptor(entry.add(0x70)), read::<u64>(entry, 0x4150), game_mode::current());
     }

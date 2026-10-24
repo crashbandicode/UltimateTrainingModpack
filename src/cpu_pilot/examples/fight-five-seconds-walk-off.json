@@ -1,0 +1,7 @@
+{
+  "level": 9,
+  "trigger": { "kind": "after_seconds", "seconds": 5.0 },
+  "command": "walk_off",
+  "require_contact": true,
+  "guard_frames": 3600
+}

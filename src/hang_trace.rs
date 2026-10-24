@@ -1,19 +1,18 @@
-//! Revision 31: hang tracing for the console.
+//! Optional hang tracing plus always-on layout archive retirement.
 //!
-//! The revision 30 Switch smoke froze on a loading screen without a panic or a crash report, so
-//! the diagnostics file ended at the last breadcrumb the game thread happened to write. This
-//! module records, without locks, how often and how recently each modpack hook ran and whether
-//! one is still executing, and a heartbeat thread writes one summary line every few seconds.
-//! A frozen console therefore keeps writing until the operator powers it off, and the last
-//! heartbeat shows which hooks stopped advancing and which one, if any, never returned.
+//! The default build leaves hook probes and trace line budgets inactive. Enable the
+//! `hang-trace` feature to record hook counts/times and emit heartbeat summaries.
+//! Trace clocks, atomics, formatting and diagnostic I/O are opt-in; the retirement
+//! worker and its wall-clock timebase remain active in either configuration.
 //!
-//! Probes touch only atomics; the heartbeat reads them and the game-mode tuple and calls
-//! `logging::diagnostic`, which itself only `try_lock`s the diagnostics file.
+//! Diagnostic file locking uses try_lock, but its output/flush can still block.
+//! Worker-spawn failures remain reported even when tracing is disabled.
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const TRACE_ENABLED: bool = cfg!(feature = "hang-trace");
 
 /// One instrumented hook: call count, time of the last call and, between `enter` and the guard's
 /// drop, the time the current call started plus one caller-chosen detail word.
@@ -36,17 +35,23 @@ impl Probe {
         }
     }
 
-    /// Record one call of a hook that does not need an active window.
+    /// Record a call only in an opt-in diagnostic build.
+    #[inline]
     pub fn hit(&self) {
-        self.count.fetch_add(1, Ordering::Relaxed);
-        self.last_ms.store(now_ms(), Ordering::Relaxed);
+        if TRACE_ENABLED {
+            self.count.fetch_add(1, Ordering::Relaxed);
+            self.last_ms.store(now_ms(), Ordering::Relaxed);
+        }
     }
 
     /// Record one call and mark the probe active until the returned guard drops.
+    #[inline]
     pub fn enter(&self, detail: u64) -> ProbeGuard<'_> {
-        self.hit();
-        self.detail.store(detail, Ordering::Relaxed);
-        self.active_since_ms.store(now_ms().max(1), Ordering::Release);
+        if TRACE_ENABLED {
+            self.hit();
+            self.detail.store(detail, Ordering::Relaxed);
+            self.active_since_ms.store(now_ms().max(1), Ordering::Release);
+        }
         ProbeGuard { probe: self }
     }
 
@@ -79,8 +84,11 @@ pub struct ProbeGuard<'a> {
 }
 
 impl Drop for ProbeGuard<'_> {
+    #[inline]
     fn drop(&mut self) {
-        self.probe.active_since_ms.store(0, Ordering::Release);
+        if TRACE_ENABLED {
+            self.probe.active_since_ms.store(0, Ordering::Release);
+        }
     }
 }
 
@@ -120,9 +128,10 @@ static PROBES: [&Probe; 10] = [
 pub static REGISTER_LINES: AtomicU32 = AtomicU32::new(0);
 pub static NRO_LINES: AtomicU32 = AtomicU32::new(0);
 
-/// True while `counter` is below `limit`; each call consumes one unit of the budget.
+/// Disabled builds return false without touching the counter; diagnostic builds consume a unit.
+#[inline]
 pub fn within_budget(counter: &AtomicU32, limit: u32) -> bool {
-    counter.fetch_add(1, Ordering::Relaxed) < limit
+    TRACE_ENABLED && counter.fetch_add(1, Ordering::Relaxed) < limit
 }
 
 pub fn now_ms() -> u64 {
@@ -132,9 +141,9 @@ pub fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Start the heartbeat thread. Failures only cost the heartbeat; the probes still count.
+/// Start archive retirement in every build, with optional diagnostic heartbeat output.
 pub fn start() {
-    let started = now_ms();
+    let started = if TRACE_ENABLED { now_ms() } else { 0 };
     let spawned = std::thread::Builder::new()
         .name("practice-heartbeat".into())
         .stack_size(0x10000)
@@ -142,27 +151,33 @@ pub fn start() {
             let mut beat = 0u64;
             loop {
                 std::thread::sleep(HEARTBEAT_INTERVAL);
-                beat += 1;
                 let now = now_ms();
                 // Revision 33: housekeeping off the game threads — release inflated layout archives
                 // the game finished copying (training::ui).
                 crate::training::ui::release_stale_archives(now);
-                let probes: Vec<String> = PROBES.iter().map(|probe| probe.summary(now)).collect();
-                crate::logging::diagnostic(format_args!(
-                    "[Heartbeat] n={} up={}s mode={:?} {}",
-                    beat,
-                    now.saturating_sub(started) / 1000,
-                    crate::common::game_mode::current(),
-                    probes.join(" ")
-                ));
+                if TRACE_ENABLED {
+                    beat += 1;
+                    let probes: Vec<String> = PROBES.iter().map(|probe| probe.summary(now)).collect();
+                    crate::logging::diagnostic(format_args!(
+                        "[Heartbeat] n={} up={}s mode={:?} {}",
+                        beat,
+                        now.saturating_sub(started) / 1000,
+                        crate::common::game_mode::current(),
+                        probes.join(" ")
+                    ));
+                }
             }
         });
     match spawned {
-        Ok(_) => crate::logging::diagnostic(format_args!(
-            "[Heartbeat] thread started interval={}s probes={}",
-            HEARTBEAT_INTERVAL.as_secs(),
-            PROBES.len()
-        )),
+        Ok(_) => {
+            if TRACE_ENABLED {
+                crate::logging::diagnostic(format_args!(
+                    "[Heartbeat] thread started interval={}s probes={}",
+                    HEARTBEAT_INTERVAL.as_secs(),
+                    PROBES.len()
+                ));
+            }
+        }
         Err(error) => crate::logging::diagnostic(format_args!(
             "[Heartbeat] thread unavailable: {error}"
         )),

@@ -6,6 +6,10 @@ use training_mod_tui::{
 };
 
 pub(crate) const LEGACY_CHOICE_COUNT: usize = 80;
+pub(crate) const PRE_IC_CHOICE_COUNT: usize = 85;
+pub(crate) const PRE_MII_CHOICE_COUNT: usize = 86;
+pub(crate) const MII_ALPHA_CHOICE_COUNT: usize = 87; // Existing Sword-only envelope.
+pub(crate) const MII_CLASSES_CHOICE_COUNT: usize = 89;
 
 pub(crate) const CHOICES: &[(u32, &str)] = &[
     (0x00, "Mario"),
@@ -94,6 +98,15 @@ pub(crate) const CHOICES: &[(u32, &str)] = &[
     (0x24, "Squirtle"),
     (0x25, "Ivysaur"),
     (0x26, "Charizard"),
+    // Native entry descriptor, not the individual Popo/Nana actor kinds.
+    (0x4b, "Ice Climbers"),
+    #[cfg(feature = "mii-saved-alpha")]
+    (0x49, "Mii Swordfighter"),
+    // Append only: retain the existing Sword index in persisted arrays.
+    #[cfg(feature = "mii-saved-alpha")]
+    (0x48, "Mii Brawler"),
+    #[cfg(feature = "mii-saved-alpha")]
+    (0x4a, "Mii Gunner"),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,6 +121,7 @@ impl TrioFighter {
     pub const GAMEWATCH: Self = Self(0x1c);
     pub const PALUTENA: Self = Self(0x36);
     pub const BAYONETTA: Self = Self(0x40);
+    pub const ICE_CLIMBERS: Self = Self(0x4b);
 
     pub const fn kind(self) -> u32 {
         self.0
@@ -167,7 +181,14 @@ impl Serialize for TrioFighter {
 impl<'de> Deserialize<'de> for TrioFighter {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = Vec::<u8>::deserialize(deserializer)?;
-        if (values.len() != CHOICES.len() && values.len() != LEGACY_CHOICE_COUNT)
+        if ![
+            LEGACY_CHOICE_COUNT,
+            PRE_IC_CHOICE_COUNT,
+            PRE_MII_CHOICE_COUNT,
+            MII_ALPHA_CHOICE_COUNT,
+            MII_CLASSES_CHOICE_COUNT,
+        ]
+        .contains(&values.len())
             || values.iter().any(|v| *v > 1)
             || values.iter().filter(|v| **v == 1).count() != 1
         {
@@ -175,9 +196,12 @@ impl<'de> Deserialize<'de> for TrioFighter {
                 "select exactly one supported trio fighter",
             ));
         }
-        Ok(Self(
-            CHOICES[values.iter().position(|v| *v == 1).unwrap()].0,
-        ))
+        let selected = values.iter().position(|v| *v == 1).unwrap();
+        // Only the exact known alpha extension is accepted. On a base build,
+        // its unsupported sole Sword choice downgrades to Mario, never All.
+        Ok(CHOICES
+            .get(selected)
+            .map_or(Self::MARIO, |(kind, _)| Self(*kind)))
     }
 }
 
@@ -196,10 +220,12 @@ mod tests {
             );
         }
         for kind in [
+            #[cfg(not(feature = "mii-saved-alpha"))]
             0x48,
+            #[cfg(not(feature = "mii-saved-alpha"))]
             0x49,
+            #[cfg(not(feature = "mii-saved-alpha"))]
             0x4a,
-            0x4b,
             0x4c,
             0x4d,
             0x4e,
@@ -219,10 +245,10 @@ mod tests {
         let fighter: TrioFighter = serde_json::from_value(serde_json::json!(legacy)).unwrap();
         assert_eq!(fighter.kind(), 0x5d);
         let current = serde_json::to_value(fighter).unwrap();
-        assert_eq!(current.as_array().unwrap().len(), 85);
+        assert_eq!(current.as_array().unwrap().len(), CHOICES.len());
         assert_eq!(current[79], 1);
         assert_eq!(current[80], 0);
-        for length in [0, 79, 81, 84, 86] {
+        for length in [0, 79, 81, 84, MII_ALPHA_CHOICE_COUNT + 1] {
             let mut invalid = vec![0u8; length];
             if length > 0 {
                 invalid[0] = 1;
@@ -261,7 +287,8 @@ mod tests {
         picker.on_a();
         assert_eq!(
             serde_json::from_str::<TrioFighter>(&serde_json::to_string(&picker).unwrap())
-                .unwrap().kind(),
+                .unwrap()
+                .kind(),
             0x26
         );
         picker.on_down();

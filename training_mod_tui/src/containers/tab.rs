@@ -14,6 +14,10 @@ impl<'a> Tab<'a> {
     pub fn len(&self) -> usize {
         self.submenus.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.submenus.is_empty()
+    }
 }
 
 impl<'a> Serialize for Tab<'a> {

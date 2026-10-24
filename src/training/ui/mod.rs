@@ -13,11 +13,13 @@ use crate::training::{frame_counter, lobby};
 use training_mod_sync::*;
 
 mod anchors;
+mod archive_retirement;
 mod damage;
 mod clip_editor;
 mod display;
 mod input_log;
 mod roster_grid;
+mod stage_grid;
 mod layout_registry;
 pub mod menu;
 pub(crate) mod native_menu;
@@ -27,8 +29,9 @@ mod waiting_archive;
 // Revision 33: the two embedded archives stay DEFLATE-compressed in the image (about 195 KB together)
 // and are inflated per use. The game's hook point allocates a buffer of the size we report and copies
 // from the pointer we report, so an inflated archive is only read during that copy. It is parked in
-// `ARCHIVES` and released by `release_stale_archives` (heartbeat thread) after a grace period, after
-// being overwritten so that any later reader fails loudly instead of silently depending on it. Before
+// `ARCHIVES` and released by `release_stale_archives` (heartbeat thread) after a grace period.
+// Development builds may enable `archive-poison-probe` to overwrite before freeing and expose
+// stale-reader dependencies. Ordinary retirement avoids this full-payload diagnostic write. Before
 // this revision the inflated Training archive (4,213,268 B) stayed resident for the whole session and
 // the waiting-room archive added a second copy.
 static TRAINING_ARCHIVE_DEFLATED: &[u8] =
@@ -52,6 +55,7 @@ fn inflate_training_archive() -> Vec<u8> {
 /// Park an inflated archive for the game to copy from; the pointer stays valid until the release.
 fn hand_out(label: &'static str, bytes: Vec<u8>) -> (*const u8, usize) {
     let (pointer, len) = (bytes.as_ptr(), bytes.len());
+    crate::practice_trace::checkpoint(40, [pointer as u64, len as u64, 0, 0, 0]);
     crate::logging::diagnostic(format_args!("[LayoutArchive] handed out {label} bytes={len}"));
     ARCHIVES
         .lock()
@@ -64,26 +68,30 @@ fn hand_out(label: &'static str, bytes: Vec<u8>) -> (*const u8, usize) {
     (pointer, len)
 }
 
-/// Release archives handed out more than the grace period ago. Runs on the heartbeat thread and
-/// never blocks a game thread: it only tries the lock, and the hook holds it for one push.
+/// Release archives at least the grace period old, on the heartbeat thread. Queue removal uses
+/// short try-locks; diagnostic I/O, optional poison and payload destruction happen after unlocking.
 pub fn release_stale_archives(now_ms: u64) {
-    let Ok(mut archives) = ARCHIVES.try_lock() else {
-        return;
-    };
-    archives.retain_mut(|archive| {
-        let age = now_ms.saturating_sub(archive.handed_out_ms);
-        if age < ARCHIVE_GRACE_MS {
-            return true;
-        }
-        archive.bytes.fill(0xA5);
-        crate::logging::diagnostic(format_args!(
-            "[LayoutArchive] released {} bytes={} after {}ms",
-            archive.label,
-            archive.bytes.len(),
-            age
-        ));
-        false
-    });
+    archive_retirement::retire_expired(
+        &ARCHIVES,
+        now_ms,
+        ARCHIVE_GRACE_MS,
+        |archive| archive.handed_out_ms,
+        |archive| {
+            crate::practice_trace::checkpoint(41, [archive.bytes.as_ptr() as u64, archive.bytes.len() as u64, archive.handed_out_ms, now_ms, 0]);
+            #[cfg(feature = "archive-poison-probe")]
+            let archive = {
+                let mut archive = archive;
+                archive.bytes.fill(0xA5);
+                archive
+            };
+            crate::logging::diagnostic(format_args!(
+                "[LayoutArchive] released {} bytes={} after {}ms",
+                archive.label,
+                archive.bytes.len(),
+                now_ms.saturating_sub(archive.handed_out_ms)
+            ));
+        },
+    );
 }
 
 pub unsafe fn set_icon_text(pane: &mut TextBox, icons: &[u16]) {
@@ -126,9 +134,15 @@ pub fn fade_out(pane: &mut Pane, current_frame: u32, total_frames: u32) {
 /// body at the same position (after the layout's animate, before its calculate) and with the
 /// same cadence, minus the call to the original.
 pub unsafe fn tick(layout: *mut Layout) {
+    crate::practice_trace::event(500, [layout as u64, 0, 0, 0, 0]);
     lobby::update();
     crate::training::named_macros::service_keyboard();
-    let layout_name = skyline::from_c_str((*layout).layout_name);
+    // Borrow only during this current-layout callback; preserve Skyline's invalid UTF-8 panic.
+    let name_bytes = std::ffi::CStr::from_ptr((*layout).layout_name).to_bytes();
+    let layout_name = match std::str::from_utf8(name_bytes) {
+        Ok(name) => name,
+        Err(error) => panic!("Invalid UTF-8 sequence: {}", error),
+    };
     let root_pane = &mut *(*layout).root_pane;
     if layout_name == "info_training" || !is_native_training_mode() {
         crate::replay_capture::service_reload();
@@ -167,7 +181,7 @@ pub unsafe fn tick(layout: *mut Layout) {
             "info_radar_a",
             "info_radar_b",
         ]
-        .contains(&layout_name.as_str())
+        .contains(&layout_name)
     {
         // InfluencedAlpha means "Should my children panes' alpha be influenced by mine, as the parent?"
         root_pane.flags |= 1 << PaneFlag::InfluencedAlpha as u8;
@@ -176,7 +190,7 @@ pub unsafe fn tick(layout: *mut Layout) {
             && !crate::replay_capture::loading());
     }
 
-    damage::draw(root_pane, &layout_name);
+    damage::draw(root_pane, layout_name);
 
     if (layout_name == "info_training" && is_native_training_mode())
         || (waiting_host && lobby::active())
@@ -188,8 +202,11 @@ pub unsafe fn tick(layout: *mut Layout) {
         };
         frame_counter::tick_real();
         input_log::draw(custom_root);
+        crate::practice_trace::event(501, [layout as u64, 0, 0, 0, 0]);
         display::draw(custom_root);
+        crate::practice_trace::event(502, [layout as u64, 0, 0, 0, 0]);
         menu::draw(custom_root, root_pane);
+        crate::practice_trace::event(503, [layout as u64, 0, 0, 0, 0]);
     }
 
     // Formerly right after info_training's calculate. Only that game calculate separated the
@@ -197,6 +214,7 @@ pub unsafe fn tick(layout: *mut Layout) {
     if layout_name == "info_training" && is_native_training_mode() {
         crate::replay_capture::after_draw();
     }
+    crate::practice_trace::event(504, [layout as u64, 0, 0, 0, 0]);
 }
 
 // Allocate a static amount of memory that Smash isn't allowed to deallocate,

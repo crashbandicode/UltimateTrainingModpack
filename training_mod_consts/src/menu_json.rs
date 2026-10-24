@@ -14,6 +14,39 @@ use serde_json::{Map, Value};
 
 use crate::{OrderedFighterRoster, TrainingModpackMenu, TrioFighter};
 
+/// Optional identity metadata must not invalidate the independent numeric menu.
+/// Keep each valid selector, ignore unknown fields, and leave only invalid selectors unset.
+pub fn deserialize_mii_preferences<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::mii::selection::Preferences, D::Error> {
+    use crate::mii::{inventory::Canonical, selection::{Preferences, Role, CLASSES}};
+    let value = Value::deserialize(deserializer)?;
+    let mut preferences = Preferences::default();
+    for (role, key) in [(Role::Player, "player"), (Role::Cpu, "cpu")] {
+        if let Some(selectors) = value.get(key).and_then(Value::as_array) {
+            for (class, selector) in CLASSES.iter().zip(selectors) {
+                if let Ok(identity) = serde_json::from_value::<Canonical>(selector.clone()) {
+                    if let Ok(updated) = preferences.clone().with(role, *class, Some(identity)) {
+                        preferences = updated;
+                    }
+                }
+            }
+        }
+    }
+    Ok(preferences)
+}
+
+/// Optional UI metadata cannot invalidate the independent rotation/menu.
+/// Only catalog IDs are eligible for Direct; malformed metadata restores Rotation.
+pub fn deserialize_stage_preferences<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<training_mod_tui::stage_menu::Preferences, D::Error> {
+    let value = Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value::<training_mod_tui::stage_menu::Preferences>(value).ok()
+        .filter(|prefs| crate::lobby_stages::STAGES.iter().any(|(id, _)| *id == prefs.direct_stage))
+        .unwrap_or_default())
+}
+
 /// One role's retired fixed-slot keys and the value each slot had when absent.
 struct LegacySlots {
     roster: &'static str,
@@ -452,7 +485,9 @@ mod tests {
                 .select(index / cols, index % cols);
             app.on_a();
             // The shared grid starts on Mario; append after the configured order.
-            if submenu_id == "cpu_roster" { app.on_y(); }
+            if submenu_id == "cpu_roster" {
+                app.on_zr();
+            }
             app.on_a();
             app.on_b();
             let text = app.get_serialized_settings_with_defaults();
@@ -477,4 +512,180 @@ mod tests {
             assert_eq!(rosters(&again.menu), rosters(&parsed.menu));
         }
     }
+
+    #[test]
+    fn stage_direct_close_preserves_rotation_and_emits_only_one_explicit_action() {
+        use training_mod_tui::{stage_menu::{Mode, Preferences}, AppPage};
+        let mut app = unsafe { crate::create_app() };
+        let mut menu = BASE_MENU;
+        // Existing independent serde contract: All=0, Waiting rank2, BF rank1, FD rank3.
+        let mut ranks = vec![0u8; crate::lobby_stages::STAGES.len() + 1];
+        for (id, rank) in [(311, 2), (0, 1), (3, 3)] {
+            ranks[crate::lobby_stages::STAGES.iter().position(|(kind, _)| *kind == id).unwrap() + 1] = rank;
+        }
+        menu.lobby_stages = serde_json::from_value(json!(ranks)).unwrap();
+        let settings = serde_json::to_string(&menu).unwrap();
+        app.serialized_default_settings = modern().to_string();
+        app.open_settings_for_player(&settings, Some(9));
+        app.open_stage_menu(true, Preferences::default());
+        let tab = app.tabs.iter().position(|tab| tab.submenus.iter().any(|s| s.id == "lobby_stages")).unwrap();
+        app.tabs.state.select(Some(tab));
+        let index = app.selected_tab().submenus.iter().position(|s| s.id == "lobby_stages").unwrap();
+        let cols = app.selected_tab().submenus.cols;
+        app.selected_tab().submenus.select(index / cols, index % cols);
+        app.on_a();
+        assert!(app.stage_page_active());
+        assert!(app.take_pending_stage().is_none());
+        app.on_x();
+        assert!(app.stage_is_direct());
+        assert_eq!(app.stage_direct_marker(), Some(Preferences::default().direct_stage));
+        app.selected_submenu().toggles.select(0, 0);
+        app.on_a(); // All is not a Direct request.
+        assert!(app.page == AppPage::TOGGLE);
+        assert!(app.take_pending_stage().is_none());
+        let fd = crate::lobby_stages::STAGES.iter().position(|(id, _)| *id == 3).unwrap() + 1;
+        let cols = app.selected_submenu().toggles.cols;
+        app.selected_submenu().toggles.select(fd / cols, fd % cols);
+        app.on_y(); // Direct editing cannot clear rotation ranks.
+        app.on_a(); // Actual production action: save choice, close, emit once.
+        assert!(app.page == AppPage::CLOSE);
+        assert_eq!(app.take_pending_stage(), Some(3));
+        assert_eq!(app.take_pending_stage(), None);
+        assert!(app.take_pending_mii_selection(0).is_none());
+        let saved: MenuJsonStruct = serde_json::from_str(&app.get_serialized_settings_with_defaults()).unwrap();
+        assert_eq!(saved.menu.lobby_stages.stages(), vec![0, 311, 3]);
+        assert_eq!(saved.defaults_menu.lobby_stages, BASE_MENU.lobby_stages);
+        assert_eq!(saved.stage_preferences, Preferences { mode: Mode::Direct, direct_stage: 3 });
+        // A later menu opening restores preferences but does not replay a live action.
+        app.open_settings_for_player(&serde_json::to_string(&saved.menu).unwrap(), Some(9));
+        app.open_stage_menu(true, saved.stage_preferences);
+        app.page = AppPage::TOGGLE;
+        assert!(app.take_pending_stage().is_none());
+        app.on_x();
+        assert!(!app.stage_is_direct());
+        app.on_b(); app.on_b();
+        assert!(app.take_pending_stage().is_none());
+        let rotated: MenuJsonStruct = serde_json::from_str(&app.get_serialized_settings_with_defaults()).unwrap();
+        assert_eq!(rotated.stage_preferences.mode, Mode::Rotation);
+        assert_eq!(rotated.menu.lobby_stages.stages(), vec![0, 311, 3]);
+    }
+
+    #[test]
+    fn stage_training_view_keeps_manual_actions_separate_from_lobby_preferences() {
+        use training_mod_tui::{stage_menu::{Mode, Preferences}, App, AppPage};
+
+        fn select_picker(app: &mut App<'_>) {
+            let tab = app.tabs.iter().position(|tab| tab.submenus.iter()
+                .any(|s| s.id == "lobby_stages")).unwrap();
+            app.tabs.state.select(Some(tab));
+            let index = app.selected_tab().submenus.iter()
+                .position(|s| s.id == "lobby_stages").unwrap();
+            let cols = app.selected_tab().submenus.cols;
+            app.selected_tab().submenus.select(index / cols, index % cols);
+            app.on_a();
+        }
+
+        let mut menu = BASE_MENU;
+        let mut ranks = vec![0u8; crate::lobby_stages::STAGES.len() + 1];
+        for (id, rank) in [(311, 2), (0, 1), (3, 3)] {
+            let index = crate::lobby_stages::STAGES.iter()
+                .position(|(kind, _)| *kind == id).unwrap() + 1;
+            ranks[index] = rank;
+        }
+        menu.lobby_stages = serde_json::from_value(json!(ranks)).unwrap();
+        let settings = serde_json::to_string(&menu).unwrap();
+        let fd = crate::lobby_stages::STAGES.iter().position(|(id, _)| *id == 3).unwrap() + 1;
+
+        for mode in [Mode::Rotation, Mode::Direct] {
+            let preferences = Preferences { mode, direct_stage: 311 };
+            let mut app = unsafe { crate::create_app() };
+            app.serialized_default_settings = modern().to_string();
+            app.open_settings_for_player(&settings, Some(9));
+            app.open_stage_menu_in_context(true, preferences, true);
+            select_picker(&mut app);
+            assert!(app.stage_is_direct());
+            assert_eq!(app.stage_title(), "Change Stage Now");
+            assert_eq!(app.stage_direct_marker(), None);
+            assert!(app.stage_help().contains("Training only"));
+            app.on_b(); app.on_b();
+            let cancelled: MenuJsonStruct = serde_json::from_str(
+                &app.get_serialized_settings_with_defaults()).unwrap();
+            assert_eq!(cancelled.stage_preferences, preferences);
+            assert_eq!(cancelled.menu.lobby_stages, menu.lobby_stages);
+            assert!(app.take_pending_stage().is_none());
+
+            app.open_stage_menu_in_context(true, preferences, true);
+            app.page = AppPage::SUBMENU;
+            select_picker(&mut app);
+            let cols = app.selected_submenu().toggles.cols;
+            app.selected_submenu().toggles.select(fd / cols, fd % cols);
+            app.on_a();
+            assert!(app.page == AppPage::CLOSE);
+            assert_eq!(app.take_pending_stage(), Some(3));
+            assert_eq!(app.take_pending_stage(), None);
+            let applied: MenuJsonStruct = serde_json::from_str(
+                &app.get_serialized_settings_with_defaults()).unwrap();
+            assert_eq!(applied.stage_preferences, preferences);
+            assert_eq!(applied.menu.lobby_stages, menu.lobby_stages);
+
+            app.open_stage_menu_in_context(true, preferences, true);
+            app.page = AppPage::SUBMENU;
+            select_picker(&mut app);
+            app.on_x();
+            assert!(!app.stage_is_direct());
+            assert_eq!(app.stage_title(), "Lobby Stage Rotation");
+            assert!(app.stage_help().contains("Next lobby entry only"));
+            assert_eq!(app.stage_preferences.mode, Mode::Rotation);
+            app.on_x(); // Returning to the manual view must not pin the lobby stage.
+            assert!(app.stage_is_direct());
+            assert_eq!(app.stage_preferences.mode, Mode::Rotation);
+            app.on_x();
+            let cols = app.selected_submenu().toggles.cols;
+            app.selected_submenu().toggles.select(fd / cols, fd % cols);
+            app.on_a(); // Remove FD from the future lobby rotation, not a live request.
+            assert!(app.take_pending_stage().is_none());
+            app.on_b();
+            select_picker(&mut app); // Reopening the Training picker is manual again.
+            assert!(app.stage_is_direct());
+            app.on_b(); app.on_b();
+            let rotated: MenuJsonStruct = serde_json::from_str(
+                &app.get_serialized_settings_with_defaults()).unwrap();
+            assert_eq!(rotated.stage_preferences, Preferences { mode: Mode::Rotation, direct_stage: 311 });
+            assert_eq!(rotated.menu.lobby_stages.stages(), vec![0, 311]);
+            assert!(app.take_pending_stage().is_none());
+
+            app.open_stage_menu(true, rotated.stage_preferences);
+            assert!(!app.stage_is_direct()); // Lobby restores its persisted mode.
+            app.open_stage_menu(true, Preferences { mode: Mode::Direct, direct_stage: 311 });
+            assert_eq!(app.stage_direct_marker(), Some(311));
+        }
+    }
+
+    #[test]
+    fn stage_preferences_ingress_and_feature_off_do_not_enable_direct_actions() {
+        use training_mod_tui::{stage_menu::{Mode, Preferences}, AppPage};
+        let mut value = json!({"menu": modern(), "defaults_menu": modern()});
+        let old: MenuJsonStruct = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(old.stage_preferences, Preferences::default());
+        value["stage_preferences"] = json!({"mode": "direct", "direct_stage": 0xffffffffu32});
+        let invalid: MenuJsonStruct = serde_json::from_value(value).unwrap();
+        assert_eq!(invalid.stage_preferences, Preferences::default());
+        let mut app = unsafe { crate::create_app() };
+        app.open_settings_for_player(&modern().to_string(), Some(9));
+        app.open_stage_menu_in_context(false, Preferences { mode: Mode::Direct, direct_stage: 3 }, true);
+        let tab = app.tabs.iter().position(|tab| tab.submenus.iter().any(|s| s.id == "lobby_stages")).unwrap();
+        app.tabs.state.select(Some(tab));
+        let index = app.selected_tab().submenus.iter().position(|s| s.id == "lobby_stages").unwrap();
+        let cols = app.selected_tab().submenus.cols;
+        app.selected_tab().submenus.select(index / cols, index % cols);
+        app.on_a();
+        app.selected_submenu().toggles.select(0, 2); // Ordinary BF rotation toggle.
+        app.on_a();
+        assert!(app.page == AppPage::TOGGLE);
+        assert!(!app.stage_is_direct());
+        assert!(app.take_pending_stage().is_none());
+        let numeric: TrainingModpackMenu = serde_json::from_str(&app.current_settings_to_json()).unwrap();
+        assert_eq!(numeric.lobby_stages.stages(), vec![311, 0]);
+    }
+
 }

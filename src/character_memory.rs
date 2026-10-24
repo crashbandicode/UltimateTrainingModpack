@@ -69,7 +69,8 @@ impl<T: Copy> WaitingSession<T> {
         }
     }
 
-    pub fn scene_changed(&mut self, initialized: bool, melee: u8, mode: u32) {
+    /// Returns the shared continuation decision for other value-only practice state.
+    pub fn scene_changed(&mut self, initialized: bool, melee: u8, mode: u32) -> bool {
         let same_lobby = initialized
             && matches!(melee, 0x01 | 0x0d)
             && (mode == 0x02010000 || mode & 0x7fff0000 == 0x07010000)
@@ -87,6 +88,7 @@ impl<T: Copy> WaitingSession<T> {
         }
         self.scene = Some((initialized, melee, mode));
         self.player_departed = false;
+        same_lobby
     }
 
     /// Caller proves destruction of its current waiting P1 entry, not a body reload,
@@ -120,11 +122,34 @@ impl<T: Copy> WaitingSession<T> {
     pub fn restore_target(&self, role: usize) -> Option<T> {
         self.choices[role].restore_target()
     }
+
+    /// Disabled roster roles do not service their remembered target. Consumers
+    /// such as hats must still work on those roles' current native fighters.
+    pub fn restoration_pending(&self, enabled: [bool; 2]) -> bool {
+        enabled.iter().copied().enumerate()
+            .any(|(role, enabled)| enabled && self.restore_target(role).is_some())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{WaitingChoice, WaitingSession};
+
+    #[test]
+    fn disabled_player_restore_does_not_block_cpu_hat_continuation() {
+        let mut session = WaitingSession::empty();
+        session.scene_changed(true, 0x0d, 0x02010000);
+        session.observe(0, 10);
+        session.observe(1, 6);
+        session.scene_changed(true, 0x01, 0x02010000);
+        session.scene_changed(true, 0x0d, 0x02010000);
+        assert!(session.restoration_pending([false, true]));
+        session.commit(1, 6);
+        assert!(!session.restoration_pending([false, true]));
+        assert!(session.restoration_pending([true, true]));
+        session.commit(0, 10);
+        assert!(!session.restoration_pending([true, true]));
+    }
 
     #[test]
     fn entry_destruction_then_match_preserves_both_roles() {

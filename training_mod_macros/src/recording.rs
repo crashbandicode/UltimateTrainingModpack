@@ -6,8 +6,10 @@ use std::{fmt, io};
 
 use serde::{Deserialize, Serialize};
 
-/// On-disk schema version written by this crate and the only one it accepts.
+/// Ordinary recordings retain the original schema and serialized shape.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Exact Mii macros must refuse on older readers that would discard their identity.
+pub const MII_SCHEMA_VERSION: u32 = 2;
 /// Gameplay frame rate assumed when the caller does not supply one.
 pub const DEFAULT_FPS: u32 = 60;
 /// Longest macro accepted: 10 minutes of gameplay at 60 fps.
@@ -127,6 +129,8 @@ pub struct MacroRecording {
     /// Free-form tag of the game version it was recorded on; may be empty.
     pub game_version: String,
     pub start: StartState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mii: Option<training_mod_mii::lifetime::Configuration>,
     pub placement: Placement,
     pub frames: Vec<InputFrame>,
 }
@@ -145,6 +149,7 @@ impl MacroRecording {
             name: name.trim().to_owned(),
             game_version: game_version.into(),
             start,
+            mii: None,
             placement: Placement::default(),
             frames,
         };
@@ -154,7 +159,7 @@ impl MacroRecording {
 
     /// Checks everything `Library` requires before it writes or accepts a file.
     pub fn validate(&self) -> Result<(), MacroError> {
-        if self.schema_version != SCHEMA_VERSION {
+        if !matches!(self.schema_version, SCHEMA_VERSION | MII_SCHEMA_VERSION) {
             return Err(MacroError::UnsupportedVersion {
                 found: self.schema_version,
             });
@@ -169,6 +174,12 @@ impl MacroRecording {
             ));
         }
         self.start.validate()?;
+        match (self.schema_version, self.mii) {
+            (SCHEMA_VERSION, None) => {},
+            (MII_SCHEMA_VERSION, Some(configuration))
+                if configuration.canonical().class.kind() == self.start.fighter_kind as u32 => {},
+            _ => return Err(MacroError::InvalidMii("schema, fighter class and exact configuration disagree")),
+        }
         self.placement.validate()?;
         if self.frames.is_empty() {
             return Err(MacroError::EmptyFrames);
@@ -180,6 +191,30 @@ impl MacroRecording {
             });
         }
         Ok(())
+    }
+
+    /// Attach owned identity after qualified replay resolution. Ordinary files
+    /// retain schema1 and their existing JSON representation.
+    pub fn set_mii(&mut self, configuration: training_mod_mii::lifetime::Configuration) -> Result<(), MacroError> {
+        if configuration.canonical().class.kind() != self.start.fighter_kind as u32 {
+            return Err(MacroError::InvalidMii("configuration belongs to a different fighter class"));
+        }
+        self.mii = Some(configuration);
+        self.schema_version = MII_SCHEMA_VERSION;
+        Ok(())
+    }
+
+    /// Legacy Mii files remain readable; no preferred Mii can stand in for their
+    /// absent identity. The caller still needs native exact-target completion.
+    pub fn playback_target(&self) -> Result<training_mod_mii::replay::Target, MacroError> {
+        self.validate()?;
+        if let Some(configuration) = self.mii {
+            Ok(training_mod_mii::replay::Target::mii(configuration))
+        } else if training_mod_mii::inventory::MiiClass::from_kind(self.start.fighter_kind as u32).is_some() {
+            Err(MacroError::InvalidMii("this older macro has no exact Mii configuration"))
+        } else {
+            Ok(training_mod_mii::replay::Target::fighter(self.start.fighter_kind as u32))
+        }
     }
 
     /// Replaces the placement metadata only; the frames are never touched.
@@ -227,6 +262,7 @@ pub enum MacroError {
     },
     InvalidName(&'static str),
     InvalidGameVersion(&'static str),
+    InvalidMii(&'static str),
     /// `start.fighter_kind` is negative, i.e. the macro names no fighter.
     MissingFighter,
     NonFinite(&'static str),
@@ -258,10 +294,11 @@ impl fmt::Display for MacroError {
         match self {
             Self::UnsupportedVersion { found } => write!(
                 f,
-                "unsupported schema version {found} (supported: {SCHEMA_VERSION})"
+                "unsupported schema version {found} (supported: {SCHEMA_VERSION} and {MII_SCHEMA_VERSION})"
             ),
             Self::InvalidName(why) => write!(f, "invalid name: {why}"),
             Self::InvalidGameVersion(why) => write!(f, "invalid game version: {why}"),
+            Self::InvalidMii(why) => write!(f, "Mii macro unavailable: {why}"),
             Self::MissingFighter => write!(f, "start state names no fighter"),
             Self::NonFinite(field) => write!(f, "{field} is not a finite number"),
             Self::EmptyFrames => write!(f, "macro has no frames"),

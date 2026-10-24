@@ -4,6 +4,11 @@ use std::convert::TryInto;
 
 type Result<T> = std::result::Result<T, &'static str>;
 
+// The validated character + 115 BC7 stage portraits produce an 8,509,244-byte
+// archive. Keep a bounded allocation above that payload; RGBA8 stage imports
+// (13,453,116 bytes) remain rejected.
+pub const MAX_WAITING_UI_BYTES: usize = 9 * 1024 * 1024;
+
 fn take<'a>(bytes: &mut &'a [u8], len: usize) -> Result<&'a [u8]> {
     let value = bytes.get(..len).ok_or("truncated waiting UI patch")?;
     *bytes = &bytes[len..];
@@ -37,7 +42,7 @@ pub fn build(stock: &[u8], training: &[u8], mut patch: &[u8]) -> Result<Vec<u8>>
     }
     let size = u32::from_le_bytes(read(&mut patch)?) as usize;
     let hash = u64::from_le_bytes(read(&mut patch)?);
-    if !(4..=8 * 1024 * 1024).contains(&size) {
+    if !(4..=MAX_WAITING_UI_BYTES).contains(&size) {
         return Err("invalid waiting UI output size");
     }
     let mut output = Vec::with_capacity(size);

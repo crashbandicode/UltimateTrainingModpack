@@ -86,6 +86,7 @@ struct NameDraft {
     start: StartState,
     placement: Placement,
     version: String,
+    mii: Option<training_mod_mii::lifetime::Configuration>,
 }
 
 struct PlaceDraft {
@@ -174,6 +175,18 @@ impl MacroUi {
 
     pub fn loaded_start(&self) -> Option<StartState> {
         self.loaded.as_ref().map(|loaded| loaded.recording.start)
+    }
+
+    pub fn loaded_target(&self) -> Option<training_mod_mii::replay::Target> {
+        self.loaded.as_ref()?.recording.playback_target().ok()
+    }
+
+    /// Invalidate only unsubmitted intent/readiness; the native adapter owns an
+    /// installation already in flight. Used when switching away to a clip.
+    pub fn invalidate_character_request(&mut self) {
+        self.character_ready = false;
+        self.claimed = false;
+        self.pending_kind = self.loaded_target().map(|target| target.kind() as i32);
     }
 
     pub fn loaded_placement(&self) -> Option<Placement> {
@@ -292,6 +305,7 @@ impl MacroUi {
             start,
             placement: Placement::default(),
             version: clip_version(version),
+            mii: None,
         }));
         Effect::None
     }
@@ -357,7 +371,8 @@ impl MacroUi {
         self.install(None, recording, cpu_kind)
     }
 
-    /// One character-load request. Further calls do nothing until a new commit.
+    /// One character-load request per explicit load or retry. Readiness loss alone
+    /// never re-arms it, so changing the CPU does not undo the user's choice.
     pub fn claim_character_request(&mut self) -> Option<i32> {
         if self.claimed || self.character_ready {
             return None;
@@ -368,11 +383,14 @@ impl MacroUi {
     }
 
     pub fn observe_cpu(&mut self, kind: Option<i32>, busy: bool) {
-        if busy {
-            self.character_ready = false;
-            return;
-        }
-        self.character_ready = self.loaded_start().is_some_and(|start| Some(start.fighter_kind) == kind);
+        self.observe_exact_cpu(kind, None, busy);
+    }
+
+    /// Configuration is supplied only after the runtime's exact selection ack.
+    pub fn observe_exact_cpu(&mut self, kind: Option<i32>, configuration: Option<training_mod_mii::lifetime::Configuration>, busy: bool) {
+        let target = self.loaded_target();
+        self.character_ready = !busy && target.is_some_and(|target|
+            kind.is_some_and(|kind| target.ready(kind as u32, configuration)));
         if self.character_ready {
             self.pending_kind = None;
             self.claimed = false;
@@ -497,6 +515,7 @@ impl MacroUi {
             start: recording.start,
             placement: recording.placement,
             version: recording.game_version.clone(),
+            mii: recording.mii,
         }));
         self.playback_on = false;
     }
@@ -525,7 +544,14 @@ impl MacroUi {
         self.playback_on = false;
         self.playback_frame = 0;
         self.playback_len = 0;
-        if cpu_kind == Some(kind) {
+        let target = self.loaded_target();
+        if target.is_none() {
+            self.character_ready = false;
+            self.pending_kind = None;
+            self.claimed = false;
+            return Ok(Effect::Notify("This macro has no exact Mii configuration".into()));
+        }
+        if cpu_kind == Some(kind) && target.is_some_and(|target| target.configuration().is_none()) {
             self.character_ready = true;
             self.pending_kind = None;
             self.claimed = false;
@@ -688,13 +714,14 @@ impl MacroUi {
     }
 
     fn finish_save(&mut self) -> Effect {
-        let (name, version, start, frames, placement) = match &self.screen {
+        let (name, version, start, frames, placement, mii) = match &self.screen {
             Screen::Save(draft) => (
                 draft.name.clone(),
                 draft.version.clone(),
                 draft.start,
                 draft.frames.clone(),
                 draft.placement,
+                draft.mii,
             ),
             _ => return Effect::None,
         };
@@ -703,6 +730,9 @@ impl MacroUi {
             Ok(recording) => recording,
             Err(err) => return Effect::Notify(err.to_string()),
         };
+        if let Some(configuration) = mii {
+            if let Err(err) = recording.set_mii(configuration) { return Effect::Notify(err.to_string()); }
+        }
         if let Err(err) = recording.set_placement(placement) {
             return Effect::Notify(err.to_string());
         }
@@ -762,6 +792,7 @@ impl MacroUi {
             start: source.recording.start,
             placement,
             version: source.recording.game_version.clone(),
+            mii: source.recording.mii,
         };
         self.held_save = None;
         self.screen = Screen::Save(Box::new(draft));
@@ -1340,6 +1371,7 @@ mod tests {
             name: "Nope".to_owned(),
             game_version: String::new(),
             start: start(),
+            mii: None,
             placement: Placement::default(),
             frames: Vec::new(),
         };
@@ -1357,4 +1389,93 @@ mod tests {
         recording.set_placement(placement).unwrap();
         recording
     }
+
+    fn exact_mii() -> training_mod_mii::lifetime::Configuration {
+        use training_mod_mii::inventory::{classify, MiiClass, RawSlot, TaggedId, CHARINFO_LEN, TAG_CHARA, TAG_HAT, TAG_OUTFIT};
+        let saved = classify(&RawSlot {
+            index: 0, slot_id: 13231, name_len: 1,
+            name_units: [65, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            charinfo: [7; CHARINFO_LEN], colour: 4, voice: 37, specials: [1, 0, 0, 0],
+            tag_outfit: TaggedId((u64::from(TAG_OUTFIT) << 56) | (1 << 40) | 0x1b_fef7_a5f7),
+            tag_hat: TaggedId((u64::from(TAG_HAT) << 56) | 0x0f_a9ef_a5ea),
+            tag_chara: TaggedId((u64::from(TAG_CHARA) << 56) | MiiClass::Brawler.chara_hash40()),
+        }).unwrap();
+        training_mod_mii::lifetime::Configuration::from_saved(&saved).unwrap()
+    }
+
+    #[test]
+    fn exact_mii_naming_save_as_and_same_class_ack_keep_identity() {
+        let configuration = exact_mii();
+        let mut original = MacroRecording::new("Captured", "13.0.5", StartState::neutral(0x48, 0, 1.0), frames()).unwrap();
+        original.set_mii(configuration).unwrap();
+        let mut ui = MacroUi::new();
+        ui.restore_draft(original.clone());
+        let Effect::Save(named) = ui.confirm_native_name("Named Brawler".into()) else { panic!() };
+        assert_eq!(named.mii, Some(configuration));
+        ui.restore_draft((*named).clone()); // Failed filesystem save returns the same owned draft.
+        let Effect::Save(retried) = ui.confirm_native_name("Retried Brawler".into()) else { panic!() };
+        assert_eq!(retried.mii, Some(configuration));
+        assert!(matches!(ui.commit_loaded("brawler".into(), *retried, Some(0x48)).unwrap(), Effect::NeedCharacter(0x48)));
+        assert!(!ui.playback_allowed());
+        assert_eq!(ui.claim_character_request(), Some(0x48));
+        ui.observe_cpu(Some(0x48), false);
+        assert!(!ui.playback_allowed());
+        let mut wrong = serde_json::to_value(configuration).unwrap();
+        wrong["charinfo"][0] = serde_json::json!(9); // Same canonical identity, different exact bytes.
+        let wrong = serde_json::from_value(wrong).unwrap();
+        ui.observe_exact_cpu(Some(0x48), Some(wrong), false);
+        assert!(!ui.playback_allowed());
+        ui.observe_exact_cpu(Some(0x48), Some(configuration), true);
+        assert!(!ui.playback_allowed());
+        ui.observe_exact_cpu(Some(0x48), Some(configuration), false);
+        assert!(ui.playback_allowed());
+        assert!(ui.open_editor(Some((0.0, 0.0))));
+        ui.save_as();
+        let Effect::Save(copy) = ui.confirm_native_name("Copy Brawler".into()) else { panic!() };
+        assert_eq!(copy.mii, Some(configuration));
+        assert_eq!(copy.schema_version, 2);
+        assert_eq!(copy.frames, original.frames);
+        ui.invalidate_character_request();
+        assert!(!ui.playback_allowed());
+        assert_eq!(ui.claim_character_request(), Some(0x48));
+    }
+    #[test]
+    fn loaded_macro_does_not_undo_manual_cpu_choice() {
+        let mut ui = MacroUi::new();
+        ui.commit_loaded("ordinary".into(), sample(Placement::default()), Some(0x08)).unwrap();
+        assert!(ui.playback_allowed());
+        ui.observe_cpu(Some(0x08), true);
+        assert_eq!(ui.claim_character_request(), None);
+        ui.observe_cpu(Some(0x0f), false);
+        assert!(!ui.playback_allowed());
+        assert_eq!(ui.claim_character_request(), None);
+        ui.observe_cpu(Some(0x08), false);
+        assert!(ui.playback_allowed());
+        assert_eq!(ui.claim_character_request(), None);
+        ui.invalidate_character_request();
+        assert_eq!(ui.claim_character_request(), Some(0x08));
+
+        let configuration = exact_mii();
+        let mut recording = MacroRecording::new("Exact", "13.0.5", StartState::neutral(0x48, 0, 1.0), frames()).unwrap();
+        recording.set_mii(configuration).unwrap();
+        ui.commit_loaded("exact".into(), recording, Some(0x48)).unwrap();
+        assert_eq!(ui.claim_character_request(), Some(0x48));
+        ui.observe_exact_cpu(Some(0x48), Some(configuration), false);
+        assert!(ui.playback_allowed());
+        ui.observe_cpu(Some(0x0f), false);
+        assert_eq!(ui.claim_character_request(), None);
+        let mut wrong = serde_json::to_value(configuration).unwrap();
+        wrong["charinfo"][0] = serde_json::json!(9);
+        let wrong = serde_json::from_value(wrong).unwrap();
+        ui.observe_cpu(Some(0x48), false);
+        ui.observe_exact_cpu(Some(0x48), Some(wrong), false);
+        assert_eq!(ui.claim_character_request(), None);
+        assert!(!ui.playback_allowed());
+        // Runtime can renew an exact current receipt without a UI install request.
+        assert_eq!(ui.claim_character_request(), None);
+        ui.observe_exact_cpu(Some(0x48), Some(configuration), false);
+        assert!(ui.playback_allowed());
+        assert_eq!(ui.claim_character_request(), None);
+    }
+
 }

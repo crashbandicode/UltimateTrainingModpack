@@ -4,12 +4,22 @@ extern crate num_derive;
 
 use serde::{Deserialize, Serialize};
 
-pub mod trio;
 pub mod character_forms;
+pub mod mii_cycle;
+pub mod character_items;
+pub use character_items::CharacterItemChoice;
+pub mod trio;
 pub use trio::*;
 pub mod menu_json;
+pub use training_mod_mii as mii;
+#[cfg(test)]
+mod mii_menu_tests;
+#[cfg(test)]
+mod p1_cpu_menu_tests;
 pub mod ordered_roster;
 pub use ordered_roster::*;
+pub mod lobby_stages;
+pub use lobby_stages::LobbyStageOrder;
 
 pub mod options;
 pub use options::*;
@@ -32,6 +42,8 @@ pub struct TrainingModpackMenu {
     pub attack_angle: AttackAngle,
     pub buff_state: BuffOption,
     pub character_item: CharacterItem,
+    #[serde(default)]
+    pub character_item_grant: CharacterItemChoice,
     pub clatter_strength: ClatterFrequency,
     pub crouch: OnOff,
     pub di_state: Direction,
@@ -103,6 +115,8 @@ pub struct TrainingModpackMenu {
     pub lra_reset: OnOff,
     #[serde(default = "lobby_practice_default")]
     pub lobby_practice: OnOff,
+    #[serde(default)]
+    pub lobby_stages: LobbyStageOrder,
     #[serde(default = "lobby_practice_default")]
     pub trio_practice: OnOff,
     #[serde(default = "cpu_character_default")]
@@ -117,8 +131,34 @@ pub struct TrainingModpackMenu {
     // retired fixed-slot keys of older files.
     pub player_roster: OrderedFighterRoster,
     pub cpu_roster: OrderedFighterRoster,
+    #[serde(default = "default_kirby_hats")]
+    pub player_kirby_hats: OrderedFighterRoster,
+    #[serde(default = "default_kirby_hats")]
+    pub cpu_kirby_hats: OrderedFighterRoster,
+    #[serde(default = "lobby_practice_default")]
+    pub solo_popo_original: OnOff,
+    #[serde(default = "lobby_practice_default")]
+    pub solo_popo_player_cycle: OnOff,
+    #[serde(default = "lobby_practice_default")]
+    pub solo_popo_cpu: OnOff,
     #[serde(default = "macro_source_default")]
     pub macro_source: MacroSource,
+    #[cfg(feature = "p1-cpu-control")]
+    #[serde(default = "p1_cpu_control_default")]
+    pub p1_cpu_control: OnOff,
+    #[cfg(feature = "p1-cpu-control")]
+    #[serde(default = "p1_cpu_level_default")]
+    pub p1_cpu_level: P1CpuLevel,
+}
+
+#[cfg(feature = "p1-cpu-control")]
+fn p1_cpu_control_default() -> OnOff {
+    OnOff::OFF
+}
+
+#[cfg(feature = "p1-cpu-control")]
+fn p1_cpu_level_default() -> P1CpuLevel {
+    P1CpuLevel::L3
 }
 
 fn macro_source_default() -> MacroSource {
@@ -157,6 +197,16 @@ fn player_cycle_default() -> ButtonConfig {
     DEFAULT_PLAYER_CYCLE
 }
 
+fn default_kirby_hats() -> OrderedFighterRoster {
+    DEFAULT_KIRBY_HATS
+}
+
+fn kirby_hat_submenu<'a>(title: &'a str, id: &'a str, help_text: &'a str) -> SubMenu<'a> {
+    let mut submenu = OrderedFighterRoster::to_submenu(title, id, help_text);
+    submenu.update_from_vec(DEFAULT_KIRBY_HATS.values());
+    submenu
+}
+
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MenuJsonStruct {
@@ -164,6 +214,11 @@ pub struct MenuJsonStruct {
     pub menu: TrainingModpackMenu,
     #[serde(deserialize_with = "menu_json::deserialize_menu")]
     pub defaults_menu: TrainingModpackMenu,
+    /// Stable identity selectors; separate from numeric toggle vectors and native saved files.
+    #[serde(default, deserialize_with = "menu_json::deserialize_mii_preferences")]
+    pub mii_preferences: mii::selection::Preferences,
+    #[serde(default, deserialize_with = "menu_json::deserialize_stage_preferences")]
+    pub stage_preferences: training_mod_tui::stage_menu::Preferences,
 }
 
 #[repr(i32)]
@@ -179,6 +234,7 @@ pub static BASE_MENU: TrainingModpackMenu = TrainingModpackMenu {
     attack_angle: AttackAngle::empty(),
     buff_state: BuffOption::empty(),
     character_item: CharacterItem::NONE,
+    character_item_grant: CharacterItemChoice(None),
     clatter_strength: ClatterFrequency::NONE,
     crouch: OnOff::OFF,
     di_state: Direction::empty(),
@@ -265,21 +321,45 @@ pub static BASE_MENU: TrainingModpackMenu = TrainingModpackMenu {
     tech_hide: OnOff::OFF,
     lra_reset: OnOff::ON,
     lobby_practice: OnOff::OFF,
+    lobby_stages: LobbyStageOrder::NATIVE,
     trio_practice: OnOff::OFF,
     cpu_character: TrioFighter::PIKACHU,
     cpu_cycle: DEFAULT_CPU_CYCLE,
     player_character: TrioFighter::GAMEWATCH,
     player_cycle: DEFAULT_PLAYER_CYCLE,
     player_roster: DEFAULT_PLAYER_ROSTER,
+    solo_popo_original: OnOff::OFF,
+    solo_popo_player_cycle: OnOff::OFF,
+    solo_popo_cpu: OnOff::OFF,
     cpu_roster: DEFAULT_CPU_ROSTER,
+    player_kirby_hats: DEFAULT_KIRBY_HATS,
+    cpu_kirby_hats: DEFAULT_KIRBY_HATS,
     macro_source: MacroSource::NUMBERED,
+    #[cfg(feature = "p1-cpu-control")]
+    p1_cpu_control: OnOff::OFF,
+    #[cfg(feature = "p1-cpu-control")]
+    p1_cpu_level: P1CpuLevel::L3,
 };
+
+impl TrainingModpackMenu {
+    /// Ordered copy-ability kinds for one role.
+    ///
+    /// Catalog is the known roster with Kirby removed. Native original-P1
+    /// exclusion is not applied. Reading this does not equip a hat.
+    pub fn ordered_kirby_hat_kinds(&self, role: training_mod_tui::roster_grid::Role) -> Vec<u32> {
+        match role {
+            training_mod_tui::roster_grid::Role::Player => self.player_kirby_hats.hat_kinds(),
+            training_mod_tui::roster_grid::Role::Cpu => self.cpu_kirby_hats.hat_kinds(),
+        }
+    }
+}
 
 pub static DEFAULTS_MENU: RwLock<TrainingModpackMenu> = RwLock::new(BASE_MENU);
 pub static MENU: RwLock<TrainingModpackMenu> = RwLock::new(BASE_MENU);
 
 pub unsafe fn create_app<'a>() -> App<'a> {
     let mut overall_menu = App::new();
+    overall_menu.configure_stage_catalog(lobby_stages::STAGES.iter().map(|(id, _)| *id).collect());
 
     // Mash Tab
     let mut mash_tab_submenus: Vec<SubMenu> = Vec::new();
@@ -821,7 +901,7 @@ pub unsafe fn create_app<'a>() -> App<'a> {
     save_state_tab_submenus.push(CharacterItem::to_submenu(
         "Character Item",
         "character_item",
-        "The item to give to the player's fighter when loading a save state",
+        "Item for older saves without an item snapshot.\nNew saves restore the item held when saved; use Character Extras to give an item.",
         ToggleSingle,
         false,
     ));
@@ -874,6 +954,23 @@ pub unsafe fn create_app<'a>() -> App<'a> {
         ToggleSingle,
         false,
     ));
+    #[cfg(feature = "p1-cpu-control")]
+    {
+        misc_tab_submenus.push(OnOff::to_submenu(
+            "P1 CPU Control",
+            "p1_cpu_control",
+            "Let CPU AI control your current P1 fighter after closing the menu. P1 stays P1.",
+            ToggleSingle,
+            false,
+        ));
+        misc_tab_submenus.push(P1CpuLevel::to_submenu(
+            "P1 CPU Level",
+            "p1_cpu_level",
+            "CPU AI level for P1. Applies after closing the menu.",
+            ToggleSingle,
+            false,
+        ));
+    }
     misc_tab_submenus.push(OnOff::to_submenu(
         "Stage Hazards",
         "stage_hazards",
@@ -902,6 +999,7 @@ pub unsafe fn create_app<'a>() -> App<'a> {
         ToggleSingle,
         false,
     ));
+    misc_tab_submenus.push(LobbyStageOrder::to_submenu());
     let misc_tab = Tab {
         id: "misc",
         title: "Misc Settings",
@@ -918,15 +1016,15 @@ pub unsafe fn create_app<'a>() -> App<'a> {
     ), TrioFighter::to_submenu(
         "Player Character",
         "player_character",
-        "Apply after closing the menu, without leaving practice.",
+        "Choose a portrait to apply immediately. X previews starting forms.\nSaved Mii identities are selected in Character Extras.",
     ), TrioFighter::to_submenu(
         "CPU Character",
         "cpu_character",
-        "Apply after closing the menu, without leaving practice.",
+        "Choose a portrait to apply immediately. X previews starting forms.\nSaved Mii identities are selected in Character Extras.",
     ), OrderedFighterRoster::to_submenu(
         "Character Cycles",
         "player_roster",
-        "Choose both cycles on the portrait grid: red player order, blue CPU order.\nSwitch roles with Y; X changes the form at a shared fighter slot.",
+        "Red player order, blue CPU order; original P1 is slot 0.\nZR switches roles; X previews forms; Y on Ice Climbers toggles Solo Popo.",
     )];
     overall_menu.tabs.push(Tab {
         id: "player_characters",
@@ -939,10 +1037,59 @@ pub unsafe fn create_app<'a>() -> App<'a> {
     });
 
     // The shared screen edits this same serialized setting without a second entry.
-    overall_menu.hidden_submenus.push(OrderedFighterRoster::to_submenu(
-        "CPU Cycle Characters", "cpu_roster", "CPU cycle order",
-    ));
-    overall_menu.roster_kinds = TrioFighter::available().iter().map(|fighter| fighter.kind()).collect();
+    overall_menu
+        .hidden_submenus
+        .push(OrderedFighterRoster::to_submenu(
+            "CPU Cycle Characters",
+            "cpu_roster",
+            "CPU cycle order",
+        ));
+    overall_menu
+        .hidden_submenus
+        .push(kirby_hat_submenu(
+            "CPU Kirby Hats",
+            "cpu_kirby_hats",
+            "CPU Kirby hat order",
+        ));
+    overall_menu.roster_kinds = TrioFighter::available()
+        .iter()
+        .map(|fighter| fighter.kind())
+        .collect();
+    for (id, title) in [
+        ("solo_popo_player_cycle", "Player Cycle Solo Popo"),
+        ("solo_popo_cpu", "CPU Solo Popo"),
+    ] {
+        overall_menu.hidden_submenus.push(OnOff::to_submenu(
+            title,
+            id,
+            "Cycle-grid Solo Popo preference",
+            ToggleSingle,
+            false,
+        ));
+    }
+    overall_menu.tabs.push(Tab {
+        id: "character_extras",
+        title: "Character Extras",
+        submenus: StatefulTable::with_items(
+            NX_SUBMENU_ROWS,
+            NX_SUBMENU_COLUMNS,
+            vec![
+                OnOff::to_submenu(
+                    "Solo Popo",
+                    "solo_popo_original",
+                    "P1 originally selected Ice Climbers only.\nCycle-grid red S and CPU blue S are independent settings.",
+                    ToggleSingle,
+                    false,
+                ),
+                kirby_hat_submenu(
+                    "Kirby Hats",
+                    "player_kirby_hats",
+                    "Red player hat order, blue CPU hat order.\nZR switches roles; X previews forms; ZL selects All.\nChoosing hats does not equip one.",
+                ),
+                CharacterItemChoice::to_submenu(),
+            ],
+        ),
+    });
 
     // Ensure that a tab is always selected
     if overall_menu.tabs.get_selected().is_none() {
