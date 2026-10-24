@@ -1,122 +1,43 @@
 # Hot-swap Player 1 and the CPU
 
-Change the fighter you control, or the CPU, without leaving Training and without
-returning to the character select screen. Each role has its own ordered roster.
-The game's normal loader replaces the fighter that is already in the match.
+Change your fighter, or the CPU's, during Training without going back to character select. This is part of the [unstable enhancements alpha](experimental-release.md); physical-console acceptance is pending. For waiting-room use, see [Lobby Practice](lobby-practice.md).
 
-The controls below describe the [unstable enhancements alpha](experimental-release.md).
+## Swap with a shortcut
 
-This page is the Training control. Waiting-room practice, the roster editor, and
-what an actual match keeps from the character select screen are in
-[Lobby Practice and shared character rosters](lobby-practice.md).
-
-## Swap during a match
-
-1. Enter ordinary Training and wait until both fighters are standing in the match.
-2. **ZL + D-pad Left** cycles the CPU.
-3. **ZL + D-pad Right** cycles Player 1. Player 1 swapping is off until you enable
-   it: open the Modpack menu with **Minus** (a short **Plus** press still opens
-   the game's pause menu), turn on **Characters → Player Swapping**, and
-   close the menu with **B**.
-
-The chord advances one fighter per press. Holding it does not keep cycling.
-Change the chords under **Button Config → Cycle Player Character / Cycle CPU
-Character**.
-
-Player 1 cycles through the numbered choices, then returns to the original
-character-select fighter at **slot 0**, then to slot 1 again. Slot 0 restores
-the originally selected starting form. The CPU cycles through its own list;
-a CPU outside that list starts at its first choice.
-
-Default lists:
-
-- Player 1: Mr. Game & Watch, Palutena, Pikachu
-- CPU: Pikachu, Kirby, Bowser, Bayonetta
-
-## Edit the shared character-cycle grid
-
-Open **Characters → Character Cycles**. Both roles' numbers stay visible:
-**red, top-left** is P1 order; **blue, top-right** is CPU order. The original
-P1 fighter's whole group normally appears as grey **0**. In the current development
-alpha, Ice Climbers can also have a numbered P1 slot when its red S setting differs
-from Character Extras → Solo Popo. Matching configurations remain grey. The CPU's
-original fighter remains selectable in its list.
-
-| Control | Action | GameCube equivalent |
-| --- | --- | --- |
-| ZR | Switch the role being edited | R |
-| A | Add the highlighted group, or update its starting form | A |
-| X | Preview a grouped starting form | X |
-| R | Remove from the active role's list | Z |
-| ZL | Select All for the active role | L |
-| Y, on Ice Climbers | Toggle the active role's Solo Popo preference | Y |
-| B | Return to the menu | B |
-
-Remove and add a group to move it to the end. Close the menu to apply changes.
-Previewing a form alone does not change a list or the fighter in play.
-
-**Pyra/Mythra (Aegis)** occupies one slot, and **Pokémon Trainer** occupies one
-slot. Preview Pyra, Mythra, Squirtle, Ivysaur or Charizard with X and press A to
-set that group's starting form. Updating it keeps its existing order. Normal
-in-match transformations still work; the next hot-swap shortcut advances to the
-next group rather than another form. Returning to the group starts in its chosen
-form again. For example, Mythra can transform to Pyra, then the shortcut advances
-to a configured Charizard slot; Charizard can transform to Squirtle, then the
-shortcut advances to the next group or P1's original slot 0.
-
-**All** (the Smash Ball tile or ZL) uses character-select row order, left to
-right and top to bottom, with each transforming group once. It preserves
-configured starting forms (defaulting to Pyra and Squirtle), excludes P1's
-original group from the numbered P1 list (except the opposite Solo Popo configuration),
-and includes the CPU's original fighter. Each role's All selection is independent.
-The layout matches the tested all-unlocked character-select screen; it does not
-read arbitrary save layouts. Saved-Mii cycling, the native Mii editor and Mii hats are included in the full
-alpha. See [how character changes work](character-changes.md) and the
-[release limits](experimental-release.md).
-
-**Ice Climbers is supported**, as the pair or Solo Popo. The three Solo settings
-save independently:
-
-- **Character Extras → Solo Popo** controls only P1's original character-select
-  Ice Climbers.
-- **Red S, bottom-left** controls P1 who cycles into Ice Climbers.
-- **Blue S, bottom-right** controls all CPU Ice Climbers, original or cycled.
-
-Y can edit the red S even on P1's grey slot-0 Ice Climbers portrait. That changes
-the future cycle preference without changing the current original P1 or Character
-Extras. Each S appears only when enabled; both can appear together. The applicable
-setting switches between the pair and Popo alone when the menu closes, and Solo
-Popo remains alone after respawn. See the [Solo Popo guide](solo-popo.md).
-
-![Shared cycle grid and a Player cycle through Kirby, normal Ice Climbers and original Solo Popo.](fighter-hotswap/character-cycles.gif)
-
-*Recorded in Training: normal Ice Climbers is added as Player slot 2 while
-Character Extras keeps original slot 0 as Solo Popo. The shortcut then cycles
-through Kirby, the pair, and original Solo Popo. CPU Young Link stays unchanged.*
-
-## Choose a fighter directly
-
-Open **Characters → Player Character** or **CPU Character**. Choose a portrait
-and press **A** to apply it; the portrait briefly flashes as feedback. **ZR**
-switches roles and **X** previews a starting form. This changes the current
-practice fighter without changing either numbered cycle.
-
-![Selecting Bowser in the manual portrait grid and returning to Training.](fighter-hotswap/manual-hotswap.gif)
-
-*Player Ice Climbers changes to Bowser. CPU Young Link remains unchanged.*
-
-## Save states and demonstration
-
-A swap waits while a save, a recording, playback, the menu, or another load is
-in progress. Save states restore position and damage onto the fighter who is
-standing there now. They do not bring back the saved fighter's kind.
-Within Pokémon Trainer's group, loading a save also restores the saved Pokémon.
-For Pyra/Mythra, loading currently restores position without switching back to
-the saved form.
+**ZL + D-pad Left** cycles the CPU. **ZL + D-pad Right** cycles Player 1 once **Characters → Player Swapping** is On. Each press advances one fighter. To change the chords, use **Button Config**.
 
 ![CPU and Player 1 after cycling to the next roster fighters in Training.](fighter-hotswap/hotswap.gif)
 
-*Recorded in Training with the enhancements development build in Linux Eden. P1 starts as native Mario
-and cycles through Solo Popo to Mythra; the CPU changes from Solo Popo to Kirby.
-The completed fighters are visible at the end. See the
-[development checks](character-cycles-validation.md) for evidence and limits.*
+*Recorded in Linux Eden Training with an earlier development build. P1 cycles from Mario through Solo Popo to Mythra; the CPU changes from Solo Popo to Kirby.*
+
+Player 1 goes through the numbered fighters, then returns to **slot 0**, your character-select pick. A fresh Training visit starts again from slot 0. The CPU loops through its own list.
+
+## Set the order
+
+Open **Characters → Character Cycles**. Red numbers (top-left) are Player 1's order; blue numbers (top-right) are the CPU's. Changes apply when you close the menu.
+
+| Button | Action | GameCube |
+| --- | --- | --- |
+| ZR | Switch between Player and CPU | R |
+| A | Add, or set the starting form | A |
+| X | Preview a Pyra/Mythra or Pokémon Trainer form | X |
+| R | Remove | Z |
+| ZL | Select All | L |
+| Y on Ice Climbers | [Solo Popo](solo-popo.md) for this role | Y |
+| B | Back | B |
+
+![Shared cycle grid and a Player cycle through Kirby, normal Ice Climbers and original Solo Popo.](fighter-hotswap/character-cycles.gif)
+
+*Normal Ice Climbers is added as Player slot 2 while original slot 0 stays Solo Popo. The shortcut then goes to Kirby, the pair and original Solo Popo.*
+
+Your original fighter shows a grey **0** and cannot be added, except Ice Climbers with the opposite Solo Popo setting or a [Mii class with another saved configuration](mii-fighters.md). The CPU's original stays selectable. Pyra/Mythra and Pokémon Trainer take one slot each. Down+B still transforms, and the next press moves on.
+
+## Pick a fighter directly
+
+Open **Characters → Player Character** or **CPU Character**, choose a portrait and press **A** to apply it. Neither cycle changes.
+
+![Selecting Bowser in the manual portrait grid and returning to Training.](fighter-hotswap/manual-hotswap.gif)
+
+*Player Ice Climbers changes to Bowser. CPU Young Link stays the same.*
+
+Save states keep position and damage, not the saved fighter. For defaults, the All order and test scope, see the [hot-swap reference](reference/fighter-hotswap.md).

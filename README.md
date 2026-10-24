@@ -12,55 +12,59 @@
 
 ### Solo Popo
 
-Practice with Popo alone in the enhancements development build. Use **Character Extras → Solo Popo** for Player 1's original Ice Climbers, or toggle the red/blue **S** on Ice Climbers in the cycle grid for the player cycle or CPU. The settings are independent and apply when the menu closes.
+Practice with Popo alone, or cycle between Solo Popo and the full Ice Climbers pair. [Choose separate settings for your original fighter, player cycle, and CPU.](docs/solo-popo.md)
 
-[Solo Popo guide](docs/solo-popo.md)
-
-![Enabling Solo Popo for Player 1 in Training.](docs/fighter-hotswap/solo-popo.gif)
+![Turning Solo Popo on in Character Extras, then returning to Training.](docs/fighter-hotswap/solo-popo.gif)
 
 ### Hot-swap Player 1 and the CPU
 
-Change either fighter during Training without going back to the character select screen. **ZL+Left** cycles the CPU through its roster. **ZL+Right** cycles Player 1 after Player Swapping is enabled. The defaults start at Mr. Game & Watch, Palutena, and Pikachu for Player 1, and Pikachu, Kirby, Bowser, and Bayonetta for the CPU.
-
-[Hot-swap guide](docs/fighter-hotswap.md), including a GIF recorded in Training. Waiting-room behavior is in [Lobby Practice](docs/lobby-practice.md).
-
-The enhancements development build has one shared portrait grid: red P1 order at top-left, blue CPU order at top-right, **ZR** to switch roles, and **Y** on Ice Climbers for Solo Popo. P1 cycles through the numbered choices and back through its original **slot 0**; Ice Climbers can have a numbered slot with the opposite Solo Popo setting in the enhancements alpha; the CPU's original fighter remains selectable. Pyra/Mythra and Pokémon Trainer each occupy one slot with a chosen starting form, and normal transformations remain available. Ice Climbers and saved-Mii cycling are available in the experimental build; consult its feature limits above. See the [hot-swap controls](docs/fighter-hotswap.md) and [development checks and limitations](docs/character-cycles-validation.md).
+Pick a fighter directly from the portrait grid, or build separate player and CPU cycles without leaving practice. [Hot-swap walkthrough and shortcuts.](docs/fighter-hotswap.md)
 
 ![Choosing Bowser in the manual character grid and returning to Training.](docs/fighter-hotswap/manual-hotswap.gif)
 
+### Lobby practice
+
+Use the practice tools while waiting for a match; your real match still uses your character-select pick. [Enable Lobby Practice and try a swap.](docs/lobby-practice.md)
+
+![Player and CPU swaps in an emulator's local-wireless waiting room.](docs/lobby-practice/waiting-room.gif)
+
 ### Recording and macro import
 
-Turn on replay capture, save a match with **Save Replay**, then open its captured inputs in Training. Select your opponent, crop the frames you want, and play that window on the CPU from a saved setup. The crop moves one frame at a time and speeds up the longer Left or Right is held. Saved captures stay selectable after a restart.
-
-[Illustrated macro guide](docs/named-macros/README.md)
+Save a replay, choose the opponent's captured inputs, and trim a short sequence for the Training CPU to play. [Follow the illustrated recording walkthrough.](docs/named-macros/README.md)
 
 ![The Training CPU playing the opponent's captured P2 Hero inputs.](docs/named-macros/images/playback-p2.gif)
 
-### Lobby practice
+### Practice stages
 
-The modpack menu and its practice tools work in the waiting room, not only in Training. Turn that on under **Misc Settings → Lobby Practice**. A practice replacement stays in the waiting room. The match itself still uses the character chosen on the select screen.
+Change the current stage without backing out, or choose a stage rotation for future lobby visits. [Practice Stages walkthrough.](docs/practice-stages.md)
 
-[Lobby practice](docs/lobby-practice.md)
+![Paging through Practice Stages, switching between direct selection and lobby rotation, then loading Battlefield.](docs/lobby-practice/stage-menu.gif)
 
-![Player and CPU cycling from Solo Popo to other fighters in a local-wireless waiting room.](docs/lobby-practice/waiting-room.gif)
+### Kirby hats
 
-*Captured in an emulator's local-wireless waiting room.*
+Choose separate hat orders for Player and CPU Kirby, then use a shortcut to equip, cycle, or recover a lost hat. [Kirby hats walkthrough.](docs/kirby-hats.md)
 
-### Kirby hats, character items and Miis
+![Player Kirby equips and uses Mario's and Link's copy abilities.](docs/feature-walkthroughs/kirby-hats.gif)
 
-In the unstable enhancements alpha, **Character Extras** adds:
+### Character items
 
-- **Kirby Hats:** choose hat orders for Player 1 and the CPU, then press
-  **L3 + B** (Player) or **R3 + B** (CPU) in practice to put on, advance or
-  restore a hat. In Training or local-wireless practice, the source fighter does not need to be in the match.
-- **Character Item:** give Player 1 any listed fighter's item, such as a Peach
-  turnip or Link's Remote Bomb. Save states keep the exact item.
-- **Mii Brawler / Swordfighter / Gunner:** choose which saved Mii Player 1 and
-  the CPU use in character cycles, or make a new one with the game's own Mii
-  editor. Opponent Miis from saved replay captures are kept for CPU practice.
+Give any Player 1 fighter a character item and keep it in a save state, including the selected turnip face. [Character items walkthrough.](docs/character-items.md)
 
-[How character changes work](docs/character-changes.md) explains swaps, slot 0,
-Solo Popo, the hidden source fighter used for hats and items, and Mii storage.
+![King Dedede receives Mega Man's Metal Blade, throws it, then restores the saved item.](docs/feature-walkthroughs/character-items.gif)
+
+### Saved Miis and the native editor
+
+Choose saved Miis for either role, create a new fighter in Smash's own editor, or practice against Miis discovered in saved replay captures. [Mii walkthrough.](docs/mii-fighters.md)
+
+![Choosing a saved Mii Brawler and using its selected neutral special in Training.](docs/feature-walkthroughs/mii-selection.gif)
+
+### Elite stages and automatic counterpick
+
+The separate Elite Stages plugin can propose the loser's configured counterpick on an accepted rematch when your preferred rules are used. [Set the legal stage pool and counterpicks.](docs/elite-counterpick.md)
+
+![The Elite Stages plugin page with its compact hook-status table.](docs/feature-walkthroughs/elite-status.png)
+
+[How these features work](docs/character-changes.md) · [Full guide by menu page](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/wiki) · [Experimental release limits](docs/experimental-release.md)
 
 ---
 

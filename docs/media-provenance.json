@@ -162,6 +162,154 @@
       ],
       "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/media122/runtime/review-evidence/compact/stage-menu-review",
       "visual_review": "First: Change Stage Now page1. R shows page2, L returns page1. X shows Lobby Stage Rotation, X returns direct selection. Battlefield selected; native morph transition; final Battlefield with same fighters. Delayed screenshots during load are held according to recorded timestamps, not sped up. No match/online claim."
+    },
+    {
+      "path": "docs/feature-walkthroughs/character-items.gif",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6",
+      "sha256": "d2cb4958f010e39ba2f8e87a79fdfa8faae7bf4102ab1ec5c6d973b6fa2c4fc1",
+      "dimensions": [
+        1280,
+        721
+      ],
+      "visual_review": "Metal Blade selected; Dedede receives it. Saved Slot 1 label, throw hits Ike, load returns held Metal Blade and 0% CPU. Source 19.232733s, output 19.3s with timestamp-derived frame holds.",
+      "scope": "Documentation demonstration; not console acceptance",
+      "source_manifest_sha256": "0c6c89b566668a89215404d3104b174e34de1f2f28d8bd5cfba844410cae9e6c",
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/docs136/runtime/captures/character-items-final",
+      "frames": 175,
+      "seconds": 19.3,
+      "captured_seconds": 19.232733,
+      "fps": 10,
+      "crop_source_pixels": [
+        129,
+        43,
+        1657,
+        933
+      ],
+      "timing": "Timestamp-derived holds; no time compression; GIF rounding/final hold within 0.2s",
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/docs136/MEDIA-REVIEW.json"
+    },
+    {
+      "path": "docs/feature-walkthroughs/kirby-hats.gif",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6",
+      "sha256": "d5585fe14336fb10ee0609267df14e8b4b345b453bf4ce484a63f5c7b1f6537c",
+      "dimensions": [
+        1280,
+        721
+      ],
+      "visual_review": "Grid has red Mario 1/Link 2. P1 Kirby equips Mario hat, fireball visible; next shortcut equips Link hat, arrow visible; final Kirby retains Link hat. CPU Ike unchanged.",
+      "scope": "Documentation demonstration; not console acceptance",
+      "source_manifest_sha256": "2cc21cad5f25c53c258d242ab4cb8fbcf82b10c9fde4f9931e7a47d6e10536c4",
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/docs136/runtime/captures/kirby-hats",
+      "frames": 232,
+      "seconds": 23.2,
+      "captured_seconds": 23.000106,
+      "fps": 10,
+      "crop_source_pixels": [
+        129,
+        43,
+        1657,
+        933
+      ],
+      "timing": "Timestamp-derived holds; no time compression; GIF rounding/final hold within 0.2s",
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/docs136/MEDIA-REVIEW.json"
+    },
+    {
+      "path": "docs/feature-walkthroughs/mii-selection.gif",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6",
+      "sha256": "01c7d2c602c12fa9f8d00f4519d00534467c6873569dbf0d5a5d956f6c9b1b93",
+      "dimensions": [
+        1280,
+        721
+      ],
+      "visual_review": "Player list Replay Brawler [2111] selected; class page confirms Player Replay Brawler; ZL+Right swaps Kirby to green Brawler; neutral B punching flurry visible; final body Brawler, CPU Ike unchanged.",
+      "scope": "Documentation demonstration; not console acceptance",
+      "source_manifest_sha256": "c186e6295d7c07937a2789746a65af53f96947ff62ba9077d0187cbc82cff277",
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/docs136/runtime/captures/mii-selection",
+      "frames": 184,
+      "seconds": 19.1,
+      "captured_seconds": 19.000113,
+      "fps": 10,
+      "crop_source_pixels": [
+        129,
+        43,
+        1657,
+        933
+      ],
+      "timing": "Timestamp-derived holds; no time compression; GIF rounding/final hold within 0.2s",
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/docs136/MEDIA-REVIEW.json"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "docs/feature-walkthroughs/kirby-grid.png",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6",
+      "sha256": "dda1ba4b0112ba92eb4106a0a51beac4a9efd0aa771428b5852fc8f3d363cba8",
+      "dimensions": [
+        1280,
+        721
+      ],
+      "visual_review": "Red Mario 1 and Link 2, blue Mario 1; CPU origin Ike highlighted green.",
+      "scope": "Documentation demonstration; not console acceptance"
+    },
+    {
+      "path": "docs/feature-walkthroughs/mii-editor.png",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6",
+      "sha256": "4b249fccbe0fb6ac5e56b220574c6dc4d43599971e54f2e69e961d3b555455c6",
+      "dimensions": [
+        1280,
+        721
+      ],
+      "visual_review": "Native Brawler settings opened via Add New; default saved seed, Name/cosmetics/specials/Save visible; subsequently cancelled without saving.",
+      "scope": "Documentation demonstration; not console acceptance"
+    },
+    {
+      "path": "docs/feature-walkthroughs/lobby-enable.png",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6",
+      "sha256": "8620191df26f0e71f4b5f36055266533f5a3b1db7a4687f508bd946b224ac4af",
+      "dimensions": [
+        1280,
+        721
+      ],
+      "visual_review": "Lobby Practice On checked; help says re-enter practice and save/recording require Training.",
+      "scope": "Documentation demonstration; not console acceptance"
+    },
+    {
+      "path": "docs/feature-walkthroughs/stage-rotation.png",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6",
+      "sha256": "84dbcd0e8da2e657c26251170843ff54bdb53e5f7b369e4977d1bdfa8092d412",
+      "dimensions": [
+        1280,
+        721
+      ],
+      "visual_review": "Lobby rotation order Waiting Room 1, Battlefield 2, Small Battlefield 3; footer next lobby entry only.",
+      "scope": "Documentation demonstration; not console acceptance"
+    },
+    {
+      "path": "docs/feature-walkthroughs/elite-status.png",
+      "recorded_date": "2026-10-24",
+      "environment": "Yoga Linux Eden; ordinary Training",
+      "nro_sha256": "97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6",
+      "sha256": "6232794e18a846b91404f41667a0da58096622ca264a0f1cfa0000e0b35c1a9b",
+      "dimensions": [
+        329,
+        243
+      ],
+      "visual_review": "Native crop of current matched-build passive table; Pool/Results/Save all green checks; Counterpick On, Needs pool No. Preserved native329x243, no upscale.",
+      "scope": "Documentation demonstration; not console acceptance"
     }
   ]
 }

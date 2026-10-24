@@ -1,37 +1,33 @@
 # Solo Popo
 
-Practice as Popo without Nana, or give the CPU the same setup. This feature is
-in the [unstable enhancements alpha](experimental-release.md); it is not in the
-stable 7.1.2 package.
+Practice as Popo without Nana, or give the CPU the same setup. This is part of the [unstable enhancements alpha](experimental-release.md), not the stable 7.1.2 package. Physical-console acceptance is pending.
 
-If you chose Ice Climbers on the game's character-select screen, open
-**Character Extras → Solo Popo → On**, then close the modpack menu. The change
-applies immediately. Choose Off to bring Nana back.
+## Your original Ice Climbers
+
+If you picked Ice Climbers on character select, open **Character Extras → Solo Popo → On** and close the menu. Nana leaves right away. Choose Off to bring her back.
 
 ![Enabling Solo Popo for the original Player 1 Ice Climbers in Training.](fighter-hotswap/solo-popo.gif)
 
 *Recorded in Linux Eden Training. Young Link is the CPU.*
 
-For Ice Climbers in a character cycle, open **Characters → Character Cycles**,
-highlight Ice Climbers, and press **Y**. **ZR** switches which role you edit.
+## Cycled-in and CPU Ice Climbers
 
-| Setting | Controls |
+Open **Characters → Character Cycles**, highlight Ice Climbers and press **Y**. **ZR** switches between the Player and CPU roles. A red or blue **S** on the portrait shows which setting is on.
+
+| Setting | Applies to |
 | --- | --- |
-| Character Extras → Solo Popo | P1 who originally selected Ice Climbers |
-| Red S, bottom-left of the portrait | P1 who cycles into Ice Climbers |
-| Blue S, bottom-right of the portrait | CPU Ice Climbers, originally selected or cycled in |
+| Character Extras → Solo Popo | Player 1's original Ice Climbers (slot 0) |
+| Red S, bottom-left | Player 1 who cycles into Ice Climbers |
+| Blue S, bottom-right | CPU Ice Climbers, original or cycled in |
 
-These settings save independently. An S appears only while its setting is on.
-In the enhancements alpha, the original Ice Climbers portrait is grey
-only when Character Extras and the red S request the same configuration. When
-they differ, add Ice Climbers to the cycle to switch between the pair and Solo
-Popo. Slot 0 uses Character Extras; the numbered slot uses the red S. Editing
-one preference never overwrites the other. Eden verified original Solo Popo →
-numbered paired Ice Climbers → original Solo Popo. Physical-console acceptance
-of this refinement remains pending. The refreshed cycle demonstration in the
-[hot-swap guide](fighter-hotswap.md) shows both configurations.
+The three settings save separately. A change applies when you close the menu, and Popo stays alone after a respawn. **Y** also works on the grey original portrait. It changes only the red S.
 
-The applicable setting switches between Popo alone and the pair when the menu
-closes. Player cycling returns through the original slot 0 after the last
-numbered fighter. See the [hot-swap guide](fighter-hotswap.md) for the controls
-and the [development checks](character-cycles-validation.md) for test coverage.
+## Both versions in one cycle
+
+When Character Extras and the red S ask for different versions, you can add Ice Climbers as a numbered Player slot. Slot 0 uses Character Extras and the numbered slot uses the red S, so one cycle can hold both. When the two settings match, the original portrait stays grey.
+
+![Shared cycle grid and a Player cycle through Kirby, normal Ice Climbers and original Solo Popo.](fighter-hotswap/character-cycles.gif)
+
+*Original slot 0 stays Solo Popo; numbered slot 2 is the pair.*
+
+A fresh Training visit starts again from your original pick, with its own Solo setting. Grid controls are in the [hot-swap guide](fighter-hotswap.md). Test scope is in the [hot-swap reference](reference/fighter-hotswap.md#solo-popo-settings).

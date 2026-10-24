@@ -104,9 +104,11 @@ reviewed. All four use the validated development NRO identified above.
 
 | Clip | Recorded behavior | Size / duration |
 | --- | --- | --- |
-| [Character cycles](fighter-hotswap/character-cycles.gif) | Dual orders, grey P1 slot 0, role/S toggles, then independent All selections | 960×540 / 16 seconds |
-| [Solo Popo](fighter-hotswap/solo-popo.gif) | Original P1 pair → Solo via Character Extras; CPU Kirby unchanged | 800×450 / 12 seconds |
-| [Training hot-swap](fighter-hotswap/hotswap.gif) | Native Mario → Solo Popo → Mythra; CPU Solo Popo → Kirby | 800×450 / 16 seconds |
+| [Character cycles](fighter-hotswap/character-cycles.gif) | Original Solo Popo slot 0, adding paired Ice Climbers slot 2, then Kirby → pair → original | 960×541 / 26 seconds |
+| [Solo Popo](fighter-hotswap/solo-popo.gif) | Original P1 pair → Solo via Character Extras; CPU Young Link unchanged | 960×541 / 11 seconds |
+| [Manual hot-swap](fighter-hotswap/manual-hotswap.gif) | Portrait grid selects Bowser; CPU Young Link unchanged | 960×541 / 12 seconds |
+| [Practice Stages](lobby-practice/stage-menu.gif) | L/R paging, rotation view, and complete direct change to Battlefield | 960×541 / 29.8 seconds |
+| [Training hot-swap](fighter-hotswap/hotswap.gif) | Earlier footage: Mario → Solo Popo → Mythra; CPU Solo Popo → Kirby | 800×450 / 16 seconds |
 | [Waiting-room practice](lobby-practice/waiting-room.gif) | P1 Solo Popo → Mario → Donkey Kong; CPU Solo Popo → Sheik; CPU icon updates | 960×540 / 16 seconds |
 
 The waiting GIF uses the complete 16-second capture. The existing opponent-input macro GIF is
