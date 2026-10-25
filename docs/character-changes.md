@@ -59,7 +59,7 @@ that belongs to the fighter who normally uses them. In the normal game that
 fighter has to be in the match.
 
 The modpack borrows the data instead. The game keeps spare player entries that
-practice does not use: two in Training and two in a local-wireless waiting room.
+practice does not use: two in Training and two in a waiting room.
 The modpack loads the needed fighter into one of them **without bringing it into
 the match**, so you never see or fight it. This parked fighter is the hat's or
 item's *source*.
@@ -79,9 +79,10 @@ for the next request or replaced by another fighter. Leaving Training or the
 lobby removes it. Bob-omb, Mr. Saturn and the Banana Peel are ordinary items and
 need no source.
 
-Sources load in ordinary Training with exactly one CPU, and in a local-wireless
-waiting room with Lobby Practice on. Elsewhere, including online lobbies, hats
-and items that need a source report that loading is not available in this scene.
+Sources load in ordinary Training with exactly one CPU and in Local Wireless
+waiting practice. The **lobby-parity development branch** also supports Quickplay
+waiting practice. Lobby Practice must be On. Actual matches and unqualified
+scenes, including arenas, cannot admit these temporary practice sources.
 
 ### Mii hats
 
@@ -136,12 +137,12 @@ works as usual.
 - Saving an identical Mii again reuses the existing one instead of adding a copy.
 - Leaving without saving discards the draft and creates nothing.
 
-In an online (Quickplay) waiting room with Lobby Practice on, the class pages
-offer only Add New. Name, Special Moves, Settings, Test, Headgear, Outfit,
-Color, Voice and Random stay available. If a match starts while you are
-editing, the unfinished screen, value, and cursor are kept and that editor
-screen opens again when you return to waiting practice. Explicit Cancel still
-discards the edit. Only the editor's Save keeps a new Mii.
+The **lobby-parity development branch** enables Player/CPU selections and Add New
+in Quickplay and Local Wireless waiting practice. Name, Special Moves, Settings,
+Test and cosmetic pages remain available. Its interruption contract preserves
+the unfinished screen, value and cursor for the same-lobby return; exact cosmetic
+and Local Wireless match-return validation is [still pending](plans/lobby-parity.md).
+Explicit Cancel discards the edit. Only the editor's Save keeps a new Mii.
 
 ### Opponent Miis from your matches
 
@@ -169,4 +170,5 @@ releases its temporary rendering resources before leaving waiting practice.
 Returning to the lobby rebuilds the portrait with the restored fighter.
 
 This covers both Training fighters and the Local Wireless waiting CPU. The
-lobby Ready card keeps the character-select fighter; Quickplay portraits are unchanged.
+**lobby-parity development branch** adds the Quickplay waiting CPU. The lobby
+Ready card keeps the character-select fighter for the real match.

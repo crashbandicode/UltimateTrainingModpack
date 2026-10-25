@@ -20,7 +20,7 @@ Add the class portrait in **Characters → Character Cycles**. When the [cycle](
 
 ![Smash's Mii Fighter editor, opened from Add New.](feature-walkthroughs/mii-editor.png)
 
-In an online (Quickplay) waiting room, the pages offer only Add New. Headgear, Outfit, Color, Voice and Random stay available. If a match interrupts the editor, that same unfinished screen, value, and cursor reopen when you return to waiting practice. Explicit Cancel still leaves without saving. Local Wireless waiting practice opens Add New and Test on its own parent and returns to that room, including after a match interrupt. Headgear, Outfit, Color, Voice, and Random stay on their native Local Wireless rows.
+The **lobby-parity development branch** enables these pages in Quickplay and Local Wireless waiting practice, including Player/CPU selections and the editor's cosmetic options. A match takes priority; the editor must resume its unfinished screen afterward without saving. Exact cosmetic interruption and Local Wireless match-return checks are still pending in the [validation ledger](plans/lobby-parity.md). Explicit Cancel leaves without saving.
 
 ## Opponents from your replays
 
@@ -28,7 +28,7 @@ With [replay capture](named-macros.md#turn-on-capture) on, **Save Replay → ent
 
 ## Matching portraits
 
-In Training, Player and CPU HUD portraits follow the selected Mii's face, outfit and colors, rendered by Smash itself. Local Wireless waiting practice updates the CPU icon too; the Ready card keeps the character-select fighter. Quickplay portraits are unchanged.
+In Training, Player and CPU HUD portraits follow the selected Mii's face, outfit and colors, rendered by Smash itself. Local Wireless waiting practice updates the CPU icon too. The **lobby-parity development branch** adds Quickplay's CPU portrait; the Ready card continues to show the character-select fighter for the real match.
 
 ![Saved Brawler and Swordfighter in Training, with matching custom portraits beside their damage percentages.](feature-walkthroughs/mii-hud-portraits.png)
 
