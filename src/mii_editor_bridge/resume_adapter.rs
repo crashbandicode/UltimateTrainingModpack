@@ -149,8 +149,8 @@ pub(super) unsafe fn before_edit(context: usize) -> bool {
                     cosmetic_resume::Leaf::Headgear => ui_resume::Screen::Headgear(snapshot),
                     _ => ui_resume::Screen::Outfit(snapshot),
                 },
-                cosmetic_resume::Shot::Abandoned { detail, .. } => {
-                    note("ui_gear_capture_abandoned", [current as u64, detail, 0, 0]);
+                cosmetic_resume::Shot::Abandoned { state, detail } => {
+                    note("ui_gear_capture_abandoned", [state as u64, detail, 0, 0]);
                     ui_resume::Screen::Settings(settings_resume::Snapshot::INITIAL)
                 }
             }
@@ -158,16 +158,16 @@ pub(super) unsafe fn before_edit(context: usize) -> bool {
         cosmetic_resume::Leaf::Color => match cosmetic_resume::capture_color(context, current) {
             cosmetic_resume::Shot::Wait => return false,
             cosmetic_resume::Shot::Found(snapshot) => ui_resume::Screen::Color(snapshot),
-            cosmetic_resume::Shot::Abandoned { detail, .. } => {
-                note("ui_color_capture_abandoned", [current as u64, detail, 0, 0]);
+            cosmetic_resume::Shot::Abandoned { state, detail } => {
+                note("ui_color_capture_abandoned", [state as u64, detail, 0, 0]);
                 ui_resume::Screen::Settings(settings_resume::Snapshot::INITIAL)
             }
         },
         cosmetic_resume::Leaf::Voice => match cosmetic_resume::capture_voice(context, current) {
             cosmetic_resume::Shot::Wait => return false,
             cosmetic_resume::Shot::Found(snapshot) => ui_resume::Screen::Voice(snapshot),
-            cosmetic_resume::Shot::Abandoned { detail, .. } => {
-                note("ui_voice_capture_abandoned", [current as u64, detail, 0, 0]);
+            cosmetic_resume::Shot::Abandoned { state, detail } => {
+                note("ui_voice_capture_abandoned", [state as u64, detail, 0, 0]);
                 ui_resume::Screen::Settings(settings_resume::Snapshot::INITIAL)
             }
         },
@@ -291,7 +291,7 @@ pub(super) unsafe fn prepare_restore(context: usize) {
         let Some(s) = state.as_ref().filter(|s| s.phase == Phase::Editing && !s.interrupted
             && s.restore_entered && s.restore_ticket.is_some() && s.thread == current_thread())
             else { return; };
-        s.restore_screen.clone()
+        s.restore_screen
     };
     if let Some(screen) = screen { cosmetic_resume::prepare(context, &screen); }
 }

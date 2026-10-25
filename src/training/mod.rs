@@ -1041,7 +1041,7 @@ unsafe fn handle_final_input_mapping(
         return;
     }
 
-    if player_idx == 0 && reset::waiting_shortcut(&controller_struct.controller) {
+    if player_idx == 0 && reset::waiting_shortcut(controller_struct.controller) {
         *out = MappedInputs::empty();
         input_delay::clear_session_state();
         return;

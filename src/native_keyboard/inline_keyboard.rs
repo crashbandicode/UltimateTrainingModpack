@@ -60,6 +60,10 @@ impl Text {
 }
 
 #[derive(Clone, Copy, Debug)]
+// One fixed-size callback result, bounded to 96 UTF-16 units. Keeping the text
+// inline avoids allocating/freeing in native callbacks or retaining heap owners
+// across Finalize; the unused Cancel payload costs only this small stack value.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum Decision {
     Enter(Text),
     Cancel,
