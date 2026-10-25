@@ -37,7 +37,18 @@ unsafe fn store(screen: ui_resume::Screen, focus: i32) -> bool {
         (s.origin, s.owner, s.seed, Arc::clone(&s.catalog), s.restore_ticket, s.phase == Phase::Queued)
     };
     let base = BASE.load(Ordering::Acquire);
-    let seed = if queued { seed } else { super::draft::Draft::Ready(native::snapshot_draft(base)) };
+    let seed = if queued { seed } else {
+        // The live row is the confirmed draft, except a gear preview can already
+        // occupy the packed hat or outfit field. Put the equipped id back on
+        // this copy. The cursor restore still carries the preview id.
+        let mut row = native::snapshot_draft(base);
+        match screen {
+            ui_resume::Screen::Headgear(gear) => cosmetic_resume::keep_equipped_part(&mut row, true, gear),
+            ui_resume::Screen::Outfit(gear) => cosmetic_resume::keep_equipped_part(&mut row, false, gear),
+            _ => {}
+        }
+        super::draft::Draft::Ready(row)
+    };
     let generation = match origin {
         Origin::Quickplay => lifecycle::generation_for(owner),
         Origin::LocalWireless => super::ldn_lifecycle::generation_for(owner),

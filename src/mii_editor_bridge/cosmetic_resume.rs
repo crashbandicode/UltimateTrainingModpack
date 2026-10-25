@@ -7,7 +7,8 @@
 //! Outfit restore `sort_id` before the scroller item. The tagged preview id is
 //! read back and is not written. Color calls the selector at ELF `0x376d990`
 //! and does not write the component highlight. Nothing here sets a commit
-//! flag or writes the saved draft.
+//! flag or the live draft. A checkpoint copy may put the equipped id back
+//! into the hat or outfit field when that field still holds the preview.
 use super::{lua_vm::{Error, Value, Vm}, native, BASE};
 use std::convert::TryFrom;
 use std::sync::{atomic::Ordering, Mutex};
@@ -162,6 +163,21 @@ pub(super) fn gear_row_ready(wrote: bool, seen: GearSelection, wanted: GearSelec
         && seen.paired == wanted.paired
 }
 
+/// Saved-row outfit is `+0x130` and hat is `+0x138`. ELF `0x19df080` stores
+/// those fields on the packed row. The open page keeps a different equipped
+/// id at component `+0x150`. This edits only the checkpoint copy: replace the
+/// field when it is exactly the preview id. Any other value, including the
+/// equipped id itself, stays. The live draft is not written.
+pub(super) fn keep_equipped_part(row: &mut [u8], hat: bool, gear: GearSelection) {
+    let offset = if hat { 0x138 } else { 0x130 };
+    let Some(field) = row.get(offset..offset + 8) else { return; };
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(field);
+    if u64::from_le_bytes(bytes) == gear.live && gear.live != gear.paired {
+        row[offset..offset + 8].copy_from_slice(&gear.paired.to_le_bytes());
+    }
+}
+
 pub(super) fn gear_window(running: u32, commit: u8, preview: u64, equipped: u64) -> GearWindow {
     if commit != 0 { return GearWindow::Deciding; }
     if running == 0 { return GearWindow::Closed; }
@@ -277,7 +293,7 @@ struct GearRow { sort: u32, item: u32 }
 
 unsafe fn read_gear_row(component: usize) -> Result<GearRow, Error> {
     let mut vm = Vm::bind_gear(BASE.load(Ordering::Acquire), component)?;
-    let page = Vm::gear_page(component)?;
+    let page = vm.gear_page(component)?;
     let [done, sort, item] = vm.call::<3>(include_bytes!("lua_helpers/gear_capture.luac"), &[page])?;
     if done.int() != Some(0) { return Err(Error::Value); }
     let sort = u32::try_from(sort.int().ok_or(Error::Value)?).map_err(|_| Error::Value)?;
@@ -365,7 +381,7 @@ unsafe fn apply_gear(context: usize, holder: usize, wanted: GearSelection) {
     let Some(component) = pointer(context, holder) else { return; };
     let result: Result<(), Error> = (|| {
         let mut vm = Vm::bind_gear(BASE.load(Ordering::Acquire), component)?;
-        let page = Vm::gear_page(component)?;
+        let page = vm.gear_page(component)?;
         let sort = i32::try_from(wanted.sort).map_err(|_| Error::Value)?;
         let item = i32::try_from(wanted.cursor).map_err(|_| Error::Value)?;
         vm.call::<0>(include_bytes!("lua_helpers/gear_focus.luac"), &[
@@ -616,6 +632,40 @@ mod tests {
     fn random_is_not_a_child_state() {
         assert_eq!(leaf(3, None), Leaf::Settings);
         assert_ne!(leaf(3, None), Leaf::Headgear);
+    }
+
+    #[test]
+    fn checkpoint_keeps_the_equipped_id_when_the_packed_field_is_the_preview() {
+        let preview = HAT_TAG | 0x111;
+        let equipped = HAT_TAG | 0x222;
+        let outfit = OUTFIT_TAG | 0x333;
+        let selected_gear = gear(4, 0, preview, equipped).expect("row");
+        let mut row = vec![0u8; 0x140];
+        row[0x130..0x138].copy_from_slice(&outfit.to_le_bytes());
+        row[0x138..0x140].copy_from_slice(&preview.to_le_bytes());
+        keep_equipped_part(&mut row, true, selected_gear);
+        let at = |row: &[u8], offset: usize| {
+            let mut bytes = [0u8; 8];
+            bytes.copy_from_slice(&row[offset..offset + 8]);
+            u64::from_le_bytes(bytes)
+        };
+        assert_eq!(at(&row, 0x138), equipped);
+        assert_eq!(at(&row, 0x130), outfit);
+        keep_equipped_part(&mut row, true, selected_gear);
+        assert_eq!(at(&row, 0x138), equipped);
+        row[0x138..0x140].copy_from_slice(&(HAT_TAG | 0x444).to_le_bytes());
+        keep_equipped_part(&mut row, true, selected_gear);
+        assert_eq!(at(&row, 0x138), HAT_TAG | 0x444);
+        let outfit_gear = gear(2, 0, outfit, OUTFIT_TAG | 0x555).expect("outfit");
+        row[0x130..0x138].copy_from_slice(&outfit.to_le_bytes());
+        keep_equipped_part(&mut row, false, outfit_gear);
+        assert_eq!(at(&row, 0x130), OUTFIT_TAG | 0x555);
+        assert_eq!(at(&row, 0x138), HAT_TAG | 0x444);
+        let same = gear(1, 0, equipped, equipped).expect("same");
+        row[0x138..0x140].copy_from_slice(&equipped.to_le_bytes());
+        keep_equipped_part(&mut row, true, same);
+        assert_eq!(at(&row, 0x138), equipped);
+        keep_equipped_part(&mut [], true, selected_gear);
     }
 
 }

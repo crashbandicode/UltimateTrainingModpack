@@ -209,7 +209,12 @@ impl Vm {
     /// Headgear and Outfit yield inside a 2-upvalue, 28-instruction frame.
     /// Upvalue 0 is the environment. Upvalue 1 is the page table. The yielded
     /// function is the light C at ELF `0x39034d0`; its caller link is `+0x10`.
-    pub(super) unsafe fn gear_page(component: usize) -> Result<Value, Error> {
+    ///
+    /// `update_in` calls `play_animation_and_wait` before that wrapper reaches
+    /// its own `coroutine.yield`. A yield whose immediate caller is not the
+    /// wrapper is still the same page and must be retried. Identity remains
+    /// the result when the known yield's chain does not contain the wrapper.
+    pub(super) unsafe fn gear_page(&self, component: usize) -> Result<Value, Error> {
         let holder: usize = read(component, 0x40);
         if !aligned(holder) { return Err(Error::Binding); }
         let player: usize = read(holder, 0);
@@ -221,17 +226,46 @@ impl Vm {
         let current_slot: usize = read(ci, 0);
         if !aligned(current_slot) { return Err(Error::Binding); }
         let current: Value = read(current_slot, 0);
-        if current.tag != 0x16 { return Err(Error::Binding); }
-        let previous: usize = read(ci, 0x10);
-        if !aligned(previous) { return Err(Error::Binding); }
-        let slot: usize = read(previous, 0);
-        if !aligned(slot) { return Err(Error::Binding); }
-        let closure: Value = read(slot, 0);
-        Self::check_closure(closure, 2, 28)?;
+        let at_yield = current.tag == 0x16
+            && current.bits == (self.base + 0x39034d0) as u64;
+        if !at_yield { return Err(Error::Binding); }
+        let mut frame: usize = read(ci, 0x10);
+        if !aligned(frame) { return Err(Error::Binding); }
+        let mut found: Option<(usize, Value)> = None;
+        for depth in 0..8 {
+            let slot: usize = read(frame, 0);
+            if !aligned(slot) { return Err(Error::Binding); }
+            let closure: Value = read(slot, 0);
+            if closure.tag == 0 { break; }
+            if closure.tag != 0x46 { return Err(Error::Binding); }
+            if Self::page_wrapper(closure) {
+                found = Some((depth, closure));
+                break;
+            }
+            let next: usize = read(frame, 0x10);
+            if !aligned(next) || next == frame { return Err(Error::Binding); }
+            frame = next;
+        }
+        Self::gear_suspension(true, found.as_ref().map(|(depth, _)| *depth))?;
+        let closure = found.map(|(_, closure)| closure).ok_or(Error::Identity)?;
         let environment = Self::upvalue(closure, 0)?;
         let page = Self::upvalue(closure, 1)?;
         if environment.tag != 0x45 || page.tag != 0x45 { return Err(Error::Identity); }
         Ok(page)
+    }
+
+    /// `page_depth` `Some(0)` is the settled wrapper. A greater depth is the
+    /// entry animation still inside that page. `None` is a different script.
+    pub(super) fn gear_suspension(at_yield: bool, page_depth: Option<usize>) -> Result<(), Error> {
+        if at_yield && page_depth == Some(0) { return Ok(()); }
+        if at_yield && page_depth.is_none() { return Err(Error::Identity); }
+        Err(Error::Binding)
+    }
+
+    unsafe fn page_wrapper(value: Value) -> bool {
+        if value.tag != 0x46 || !aligned(value.bits as usize) { return false; }
+        let proto: usize = read(value.bits as usize, 0x18);
+        aligned(proto) && read::<i32>(proto, 0x10) == 2 && read::<i32>(proto, 0x18) == 28
     }
 
     unsafe fn check_closure(value: Value, upvalues: i32, instructions: i32) -> Result<(), Error> {
@@ -253,4 +287,18 @@ impl Vm {
 
 impl Drop for Vm {
     fn drop(&mut self) { unsafe { self.reset(); } }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gear_page_waits_for_the_wrapper_yield_and_rejects_a_different_script() {
+        assert!(Vm::gear_suspension(true, Some(0)).is_ok());
+        assert!(matches!(Vm::gear_suspension(true, Some(1)), Err(Error::Binding)));
+        assert!(matches!(Vm::gear_suspension(false, Some(0)), Err(Error::Binding)));
+        assert!(matches!(Vm::gear_suspension(false, None), Err(Error::Binding)));
+        assert!(matches!(Vm::gear_suspension(true, None), Err(Error::Identity)));
+    }
 }
