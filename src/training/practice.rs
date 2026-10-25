@@ -114,9 +114,9 @@ pub unsafe fn role(module: &BattleObjectModuleAccessor) -> Option<usize> {
         *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID))
 }
 
-pub unsafe fn primary_cpu(module: &BattleObjectModuleAccessor) -> bool {
+pub unsafe fn primary_cpu(module: &mut BattleObjectModuleAccessor) -> bool {
     role(module) == Some(1)
-        && app::utility::get_kind(module as *const _ as *mut BattleObjectModuleAccessor) != *FIGHTER_KIND_NANA
+        && app::utility::get_kind(module) != *FIGHTER_KIND_NANA
         && common::try_get_module_accessor(crate::consts::FighterId::CPU)
             .is_some_and(|current| std::ptr::eq(current, module))
 }
