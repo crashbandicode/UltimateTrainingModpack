@@ -13,7 +13,7 @@ use smash::app::{self, lua_bind::*, BattleObjectModuleAccessor, Fighter};
 use smash::lib::lua_const::*;
 use training_mod_macros::{InputFrame, LiveFrame, LiveInput, ReplayFrame, ReplaySession, ReplayTrack,
     StartState, MAX_FRAMES};
-use training_mod_tui::{macro_panel::{Effect as MenuEffect, LibraryRow, MacroUi, Pad, View}, clip_panel::{direction_action, scrub_repeat_step, ClipAction, ClipEditor, ClipEffect, ClipView, CloseInputGuard, Handle}};
+use training_mod_tui::{macro_panel::{LibraryRow, Pad, View}, clip_browser::{ClipBrowser, Effect as BrowserEffect}, clip_panel::{direction_action, scrub_repeat_step, ClipAction, ClipEditor, ClipEffect, ClipView, CloseInputGuard, Handle}};
 
 use crate::common::game_mode;
 
@@ -24,7 +24,7 @@ const REPLAY_MODE_13_0_5: u32 = 0x05010100;
 // The120-scale conversion now lives in LiveInput::project, at the consumer seam.
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static EDITOR: Mutex<Option<Editor>> = Mutex::new(None);
-static BROWSER: Mutex<Option<MacroUi>> = Mutex::new(None);
+static BROWSER: Mutex<Option<Browser>> = Mutex::new(None);
 static REVISION: AtomicU64 = AtomicU64::new(1);
 static SELECTION_REVISION: AtomicU64 = AtomicU64::new(1);
 static HOLD: Mutex<(i32, u32, bool)> = Mutex::new((0, 0, false));
@@ -38,6 +38,7 @@ static CLOSE_TRACE_ID: AtomicU64 = AtomicU64::new(0);
 #[cfg(feature = "named-input-trace")]
 const CLOSE_TRACE_LIMIT: u64 = 600;
 use training_mod_consts::mii::{inventory::MiiClass, lifetime::Configuration, replay::{RawMii,Target}};
+struct Browser { ui: ClipBrowser, revision: u64 }
 struct Editor { clip:ClipEditor, association:[Result<RawMii,String>;8], resolved:[Option<Configuration>;8] }
 impl std::ops::Deref for Editor {type Target=ClipEditor;fn deref(&self)->&ClipEditor {&self.clip}}
 impl std::ops::DerefMut for Editor {fn deref_mut(&mut self)->&mut ClipEditor {&mut self.clip}}
@@ -112,6 +113,10 @@ fn notify(message: String) {
 }
 
 pub fn open_editor() {
+    open_browser(None);
+}
+
+fn open_browser(expected_revision: Option<u64>) {
     if !crate::training::practice::enabled() || unsafe { !Fighter::is_ready_go() || !crate::training::practice::acquire() }
         || crate::training::recording_or_playback()
         || unsafe { crate::training::save_states::is_loading() }
@@ -146,13 +151,20 @@ pub fn open_editor() {
         notify("Save a replay with match capture on, or play one in Vault first".into());
         return;
     }
-    let mut browser = MacroUi::new();
-    browser.open_library(rows, skipped);
-    *BROWSER.lock().unwrap() = Some(browser);
+    {
+        let mut browser = BROWSER.lock().unwrap();
+        // A refusal may rescan the library, but must not reopen after Cancel or
+        // interruption while that I/O was in flight.
+        if expected_revision.is_some_and(|revision|
+            !browser.as_ref().is_some_and(|b| b.revision == revision && b.ui.opening())) { return; }
+        if crate::training::named_macros::suspended() || !crate::training::practice::enabled() { return; }
+        *browser = Some(Browser { ui: ClipBrowser::new(rows, skipped),
+            revision: REVISION.fetch_add(1, Ordering::Relaxed) + 1 });
+    }
     training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT, true);
 }
 
-fn open_capture(id: &str) -> Result<(), String> {
+fn open_capture(id: &str, revision: u64) -> Result<(), String> {
     let (session, name, previous, miis) = match id {
         "latest" => (
             latest().ok_or("No latest Vault capture")?,
@@ -186,17 +198,29 @@ fn open_capture(id: &str) -> Result<(), String> {
     let result = ClipEditor::new(session, clean_statuses());
     match result {
         Ok(mut editor) => {
-            if let Some(cpu) = crate::common::try_get_module_accessor(crate::consts::FighterId::CPU) {
-                if !clean_statuses().contains(&unsafe { StatusModule::status_kind(cpu) }) {
-                    return Err("Open the clip editor while the CPU is idle or falling".into());
-                }
-                editor.select_kind(unsafe { app::utility::get_kind(&mut *cpu) });
+            // Do not take preview/named-UI locks under BROWSER: their visibility
+            // paths can acquire it. Lifecycle retirement below is the publication
+            // fence, with the native mode/status checked again before publication.
+            if !capture_ready() { return Err("Practice changed before the capture could open".into()); }
+            let mut browser = BROWSER.lock().unwrap();
+            if !browser.as_ref().is_some_and(|b| b.revision == revision && b.ui.opening()) {
+                return Ok(()); // Cancel/departure owns this result; never publish it late.
             }
+            if crate::training::named_macros::suspended() || !crate::training::practice::enabled() {
+                return Err("Practice changed before the capture could open".into());
+            }
+            let cpu = crate::common::try_get_module_accessor(crate::consts::FighterId::CPU)
+                .ok_or("Wait for the practice CPU before opening a capture")?;
+            if !clean_statuses().contains(&unsafe { StatusModule::status_kind(cpu) }) {
+                return Err("Open the clip editor while the CPU is idle or falling".into());
+            }
+            editor.select_kind(unsafe { app::utility::get_kind(&mut *cpu) });
             *EDITOR.lock().unwrap() = Some(Editor {clip:editor.with_name(name).with_previous(previous),
                 association,resolved:[None;8]});
+            browser.take();
+            drop(browser);
             SELECTION_REVISION.fetch_add(1,Ordering::AcqRel);
             crate::training::named_macros::cancel_character_selection();
-            *BROWSER.lock().unwrap() = None;
             REVISION.fetch_add(1, Ordering::Relaxed);
             *HOLD.lock().unwrap() = (0, 0, false);
             FAILED_SELECTION.store(0, Ordering::Relaxed);
@@ -213,35 +237,75 @@ pub fn browser_visible() -> bool {
 }
 
 pub fn browser_view() -> Option<View> {
-    BROWSER.lock().unwrap().as_ref().and_then(MacroUi::view).map(|mut view| {
-        view.title = "Replay Captures".into();
-        view
-    })
+    BROWSER.lock().unwrap().as_ref().and_then(|b| b.ui.view())
 }
 
 pub fn browser_input(pad: Pad) {
-    if matches!(pad, Pad::Back) {
-        close_editor();
-        return;
-    }
-    let effect = {
+    let waiting = crate::training::practice::waiting();
+    let (effect, revision) = {
         let mut browser = BROWSER.lock().unwrap();
-        let Some(ui) = browser.as_mut() else { return };
-        let effect = ui.on_pad(pad);
-        if !ui.is_open() { *browser = None; }
-        effect
+        let Some(browser) = browser.as_mut() else { return };
+        (browser.ui.on_pad(pad, waiting), browser.revision)
     };
+    browser_effect(effect, revision);
+    training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT, true);
+}
+
+fn browser_effect(effect: BrowserEffect, revision: u64) {
     match effect {
-        MenuEffect::Choose(id) => {
-            if let Err(error) = open_capture(&id) {
-                open_editor();
+        BrowserEffect::Open(id) => {
+            if let Err(error) = open_capture(&id, revision) {
+                open_browser(Some(revision));
+                // A busy/departed practice context may refuse the rescan too.
+                // Retire only the old owner, never a newly opened browser.
+                close_editor_revision(false, Some(revision));
                 notify(error);
             }
         }
-        MenuEffect::Notify(error) => notify(error),
+        BrowserEffect::Close => { close_editor_revision(false, Some(revision)); }
+        BrowserEffect::TimedOut => {
+            if close_editor_revision(false, Some(revision)) {
+                notify("CPU did not settle; capture opening cancelled".into());
+            }
+        }
+        BrowserEffect::Notify(error) => notify(error),
         _ => {}
     }
-    training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT, true);
+}
+
+fn capture_ready() -> bool {
+    crate::training::practice::enabled() && !crate::training::named_macros::suspended()
+        && unsafe { Fighter::is_ready_go() && !crate::training::save_states::is_loading() }
+        && !crate::training::recording_or_playback() && !crate::replay_preview::occupied()
+}
+
+/// The existing browser owns this short neutral-input interval. Native controller
+/// writes still require practice::owns_cpu_controls at the actual CPU hook.
+pub fn quiescing_capture() -> bool {
+    // Most command-flag calls have no browser request; avoid native mode reads
+    // on that hot path. Release the browser lock before querying other owners.
+    let pending = BROWSER.lock().unwrap().as_ref().is_some_and(|b| b.ui.pending());
+    pending && !crate::training::named_macros::suspended()
+        && crate::training::practice::waiting()
+}
+
+pub unsafe fn browser_needs_native_update(module: &mut BattleObjectModuleAccessor) -> bool {
+    if !quiescing_capture() || crate::training::practice::role(module) != Some(1) { return false; }
+    let clean = clean_statuses().contains(&StatusModule::status_kind(module));
+    BROWSER.lock().unwrap().as_ref().is_some_and(|b| b.ui.release_cpu(clean))
+}
+
+unsafe fn service_browser() {
+    if !BROWSER.lock().unwrap().as_ref().is_some_and(|b| b.ui.pending()) { return; }
+    let eligible = crate::training::practice::waiting() && capture_ready();
+    let clean = eligible && crate::common::try_get_module_accessor(crate::consts::FighterId::CPU)
+        .is_some_and(|cpu| clean_statuses().contains(&StatusModule::status_kind(cpu)));
+    let (effect, revision) = {
+        let mut browser = BROWSER.lock().unwrap();
+        let Some(browser) = browser.as_mut() else { return };
+        (browser.ui.tick(eligible, clean), browser.revision)
+    };
+    browser_effect(effect, revision);
 }
 
 pub fn panel_visible() -> bool {
@@ -251,6 +315,12 @@ pub fn panel_visible() -> bool {
 pub fn loading() -> bool { !crate::training::named_macros::suspended() && RELOAD.lock().unwrap().is_some() }
 
 pub fn suspend_waiting() {
+    // An unfinished editor is value-only continuation. A pending browser open is
+    // an operation instead: retire it so return cannot silently load the old ID.
+    {
+        let mut browser = BROWSER.lock().unwrap();
+        if browser.as_ref().is_some_and(|b| b.ui.pending()) { browser.take(); }
+    }
     let revision = SELECTION_REVISION.fetch_add(1, Ordering::AcqRel) + 1;
     if let Some(editor) = EDITOR.lock().unwrap().as_mut() { editor.pause(); }
     if let Some(reload) = RELOAD.lock().unwrap().as_mut() {
@@ -287,6 +357,7 @@ pub unsafe fn service_reload() {
         if had_reload || panel_visible() || browser_visible() {close_editor_inner(had_reload);}
         return;
     }
+    service_browser();
     if crate::training::lobby::native_ui_busy() { return; }
     let cpu=crate::common::try_get_module_accessor(crate::consts::FighterId::CPU);
     let current=cpu.map(|cpu|app::utility::get_kind(&mut *cpu));
@@ -396,8 +467,18 @@ pub fn close_editor() {
 }
 
 fn close_editor_inner(was_loading: bool) {
-    let was_open = EDITOR.lock().unwrap().take().is_some();
-    let was_browsing = BROWSER.lock().unwrap().take().is_some();
+    close_editor_revision(was_loading, None);
+}
+
+fn close_editor_revision(was_loading: bool, expected_revision: Option<u64>) -> bool {
+    let (was_browsing, was_open) = {
+        let mut browser = BROWSER.lock().unwrap();
+        if expected_revision.is_some_and(|revision|
+            !browser.as_ref().is_some_and(|b| b.revision == revision)) { return false; }
+        // Publication and close share BROWSER -> EDITOR order. The loader drops
+        // BROWSER before touching named UI, whose visibility path reads BROWSER.
+        (browser.take().is_some(), EDITOR.lock().unwrap().take().is_some())
+    };
     crate::replay_preview::request_stop();
     REVISION.fetch_add(1, Ordering::Relaxed);
     *HOLD.lock().unwrap() = (0, 0, false);
@@ -414,6 +495,7 @@ fn close_editor_inner(was_loading: bool) {
         }
         training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT, true);
     }
+    true
 }
 
 /// Poll once per P1 mapping, including outside Training to discard stale ownership.

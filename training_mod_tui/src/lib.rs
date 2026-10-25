@@ -3,6 +3,7 @@ pub use containers::*;
 pub mod macro_panel;
 pub mod replay_panel;
 pub mod clip_panel;
+pub mod clip_browser;
 pub mod roster_grid;
 pub mod mii_menu;
 pub mod stage_menu;

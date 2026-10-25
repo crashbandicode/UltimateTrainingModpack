@@ -163,7 +163,8 @@ pub unsafe fn handle_get_command_flag_cat(
 
     lobby::update();
 
-    if !is_training_mode() || crate::replay_preview::occupied() { return flag; }
+    if !is_training_mode() || crate::replay_preview::occupied()
+        || crate::replay_capture::quiescing_capture() { return flag; }
     lobby::observe_fighter(module_accessor);
 
     if lobby::is_waiting_scene()
@@ -251,6 +252,12 @@ fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) 
                 *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID,
             ))
         {
+            return;
+        }
+
+        // The browser's bounded settle is native simulation with neutral CPU
+        // controls; no automation may restart the action we are waiting to end.
+        if crate::replay_capture::quiescing_capture() && practice::role(module_accessor) == Some(1) {
             return;
         }
 

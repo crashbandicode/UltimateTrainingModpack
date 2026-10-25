@@ -692,6 +692,13 @@ unsafe fn set_cpu_controls(p_data: *mut *mut u8) {
     if !practice::owns_cpu_controls(controls) { return; }
     let controller_data = controls as *mut ControlModuleInternal;
 
+    // Finish the waiting CPU's current action without native AI or mash starting
+    // another one. This writes only this callback's verified current controller.
+    if crate::replay_capture::quiescing_capture() {
+        neutral_controls(&mut *controller_data);
+        return;
+    }
+
     // Check if we need to begin playback this frame due to a mash toggle
     // TODO: Setup STARTING_STATUS based on current playback slot here
 

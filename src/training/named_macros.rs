@@ -1062,7 +1062,8 @@ pub unsafe fn hold_panel_fighter(module_accessor: &mut BattleObjectModuleAccesso
     let hold_panel = panel_visible() || (crate::replay_capture::loading()
         && WorkModule::get_int(module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID)
             == FighterId::Player as i32);
-    let entry = if hold_panel && !crate::replay_preview::needs_native_update(module_accessor) {
+    let entry = if hold_panel && !crate::replay_preview::needs_native_update(module_accessor)
+        && !crate::replay_capture::browser_needs_native_update(module_accessor) {
         practice::panel_entry(module_accessor)
     } else { None };
     if let Some(entry) = entry {

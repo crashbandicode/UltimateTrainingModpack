@@ -15,6 +15,7 @@ pub fn context() -> Option<Context> {
 }
 
 pub fn scene_enabled() -> bool { context().is_some() }
+pub fn waiting() -> bool { context() == Some(Context::Waiting) }
 pub fn enabled() -> bool {
     scene_enabled() && !crate::character_roster::busy() && !super::lobby::native_ui_busy()
 }
