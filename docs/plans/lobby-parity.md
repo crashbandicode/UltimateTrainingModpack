@@ -2,7 +2,7 @@
 
 Authorized 2026-10-25: implement all fourteen source-audited gaps on a separate branch. Branch `lobby-parity`, based on full HUD48 commit `76b6ff70783038c798d2408d538a61e473f71ecc`. Current Switch HUD48 review remains separate from this campaign.
 
-**All fourteen are source-implemented; branch acceptance is incomplete.** Run111 uses candidate57 (`e29a398`); the Color checkpoint correction in source `8a05178` awaits candidate58 runtime qualification.
+**All fourteen are source-implemented; branch acceptance is incomplete.** Candidate58 (`571814a`) passes the remaining Quickplay Color interruption and cancellation check. Local Wireless match-return and recording qualification remain open.
 
 ## Required behavior
 
@@ -20,12 +20,14 @@ Authorized 2026-10-25: implement all fourteen source-audited gaps on a separate 
 | 10 | Full character-item selection | Quickplay | Implemented; Quickplay absent-source Stitch-Face grant and save/load observed |
 | 11 | Saved-Mii configuration selection and Player/CPU swaps | Quickplay | Implemented; saved Brawler/Swordfighter swaps observed; selected Brawler 2111 performs Flashing Mach Punch while the real-match Ready card remains Mario |
 | 12 | Matching custom Mii practice HUD portraits | Quickplay | Implemented; Quickplay CPU portrait observed with unchanged actual CSS Ready card |
-| 13 | Native Mii cosmetics and exact interruption/resume | Quickplay; supersedes former Training-only restriction | Implemented; run111 exact Headgear, Outfit, Voice and Random-confirmation returns observed. Color failed on candidate57; source fix awaits candidate58 runtime |
+| 13 | Native Mii cosmetics and exact interruption/resume | Quickplay; supersedes former Training-only restriction | Implemented; exact Headgear, Outfit, Voice and Random-confirmation returns observed in run111. Candidate58 restores Color's Pink preview with Blue equipped; explicit Cancel preserves Blue |
 | 14 | Native Mii Add New/Test with return to practice | Local Wireless waiting | Implemented; native editor entry, Test and explicit-cancel return observed. Incoming-match interruption/return remains pending |
 
 Run111 used actual Quickplay contact, results, root Yes then peer No. Headgear restored the Floral Hat cursor with None equipped; Outfit restored the Cybernetic Suit cursor with Standard Outfit equipped. Explicit B cancellation preserved those original items. Voice restored Type2/High with Pitch focused; B retained Type2/High, matching native Voice behavior. Random restored the exact confirmation with No focused; choosing No preserved the draft, and only the subsequent explicit Plus Save wrote native Mii `13348`.
 
-Color is still an acceptance failure: Pink7 preview replaced Blue5 equipment and restoration timed out on candidate57. Source `8a05178` normalizes only the checkpoint copy; exact cursor/equipment restoration and cancellation still need runtime confirmation. LDN recording/playback checks are ongoing. Peer native-room join has a setup failure, not a feature failure; incoming-match editor return and an equivalent before/after resource pair remain pending. The private `RUNTIME-ACCEPTANCE.md`, `runtime111/` evidence and `editor/COLOR111.md` in the ledger below retain the detailed observations.
+The candidate57 Color failure is resolved by checkpoint-copy correction `8a05178`. Run112 completed an actual Quickplay match and Yes/No return; native reads confirmed preview7/equipped5 before and after, and color byte5 after explicit Cancel. No Mii was saved by the interruption.
+
+LDN recording/playback and incoming-match editor return remain pending. The peer's native-room join fails after discovery and connection bookkeeping; this is tracked as a setup failure. Equivalent ten-second Quickplay idle samples before and after the Color match measured 0.943/0.948 mean CPU cores, about 60 FPS and zero swap. Emulator-group memory rose from 5.71 to 5.99 GB after loading additional scenes; these short samples neither attribute that growth to the mod nor establish a memory leak or speedup. The private `RUNTIME-ACCEPTANCE.md`, `runtime111/`, `runtime112/` and `editor/COLOR111.md` retain the evidence.
 
 Real-match fighter selection, matchmaking, results and replay-save behavior must remain native. The Player Ready card continues to identify the fighter selected for the real match. Practice changes affect the local practice fighters. A match beginning takes precedence over every editor, recording, save-state operation and load; pending work must retire with its scene and never dereference departed native objects. Resume unsaved editor state in the same lobby without implicitly saving. Explicit cancellation still cancels. Ordinary Training retains its existing behavior. Stage rotation remains exclusive to lobby practice; Training supports direct changes only.
 

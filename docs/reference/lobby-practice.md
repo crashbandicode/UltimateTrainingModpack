@@ -121,13 +121,14 @@ Headgear/Outfit cursors after actual Quickplay matches, with cancellation preser
 original equipment; Voice Type2/High resumed exactly. Random returned with No
 focused, and only a later explicit Plus Save wrote native Mii `13348`.
 
-Color failed on candidate57; source fix `8a05178` awaits candidate58 runtime
-confirmation, including cancellation. Local Wireless position save/load is
-observed in run111; recording/playback checks are ongoing. Native editor entry,
-Test and explicit-cancel return passed earlier, but incoming-match editor return
-is pending. The peer's native-room join failure is setup-only. An equivalent
-before/after resource pair is also pending. Earlier evidence below remains
-historical; it does not establish these remaining paths.
+Candidate58 corrected Color: an actual Quickplay match returned to the Pink
+preview with Blue still equipped, and Cancel kept Blue without saving a Mii.
+Local Wireless position save/load and quick reset are observed; recording/playback
+checks are ongoing. Native editor entry, Test and explicit-cancel return passed,
+but incoming-match editor return is pending because native-room joining fails.
+Short Quickplay idle samples before/after the match remained near 60 FPS and
+0.94 CPU cores with zero swap. They do not establish a memory improvement.
+Earlier evidence below remains historical; it does not establish the remaining paths.
 
 Emulator and local-wireless (LDN) checks passed for P1/CPU swaps, menus, the CPU
 icon, the embedded waiting UI and a two-peer match/return. They do not establish
