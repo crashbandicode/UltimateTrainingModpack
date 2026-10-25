@@ -6,8 +6,10 @@ Install, troubleshooting, lifecycle rules and test record behind the
 [Practice Stages](../practice-stages.md); grid and cycle details are in the
 [hot-swap reference](fighter-hotswap.md).
 
-This is the [unstable enhancements alpha](../experimental-release.md) for Smash
-Ultimate 13.0.5. Physical-Switch validation is pending.
+This page describes the **lobby-parity development branch** for Smash Ultimate
+13.0.5. See the [implementation and acceptance ledger](../plans/lobby-parity.md)
+for completed emulator observations and pending checks. It is not a new
+physical-Switch acceptance claim or a replacement for the installed alpha.
 
 ![Player and CPU character swaps in waiting practice](../lobby-practice/waiting-room.gif)
 
@@ -25,12 +27,12 @@ titled **Lobby Practice**.
 
 | Situation | Behavior |
 | --- | --- |
-| Waiting-room practice | P1 and CPU swap as in Training. The CPU's small icon updates (default-costume image) |
+| Quickplay / Local Wireless waiting practice | P1 and CPU swap as in Training. The CPU icon follows its fighter and selected Mii configuration |
 | The real match | Always uses your character-select pick. The lower waiting card shows that pick. CPU swaps only change the local practice dummy. Practice shortcuts and hooks are off |
 | Back in the same lobby | Each role's last *completed* practice fighter returns once fresh waiting entries are ready. P1 needs **Player Swapping** On |
 | A new lobby | Both remembered fighters are cleared. This is in-memory session state, not a saved character-select override |
 | Ordinary Training | Keeps its own selections. Portrait and name update at once; native **L + R + A** reset keeps the current fighter |
-| Training-only tools | Save/load (default **ZL + D-pad Down / Up**), recording/playback, native Training reset and some stage options. The waiting menu labels them |
+| Practice tools while waiting | Save/load (default **ZL + D-pad Down / Up**), recording/playback, macro and clip editing, **L + R + A** reset, hitboxes, hidden tech animations and hazards |
 | Stage rotation | Advances on the next lobby-practice entry, including after a match or a return through character select. Never rotates ordinary Training |
 
 Restoration after a match waits for native dialogs, another load or pending
@@ -78,7 +80,7 @@ edited rosters from the new file, so keep a backup of
 | No practice controls in the waiting room | **Misc Settings → Lobby Practice** must be On; leave and re-enter the practice area. Then look for `[LobbyPractice] embedded waiting UI disabled: …` in the log: a fingerprint mismatch keeps Lobby Practice inactive |
 | Player 1 does not swap or return after a match | Turn on **Characters → Player Swapping** |
 | A swap is refused | Another action owns practice; see [Swap safety](#swap-safety) and try again when idle |
-| Save states or recording do nothing in the lobby | They need ordinary Training; the waiting menu labels them |
+| Save states or recording do nothing in the lobby | Use a lobby-parity build with Lobby Practice On. Wait for both practice fighters to finish loading and close native dialogs or other active editors. These tools are inactive during the real match |
 | Crash or freeze | Keep both logs below, any Atmosphère crash report, the exact NRO hashes, game version, fighter/costume choices and your last action |
 
 Logs are `sd:/ultimate/TrainingModpack/practice-diagnostics.log` and
@@ -109,6 +111,14 @@ when the embedded Training UI or the supported stock archive changes:
   [roster grid builder](../../scripts/roster-grid/README.md).
 
 ## Test record
+
+The current branch's [fourteen-item ledger](../plans/lobby-parity.md#required-behavior)
+separates implementation from observed behavior. Quickplay waiting has observed
+save/load, reset, recording/playback, macro naming, clip preview, hit/grab boxes,
+hidden tech, hazards, direct stage changes, hats, items, Mii swaps and CPU portraits.
+The remaining editor interruption, return-stage and distinct Local Wireless
+checks must finish before branch acceptance. Earlier evidence below remains
+historical; it does not establish those new paths.
 
 Emulator and local-wireless (LDN) checks passed for P1/CPU swaps, menus, the CPU
 icon, the embedded waiting UI and a two-peer match/return. They do not establish

@@ -30,7 +30,7 @@ If Kirby loses a hat in normal play, the next press restores it instead of skipp
 
 ## Where it works
 
-Hats work for a Kirby picked on character select or swapped in. The hat's fighter is loaded out of sight in ordinary Training with one CPU, or in local-wireless waiting practice. Other scenes report that loading is unavailable. Mii hats use the Mii chosen for that role on the [Mii pages](mii-fighters.md).
+Hats work for a Kirby picked on character select or swapped in. The hat's fighter is loaded out of sight in ordinary Training with one CPU and in Local Wireless waiting practice. The **lobby-parity development branch** also enables Quickplay waiting practice; Mario and Link hats have been observed there. Other scenes report that loading is unavailable. Mii hats use the Mii chosen for that role on the [Mii pages](mii-fighters.md).
 
 Loading a save state gives back the saved hat. When you return to the same local-wireless lobby after a match, each Kirby gets back the hat it wore when the match started.
 

@@ -24,6 +24,8 @@ Save with **ZL + D-pad Down** and load with **ZL + D-pad Up** (the defaults). A 
 
 ## Where it works
 
-Items such as the Remote Bomb or Pac-Man's fruit need their fighter's data, so that fighter is loaded out of sight. This works in ordinary Training with one CPU, or in local-wireless waiting practice. Bob-omb, Mr. Saturn and the Banana Peel are ordinary items and need no source. Emulator checks covered every listed item, with save and restore, in Training. In a local-wireless waiting room, only the Remote Bomb was checked.
+Items such as the Remote Bomb or Pac-Man's fruit need their fighter's data, so that fighter is loaded out of sight. This works in ordinary Training with one CPU and in Local Wireless waiting practice. The **lobby-parity development branch** also enables Quickplay waiting practice; it does not alter items in the real match. Bob-omb, Mr. Saturn and the Banana Peel need no source fighter.
+
+Emulator checks covered every listed item with save and restore in Training, Remote Bomb in Local Wireless waiting, and an absent-source Daisy Stitch-Face with save/load in Quickplay waiting. See the [parity validation ledger](plans/lobby-parity.md) for remaining branch checks.
 
 To learn how the hidden source fighter works, see [How character changes work](character-changes.md#kirby-hats-and-character-items-a-borrowed-fighter).
