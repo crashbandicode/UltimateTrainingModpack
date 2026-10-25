@@ -71,6 +71,10 @@ impl StageCycle {
         if advance { self.last = Some(stage); }
         Some(stage)
     }
+
+    /// A later native preload supersedes an abandoned request. Forget only that
+    /// reservation; no waiting entry happened, so the rotation must not advance.
+    pub fn cancel_preload(&mut self) { self.pending = None; }
 }
 
 #[cfg(test)]
@@ -131,6 +135,20 @@ mod tests {
         assert_eq!(cycle.prepare(&[12, 0, 3]), Some(3));
         cycle.enter();
         assert_eq!(cycle.prepare(&[12, 0]), Some(12));
+    }
+
+    #[test]
+    fn native_preload_after_cancelled_search_does_not_consume_a_stale_stage() {
+        let mut cycle = StageCycle::new();
+        cycle.prepare(&[0, 3]);
+        assert_eq!(cycle.enter(), Some(0));
+        assert_eq!(cycle.prepare(&[0, 3]), Some(3));
+        // Search is abandoned; the next qualified preload uses native stage311
+        // because practice/rotation was disabled. Its entry has no override.
+        cycle.cancel_preload();
+        assert_eq!(cycle.enter(), None);
+        assert_eq!(cycle.prepare(&[0, 3]), Some(3));
+        assert_eq!(cycle.enter(), Some(3));
     }
 
     #[cfg(feature = "practice-stage-request-alpha")]

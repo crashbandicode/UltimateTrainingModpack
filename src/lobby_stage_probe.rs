@@ -61,21 +61,27 @@ unsafe fn resource_request(ctx: &mut InlineCtx) {
         && ctx.registers[2].w() == 2
         && kind == 311
         && hash == 0x165a48f367
-        && read(&MENU).lobby_practice == OnOff::ON
     {
-        let stages = read(&MENU).lobby_stages.stages();
+        let menu = read(&MENU);
+        let stages = menu.lobby_stages.stages();
+        #[cfg(feature = "practice-stage-request-alpha")]
+        let prefs = crate::common::menu::stage_preferences();
         let mut cycles = CYCLES.lock().unwrap();
         let cycle = &mut cycles[index];
+        if menu.lobby_practice != OnOff::ON {
+            cycle.cancel_preload();
+            return;
+        }
         #[cfg(feature = "practice-stage-request-alpha")]
         let selected = {
-            let prefs = crate::common::menu::stage_preferences();
             if prefs.mode == training_mod_tui::stage_menu::Mode::Direct {
                 cycle.prepare_direct(prefs.direct_stage)
-            } else { cycle.prepare(&stages) }
+            } else if stages.is_empty() { None } else { cycle.prepare(&stages) }
         };
         #[cfg(not(feature = "practice-stage-request-alpha"))]
-        let selected = cycle.prepare(&stages);
+        let selected = if stages.is_empty() { None } else { cycle.prepare(&stages) };
         let Some(stage) = selected else {
+            cycle.cancel_preload();
             return;
         };
         let record = (base + 0x454a7e8 + stage as usize * 72) as *const u8;
@@ -119,7 +125,7 @@ unsafe fn stage_entry(ctx: &mut InlineCtx) {
         "[LobbyStageProbe] entry native={} selected={} mode={:?}",
         previous,
         stage,
-        crate::common::game_mode::current()
+        mode
     ));
 }
 
