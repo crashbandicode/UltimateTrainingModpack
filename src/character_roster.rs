@@ -102,6 +102,12 @@ mod mii_auto_init;
 #[cfg(feature="mii-ordinary-cpu-alpha")]
 #[path="mii_replay.rs"]
 pub(crate) mod mii_replay;
+#[cfg(feature="mii-hud-portrait-alpha")]
+#[path="mii_hud_portrait_policy.rs"]
+pub(crate) mod mii_hud_portrait_policy;
+#[cfg(feature="mii-hud-portrait-alpha")]
+#[path="mii_hud_portrait.rs"]
+mod mii_hud_portrait;
 
 static BASE: AtomicUsize = AtomicUsize::new(0);
 static INSTALL: InstallGate = InstallGate::new();
@@ -113,6 +119,16 @@ static SOLO_ACTIVE: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(f
 static STATES: [Mutex<State>; 2] = [Mutex::new(State::empty()), Mutex::new(State::empty())];
 static WAITING_MEMORY: Mutex<WaitingSession<WaitingValue>> = Mutex::new(WaitingSession::empty());
 type WaitingValue=training_mod_consts::mii::remembered::Value<TrioFighter,Forms>;
+
+/// Loaded configuration, or an explicit original restoration. Absence is `NotMii`.
+#[cfg(feature="mii-hud-portrait-alpha")]
+#[derive(Clone, Copy, Debug)]
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum PortraitIntent {
+    Exact(training_mod_consts::mii::lifetime::Configuration),
+    Original { original_kind: u32 },
+    NotMii,
+}
 #[cfg(feature="mii-saved-alpha")]
 fn remember_owned(role:Role,generation:u64,kind:u32,forms:Forms,
     configuration:Option<training_mod_consts::mii::lifetime::Configuration>,cursor:Option<usize>,original:bool) {
@@ -590,6 +606,8 @@ pub fn scene_changed(mode: game_mode::Mode) {
     #[cfg(feature = "source-capacity-probe")]
     source_capacity_probe::scene_changed();
     sources::scene_changed();
+    #[cfg(feature="mii-hud-portrait-alpha")]
+    mii_hud_portrait::scene_changed();
     #[cfg(feature = "source-owner-probe")]
     source_owner_probe::scene_changed();
     crate::character_items::scene_changed();
@@ -770,6 +788,8 @@ unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8) {
         return;
     }
     sources::service(ctx, entry, owner);
+    #[cfg(feature="mii-hud-portrait-alpha")]
+    mii_hud_portrait::service(entry, owner);
     #[cfg(feature = "source-owner-probe")]
     if owner == 0 {
         source_owner_probe::observe_rules();
@@ -861,6 +881,8 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
             }
             publish_partners(role, active.forms);
             role.sync_selection(active.target);
+            #[cfg(feature="mii-hud-portrait-alpha")]
+            mii_hud_portrait::before_refresh(entry, owner, active.target.kind());
             refresh_hud(entry, owner, active.target.kind());
             #[cfg(feature = "mii-ordinary-player-alpha")]
             if owner == 0 {
@@ -1173,6 +1195,8 @@ pub unsafe fn on_destroy(entry: *const u8) {
     #[cfg(feature = "source-lifecycle-probe")]
     source_lifecycle_probe::destroy(entry, owner);
     sources::on_destroy(entry, owner);
+    #[cfg(feature="mii-hud-portrait-alpha")]
+    mii_hud_portrait::on_destroy(entry, owner);
     #[cfg(feature = "source-owner-probe")]
     if owner == 2 && !cfg!(feature = "managed-sources") {
         source_owner_probe::destroy(entry);
@@ -1254,6 +1278,8 @@ pub unsafe fn on_destroy(entry: *const u8) {
         #[cfg(feature = "source-capacity-probe")]
         source_capacity_probe::scene_changed();
         sources::scene_changed();
+        #[cfg(feature="mii-hud-portrait-alpha")]
+        mii_hud_portrait::scene_changed();
         crate::kirby_hats::practice_departed(lobby::is_waiting_scene());
         crate::character_items::scene_changed();
         trace!("[CharacterRoster] practice consumers invalidated on P1 entry destruction");
@@ -1264,7 +1290,13 @@ pub unsafe fn on_destroy(entry: *const u8) {
 /// current callback and INSTALL token are still owned. Publish presentation only;
 /// original CSS identity and saved configuration/preferences remain untouched.
 #[cfg(feature = "mii-saved-alpha")]
-unsafe fn publish_mii_presentation(entry: *const u8, owner: u32, generation: u64, kind: u32) {
+unsafe fn publish_mii_presentation(
+    entry: *const u8,
+    owner: u32,
+    generation: u64,
+    kind: u32,
+    #[cfg(feature="mii-hud-portrait-alpha")] portrait: PortraitIntent,
+) {
     let Some(logical)=mii_backend::current().and_then(|l|l.logical(owner)) else{return;};
     let role = if owner == 0 { Role::Player } else { Role::Cpu };
     let Some(fighter) = TrioFighter::from_kind(kind) else { return; };
@@ -1290,7 +1322,11 @@ unsafe fn publish_mii_presentation(entry: *const u8, owner: u32, generation: u64
     state.observed = Some((entry as usize, kind));
     drop(state);
     role.sync_selection(fighter);
+    #[cfg(feature="mii-hud-portrait-alpha")]
+    mii_hud_portrait::before_refresh(entry, owner, kind);
     refresh_hud(entry, owner, kind);
+    #[cfg(feature="mii-hud-portrait-alpha")]
+    mii_hud_portrait::request(entry, owner, generation, kind, portrait);
 }
 
 /// Native reset already owns the HUD lookup. Admit our fresh, active fighter body
@@ -1472,6 +1508,115 @@ unsafe fn refresh_waiting_icon(listener: *const u8, owner: u32, kind: u32, base:
         kind,
         refreshed
     );
+}
+
+/// CPU4's local waiting-card icon, read fresh. Online waiting returns None so the
+/// portrait path has no pane to write. No texture assignment and no heap use.
+#[cfg(feature="mii-hud-portrait-alpha")]
+pub(super) unsafe fn waiting_icon_pane(base: usize, owner: u32) -> Option<*const u8> {
+    if owner != 4 {
+        return None;
+    }
+    waiting_icon_source(base).map(|(_, pane)| pane)
+}
+
+/// Undo a custom waiting portrait with the same native kind assignment used by
+/// ordinary swaps. Resolve the registered listener and generation-checked pane
+/// now; never use a saved UI address during departure. Success retires its native
+/// texture override, allowing the portrait batch to be destroyed afterward.
+#[cfg(feature="mii-hud-portrait-alpha")]
+pub(super) unsafe fn restore_waiting_kind_icon(base: usize, kind: u32) -> bool {
+    waiting_icon_source(base).is_some_and(|(listener, _)| waiting_icon(listener, 4, kind, base))
+}
+
+#[cfg(feature="mii-hud-portrait-alpha")]
+unsafe fn waiting_icon_source(base: usize) -> Option<(*const u8, *const u8)> {
+    let symbol = setting(&crate::common::FIGHTER_MANAGER_ADDR);
+    if symbol == 0 || read::<usize>(base as *const u8, 0x52c3420) == 0 {
+        return None;
+    }
+    let fighter_manager = read::<*mut u8>(symbol as *const u8, 0);
+    if !aligned(fighter_manager) {
+        return None;
+    }
+    let manager = read::<*mut u8>(fighter_manager, 0);
+    if !aligned(manager) || read::<u32>(manager, 0) <= 0x1d {
+        return None;
+    }
+    let lists = read::<*mut u8>(manager, 8);
+    if !aligned(lists) {
+        return None;
+    }
+    let sentinel = lists.add(0x2c0);
+    let mut node = read::<*const u8>(sentinel, 0);
+    let mut visited = 0;
+    while node != sentinel && aligned(node) && visited < 64 {
+        visited += 1;
+        let listener = read::<*mut u8>(node, 0x10);
+        if aligned(listener)
+            && read::<usize>(listener, 0) == base + 0x5063320
+            && read::<usize>(listener, 0x18) == base + 0x1377b40
+            && read::<usize>(listener, 0x20) == 0
+            && aligned(read::<*const u8>(listener, 0x10))
+            && read::<usize>((base + 0x5063320) as *const u8, 0x18) == base + 0x1378ad0
+        {
+            if let Some(pane) = waiting_card_pane(listener, base) {
+                return Some((listener, pane));
+            }
+        }
+        node = read::<*const u8>(node, 0);
+    }
+    None
+}
+
+#[cfg(feature="mii-hud-portrait-alpha")]
+unsafe fn waiting_card_pane(listener: *const u8, base: usize) -> Option<*const u8> {
+    let hud = read::<*const u8>(listener, 0x10);
+    let inner = read::<*const u8>(hud, 0x20);
+    if !aligned(inner) || read::<usize>(inner, 0) != base + 0x5062f60 {
+        return None;
+    }
+    let records = read::<*const u8>(inner, 0x18);
+    if records as usize != base + 0x52c5730 {
+        return None;
+    }
+    let slot = read::<i32>(records, 4 * 0x260 + 0xc);
+    if !(0..8).contains(&slot) {
+        return None;
+    }
+    let root = pointer_chain(base as *const u8, &[0x52c3420, 8, 0])?;
+    let context = read::<*const u8>(root, 0xb98);
+    if !aligned(context) {
+        return None;
+    }
+    let handle = [base + 0x5063bc0, context as usize, read::<u32>(root, 0xba0) as usize];
+    let valid: unsafe extern "C" fn(*const usize) -> bool = std::mem::transmute(base + 0x138b6c0);
+    if !valid(handle.as_ptr()) {
+        return None;
+    }
+    let view = pointer_chain(context, &[0])?;
+    if read::<u8>(view, 0xd3a) != 0 {
+        return None;
+    }
+    let controller = pointer_chain(view, &[0x420])?;
+    let control_state = pointer_chain(controller, &[0])?;
+    if read::<u8>(control_state, 0x14) == 0 {
+        return None;
+    }
+    let mut indices = [i32::MIN; 3];
+    for (i, value) in indices.iter_mut().enumerate() {
+        *value = read::<i32>(controller, 0x150 + i * 4);
+    }
+    let entries = read::<*const u8>(controller, 0x148);
+    if !aligned(entries) {
+        return None;
+    }
+    let index = indices.iter().position(|&i| {
+        (0..8).contains(&i) && read::<i32>(entries, i as usize * 0x1d8 + 0x50) == slot
+    })?;
+    let ui = pointer_chain(controller, &[0x130, 0x80])?;
+    let partners = pointer_chain(ui, &[0x220])?;
+    pointer_chain(partners, &[0x98 + index * 0x58])
 }
 
 unsafe fn waiting_icon(listener: *const u8, owner: u32, kind: u32, base: usize) -> bool {
@@ -1755,6 +1900,8 @@ pub fn init() {
         #[cfg(feature="mii-ordinary-cpu-alpha")]
         mii_ordinary_cpu::init();
         native_service::install(base);
+        #[cfg(feature="mii-hud-portrait-alpha")]
+        mii_hud_portrait::init(base);
         #[cfg(feature = "mii-origin-observer")]
         mii_origin_observer::init(base);
         if cfg!(feature = "waiting-roster-reload") {

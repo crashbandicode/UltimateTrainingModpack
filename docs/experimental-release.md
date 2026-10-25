@@ -67,6 +67,7 @@ fighter/costume/move/stage combination, Switch frame time or guest-heap use.
 | Native-access refactor | Field/pointer and specialized call helpers preserve existing guards and ownership; targeted swaps, hat/item, editor cancel, stage change and clean exit passed. No universal memory-safety or crash-fix claim |
 | Diagnostic efficiency | After exactly 64 snapshots and one notice, a new native stage request completed. Stops redundant diagnostic reads and two lock pairs after the limit. Same-process idle samples stayed near 60 FPS; CPU difference was too small to claim a speedup. No allocations added; NRO size unchanged |
 | Direct Mii discovery | Saved two live LAN Online matches: unknown opponent Mii imported, already-owned Mii reused without a duplicate. No Vault playback or capture selection; both emulators exited normally |
+| Custom Mii HUD | 36 focused core/policy/guard tests; base/full native Clippy and builds. Training role/class/configuration changes and original icon restoration passed. All three waiting CPU portraits passed. An actual LDN match preserved native results portraits and restored the custom CPU portrait automatically; both emulators exited normally. Console acceptance pending |
 | Earlier coverage, not repeated | 85 selectable hats in both roles; 38 item grant/restore cases; saved-Mii swaps and replay discovery/dedup/restart; editor interruptions; local-wireless match/return/helper reconstruction |
 | Stages + Counterpick (separate plugin) | Four accepted rematches against an unmodded peer; the both-modded check is tracked in that repository |
 
@@ -77,18 +78,22 @@ fighter/costume/move/stage combination, Switch frame time or guest-heap use.
   completed, but Eden's Closing software overlay stalled on shutdown. The owned
   process was stopped and its profile restored; this is kept separate from the
   clean lifecycle passes above.
-- Custom Mii HUD portraits remain deferred: the body and moves change, but the
-  small portrait can keep the previous Mii.
+- Custom Mii portraits follow Player and CPU selections in Training and the CPU
+  in Local Wireless waiting practice. The lobby Ready card preserves the fighter
+  selected before entering; Quickplay portraits are unchanged.
+- HUD rendering uses Smash's native assets. Temporary portrait resources are
+  retired before leaving waiting practice and rebuilt on return; no portrait
+  rendering or continuous diagnostic writes run during an actual match.
 
 ## Artifact identity
 
-- NRO: 4272128 bytes.
-- SHA-256: `15b8215a1bfcb204a88af3377d6d43f7291620e371a0545435ecb1d683beb1cd`.
-- Frozen compiled-input SHA-256: `af993af3548acce8dee22f8300243a10652be4ae8d71630006f53a1e3b5d8c87`.
+- NRO: 4308992 bytes.
+- SHA-256: `4eb6ce417a55808b26c8ce2f2a9ba026146a0819f73ad176b34308f17c29ef28`.
+- Frozen compiled-input SHA-256: `59edb618760b97464749e9f6ee83851209d3f13f78d12862d517cbea87e1a040`.
 - Package version: 7.1.2; the experimental release tag distinguishes the candidate.
 
 Enabled local feature closure:
 
 ```text
-cpu-pilot-probe deluxe-sdk dep:deluxe-plugin-sdk enhancements-alpha lobby-stage-probe managed-sources mii-editor-alpha mii-managed-helper-alpha mii-managed-source-coexist-alpha mii-ordinary-cpu-alpha mii-ordinary-player-alpha mii-saved-alpha native-unlink-guard practice-stage-observer practice-stage-request-alpha training_mod_consts/mii-managed-helper-alpha training_mod_consts/mii-saved-alpha training_mod_consts/p1-cpu-control training_mod_tui/mii-editor-alpha training_mod_tui/mii-ordinary-cpu-alpha training_mod_tui/mii-ordinary-player-alpha training_mod_tui/mii-saved-alpha waiting-roster-reload
+cpu-pilot-probe deluxe-sdk dep:deluxe-plugin-sdk enhancements-alpha lobby-stage-probe managed-sources mii-editor-alpha mii-hud-portrait-alpha mii-managed-helper-alpha mii-managed-source-coexist-alpha mii-ordinary-cpu-alpha mii-ordinary-player-alpha mii-saved-alpha native-unlink-guard practice-stage-observer practice-stage-request-alpha training_mod_consts/mii-managed-helper-alpha training_mod_consts/mii-saved-alpha training_mod_consts/p1-cpu-control training_mod_tui/mii-editor-alpha training_mod_tui/mii-ordinary-cpu-alpha training_mod_tui/mii-ordinary-player-alpha training_mod_tui/mii-saved-alpha waiting-roster-reload
 ```

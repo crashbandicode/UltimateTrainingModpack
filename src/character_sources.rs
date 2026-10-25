@@ -21,7 +21,11 @@ use std::convert::TryFrom;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-const CHANNELS: usize = 3; // P1 hat, CPU hat, P1 item. No character-specific queue.
+// P1 hat, CPU hat, P1 item, then (portrait feature) P1 portrait, CPU portrait.
+const CHANNELS: usize = if cfg!(feature = "mii-hud-portrait-alpha") { 5 } else { 3 };
+/// Portrait wants carry the loaded configuration and avoid the other owner's bust row.
+#[cfg(feature = "mii-hud-portrait-alpha")]
+pub const PORTRAIT_CHANNELS: [usize; 2] = [3, 4];
 const LEASES: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -29,6 +33,9 @@ struct Want {
     epoch: SceneEpoch,
     kind: u32,
     configuration:Option<training_mod_consts::mii::lifetime::Configuration>,
+    /// Portrait only. `None` keeps hat/item selection identical to the feature-off path.
+    #[cfg(feature = "mii-hud-portrait-alpha")]
+    avoid: Option<u32>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -128,6 +135,9 @@ enum Consumer {
     Reserved,
     Hat { body: u32, kind: u32, slot: u32 },
     Item { body: u32, kind: i32 },
+    /// Held only while a portrait render is queued. Scene departure and `release` end it.
+    #[cfg(feature = "mii-hud-portrait-alpha")]
+    Portrait,
 }
 
 #[derive(Clone, Copy)]
@@ -288,6 +298,41 @@ pub unsafe fn prepare(
     kind: u32,
     holder: Holder,
 ) -> Result<Option<Lease>, &'static str> {
+    #[cfg(feature = "mii-hud-portrait-alpha")]
+    if PORTRAIT_CHANNELS.contains(&channel) {
+        return Err("Portrait channels require prepare_portrait");
+    }
+    prepare_with(channel, kind, holder, None, None)
+}
+
+/// Exclusive portrait lease. The configuration is the one the visible owner loaded.
+/// Nothing here resolves a different saved identity to fit a helper.
+#[cfg(feature = "mii-hud-portrait-alpha")]
+pub unsafe fn prepare_portrait(
+    channel: usize,
+    kind: u32,
+    configuration: training_mod_consts::mii::lifetime::Configuration,
+    holder: Holder,
+    avoid: Option<u32>,
+) -> Result<Option<Lease>, &'static str> {
+    if !PORTRAIT_CHANNELS.contains(&channel) {
+        return Err("Invalid portrait channel");
+    }
+    if !(0x48..=0x4a).contains(&kind) || configuration.canonical().class as u32 != kind {
+        return Err("Portrait requires the loaded Mii class and its exact configuration");
+    }
+    prepare_with(channel, kind, holder, Some(configuration), avoid)
+}
+
+unsafe fn prepare_with(
+    channel: usize,
+    kind: u32,
+    holder: Holder,
+    exact: Option<training_mod_consts::mii::lifetime::Configuration>,
+    avoid: Option<u32>,
+) -> Result<Option<Lease>, &'static str> {
+    #[cfg(not(feature = "mii-hud-portrait-alpha"))]
+    let _ = (exact, avoid);
     if channel >= CHANNELS {
         return Err("Invalid source request");
     }
@@ -314,9 +359,28 @@ pub unsafe fn prepare(
     let configuration=None;
     #[cfg(feature="mii-managed-helper-alpha")]
     let configuration=if (0x48..=0x4a).contains(&kind) {
-        if channel>=2 {return Err("Mii helpers are limited to copy hats");}
-        let queued={let state=STATE.lock().unwrap();state.wants[channel]
-            .filter(|w|w.kind==kind&&state.book.is_current(w.epoch)).and_then(|w|w.configuration)};
+        if channel == 2 {return Err("Mii helpers are limited to copy hats");}
+        let queued={
+            #[cfg(feature = "mii-hud-portrait-alpha")]
+            if let Some(c) = exact {
+                if !super::mii_managed_helper::admission_ready(true) {
+                    return Ok(None);
+                }
+                let hats = super::mii_ordinary_cpu::helper_origin_hats()
+                    .ok_or("Captured helper hat tokens are unavailable")?;
+                Some(training_mod_consts::mii::ordinary_cpu::helper_configuration(c, hats)?)
+            } else {
+                let state=STATE.lock().unwrap();
+                state.wants[channel]
+                    .filter(|w|w.kind==kind&&state.book.is_current(w.epoch)).and_then(|w|w.configuration)
+            }
+            #[cfg(not(feature = "mii-hud-portrait-alpha"))]
+            {
+                let state=STATE.lock().unwrap();
+                state.wants[channel]
+                    .filter(|w|w.kind==kind&&state.book.is_current(w.epoch)).and_then(|w|w.configuration)
+            }
+        };
         Some(match queued {
             Some(c) => c,
             None => {
@@ -341,13 +405,15 @@ pub unsafe fn prepare(
         let wanted = Want {
             epoch: state.book.epoch(),
             kind,configuration,
+            #[cfg(feature = "mii-hud-portrait-alpha")]
+            avoid,
         };
         #[cfg(feature="mii-managed-helper-alpha")]
         { state.refusals[channel] = None; }
         state.wants[channel] = Some(wanted);
         wanted
     };
-    for slot in candidates(backend).iter().copied().filter(|slot| *slot < 8) {
+    for slot in candidates(backend).iter().copied().filter(|slot| *slot < 8 && slot_allowed(avoid, *slot)) {
         let helper = slot as usize;
         let ready = {
             let state = STATE.lock().unwrap();
@@ -357,6 +423,18 @@ pub unsafe fn prepare(
             if state.book.key(helper).ok().flatten().map(|key| key.kind) != Some(kind)
                 || state.sources[helper].is_none_or(|s|s.configuration!=wanted.configuration) {
                 continue;
+            }
+            #[cfg(feature = "mii-hud-portrait-alpha")]
+            {
+                // A portrait never shares any live lease. Hats and items skip a helper
+                // only while its portrait render is still the consumer.
+                let portrait = PORTRAIT_CHANNELS.contains(&channel);
+                if state.leases.iter().flatten().any(|live| live.source == ready.source()
+                    && (portrait || !super::mii_hud_portrait_policy::hat_may_share(
+                        matches!(live.consumer, Consumer::Portrait))))
+                {
+                    continue;
+                }
             }
             ready
         };
@@ -585,6 +663,28 @@ pub fn retain_item(lease: Lease, body: u32, kind: i32) {
     retain(lease, Consumer::Item { body, kind });
 }
 
+/// The portrait lease stays live until the adapter releases it or the scene departs.
+#[cfg(feature = "mii-hud-portrait-alpha")]
+pub fn retain_portrait(lease: Lease) {
+    retain(lease, Consumer::Portrait);
+}
+
+#[cfg(feature = "mii-hud-portrait-alpha")]
+pub fn portrait_lease_valid(lease: Lease, holder: Holder) -> bool {
+    let state = STATE.lock().unwrap();
+    state.book.validate_lease(lease.token, holder)
+        && state.leases.iter().flatten().any(|live| live.token == lease.token)
+}
+
+#[cfg(feature = "mii-hud-portrait-alpha")]
+pub fn portrait_ready(lease: Lease, holder: Holder) -> Option<crate::source_lifetime::ReadyToken> {
+    let state = STATE.lock().unwrap();
+    if !state.book.validate_lease(lease.token, holder) {
+        return None;
+    }
+    state.book.ready(lease.slot as usize).ok()
+}
+
 /// Native copy changes retain earlier kinds' object groups. Copy loss destroys
 /// their objects and clears the groups; unused native entries have key -1.
 /// Read only from a freshly resolved Kirby, and retain on an unknown layout.
@@ -706,6 +806,9 @@ type HatObservation = Option<(u32, Option<u128>)>;
 unsafe fn consumer_alive(consumer: Consumer, hats: &mut [HatObservation; 2]) -> bool {
     let (id, category) = match consumer {
         Consumer::Reserved => return true,
+        // Released by the portrait adapter after the queue drains, or by scene departure.
+        #[cfg(feature = "mii-hud-portrait-alpha")]
+        Consumer::Portrait => return true,
         Consumer::Hat { body, .. } => (body, *BATTLE_OBJECT_CATEGORY_FIGHTER),
         Consumer::Item { body, .. } => (body, *BATTLE_OBJECT_CATEGORY_ITEM),
     };
@@ -714,6 +817,8 @@ unsafe fn consumer_alive(consumer: Consumer, hats: &mut [HatObservation; 2]) -> 
     if body.is_null() || app::utility::get_category(&mut *body) != category { return false; }
     match consumer {
         Consumer::Reserved => true,
+        #[cfg(feature = "mii-hud-portrait-alpha")]
+        Consumer::Portrait => true,
         Consumer::Item { kind, .. } => app::utility::get_kind(&mut *body) == kind,
         Consumer::Hat { kind, slot, .. } => {
             if app::utility::get_kind(&mut *body) != *FIGHTER_KIND_KIRBY { return false; }
@@ -1094,6 +1199,20 @@ fn refuse_want(wanted: Want, slot: u32, reason: &'static str) {
     }
 }
 
+fn slot_allowed(avoid: Option<u32>, slot: u32) -> bool {
+    #[cfg(feature = "mii-hud-portrait-alpha")]
+    { super::mii_hud_portrait_policy::slot_may_install(avoid, slot) }
+    #[cfg(not(feature = "mii-hud-portrait-alpha"))]
+    { let _ = (avoid, slot); true }
+}
+
+#[cfg(not(feature = "mii-hud-portrait-alpha"))]
+fn pending_request_for(state: &State, slot: Option<u32>) -> Option<Want> {
+    let _ = slot;
+    pending_request(state)
+}
+
+#[cfg(not(feature = "mii-hud-portrait-alpha"))]
 fn pending_request(state: &State) -> Option<Want> {
     state.wants.iter().flatten().copied().find(|want| {
         state.book.is_current(want.epoch) && !state.sources.iter().flatten().any(|source|
@@ -1103,9 +1222,37 @@ fn pending_request(state: &State) -> Option<Want> {
     })
 }
 
+#[cfg(all(feature = "mii-hud-portrait-alpha", feature = "managed-third-source-alpha"))]
+fn pending_request(state: &State) -> Option<Want> {
+    pending_request_for(state, None)
+}
+
+/// The first unsatisfied want this slot may install. An avoided slot neither
+/// satisfies the want nor installs it. `slot == None` is the previous global walk.
+#[cfg(feature = "mii-hud-portrait-alpha")]
+fn pending_request_for(state: &State, slot: Option<u32>) -> Option<Want> {
+    state.wants.iter().flatten().copied().find(|want| {
+        slot.is_none_or(|slot| super::mii_hud_portrait_policy::slot_may_install(want.avoid, slot))
+            && state.book.is_current(want.epoch) && !state.sources.iter().flatten().any(|source|
+            source.kind == want.kind && source.configuration==want.configuration
+                && super::mii_hud_portrait_policy::slot_may_install(want.avoid, source.token.slot() as u32)
+                && state.book.is_current(source.token.epoch())
+                && state.book.phase(source.token.slot()) != Ok(Phase::Failed))
+    })
+}
+
+#[cfg(not(feature = "mii-hud-portrait-alpha"))]
 fn ready_still_requested(state: &State, index: usize) -> bool {
     state.book.phase(index) == Ok(Phase::Ready) && state.sources[index].is_some_and(|source|
         state.wants.iter().flatten().any(|want| want.kind == source.kind && want.configuration==source.configuration))
+}
+
+#[cfg(feature = "mii-hud-portrait-alpha")]
+fn ready_still_requested(state: &State, index: usize) -> bool {
+    state.book.phase(index) == Ok(Phase::Ready) && state.sources[index].is_some_and(|source|
+        state.wants.iter().flatten().any(|want|
+            super::mii_hud_portrait_policy::slot_may_install(want.avoid, index as u32)
+                && want.kind == source.kind && want.configuration==source.configuration))
 }
 
 unsafe fn admission_blocked() -> bool {
@@ -1310,7 +1457,8 @@ pub unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8, slot: u32) {
     let (wanted, replaceable, previous) = {
         let state = STATE.lock().unwrap();
         // Idle: no native snapshots, log formatting, or allocation.
-        let Some(wanted) = pending_request(&state) else {
+        // Per-slot: a want this helper may take is not hidden by an earlier avoided want.
+        let Some(wanted) = pending_request_for(&state, Some(slot)) else {
             return;
         };
         (
@@ -1408,7 +1556,7 @@ pub unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8, slot: u32) {
                 })
                 .map_or(1, |old| old.ticks.saturating_add(1));
             let mut state = STATE.lock().unwrap();
-            if pending_request(&state) != Some(wanted)
+            if pending_request_for(&state, Some(slot)) != Some(wanted)
                 || state.sources[index] != previous
                 || reservation(&state) != Some(owner)
             {
@@ -1495,7 +1643,8 @@ pub unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8, slot: u32) {
         None => coexist::helpers::original(entry as usize, slot),
     };
     let mut state = STATE.lock().unwrap();
-    if pending_request(&state) != Some(wanted)
+    // Same per-slot selection as initiation. Slot 7 capacity probes stay on the global walk.
+    if pending_request_for(&state, Some(slot)) != Some(wanted)
         || state.sources[index] != previous
         || ready_still_requested(&state, index)
         || state.book.can_replace(index) != Ok(true)

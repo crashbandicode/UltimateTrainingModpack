@@ -26,8 +26,10 @@ In an online (Quickplay) waiting room, the pages offer only Add New, and Headgea
 
 With [replay capture](named-macros.md#turn-on-capture) on, **Save Replay → enter Training** adds an unfamiliar opponent's Mii to the modpack library, or reuses an identical saved Mii. No replay playback is needed. [Watch both cases.](mii-replay-discovery/README.md)
 
-## Known limit
+## Matching portraits
 
-After a Mii swap, the small HUD portrait can still show the previous Mii; the body and special moves belong to the new one. A portrait fix is still pending.
+In Training, Player and CPU HUD portraits follow the selected Mii's face, outfit and colors, rendered by Smash itself. Local Wireless waiting practice updates the CPU icon too; the Ready card keeps the character-select fighter. Quickplay portraits are unchanged.
+
+![Saved Brawler and Swordfighter in Training, with matching custom portraits beside their damage percentages.](feature-walkthroughs/mii-hud-portraits.png)
 
 For storage and matching rules, see [How character changes work](character-changes.md#miis).

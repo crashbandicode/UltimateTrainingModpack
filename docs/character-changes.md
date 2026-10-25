@@ -161,7 +161,12 @@ If the Mii does not appear, selecting its track in **Input Recording
 → Replay Window** retries from the saved capture. Choosing that track also loads
 the exact Mii on the Training CPU for input playback.
 
-### Known limit
+### Matching HUD portraits
 
-After a Mii swap, the small HUD portrait can keep showing the previous Mii.
-The fighter's body and special moves are the swapped-in Mii.
+Smash renders a portrait from the selected Mii's face and outfit using the
+temporary source fighter. The mod attaches that native image to the HUD, then
+releases its temporary rendering resources before leaving waiting practice.
+Returning to the lobby rebuilds the portrait with the restored fighter.
+
+This covers both Training fighters and the Local Wireless waiting CPU. The
+lobby Ready card keeps the character-select fighter; Quickplay portraits are unchanged.

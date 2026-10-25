@@ -2,7 +2,7 @@
 >
 > Anyone, including the original developers, may reuse, analyze, redistribute, and otherwise use anything and everything in this repository as they see fit.
 
-**UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-full-experimental.20261024.4). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
+**UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-full-experimental.20261024.5). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
 
 [Download this fork from Forgejo](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases). Version 7.1.2 reduces input-display work in Training; see the [performance checks](docs/input-display-performance.md).
 
@@ -54,7 +54,7 @@ Give any Player 1 fighter a character item and keep it in a save state, includin
 
 ### Saved Miis and the native editor
 
-Choose saved Miis for either role or create a new fighter in Smash's own editor. With replay capture on, **Save Replay** also keeps an unfamiliar opponent's Mii for Training—[watch discovery and duplicate matching](docs/mii-replay-discovery/README.md), or follow the [Mii selection guide](docs/mii-fighters.md).
+Choose saved Miis for either role or create a new fighter in Smash's own editor, with matching Training HUD portraits. With replay capture on, **Save Replay** also keeps an unfamiliar opponent's Mii for Training—[watch discovery and duplicate matching](docs/mii-replay-discovery/README.md), or follow the [Mii selection guide](docs/mii-fighters.md).
 
 ![Choosing a saved Mii Brawler and using its selected neutral special in Training.](docs/feature-walkthroughs/mii-selection.gif)
 

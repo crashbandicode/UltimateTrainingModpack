@@ -330,6 +330,18 @@ unsafe fn complete(entry:*const u8,t:&Track) {
                     s.replay_result=t.replay.filter(|r|r.current(epoch(),super::mii_replay::revision(r.source)))
                         .map(|selection|training_mod_consts::mii::replay::SelectionReceipt {selection,outcome:Ok(())});
                     drop(s);
+                    #[cfg(feature="mii-hud-portrait-alpha")]
+                    publish_mii_presentation(entry,t.before.binding.owner,t.ticket.epoch,descriptor_kind(&t.descriptor),
+                        if t.destination.target==Target::ORIGINAL {
+                            super::PortraitIntent::Original {
+                                original_kind: super::original_kind(super::Role::Cpu).unwrap_or(u32::MAX),
+                            }
+                        } else if let Some(c)=t.publish {
+                            super::PortraitIntent::Exact(c)
+                        } else {
+                            super::PortraitIntent::NotMii
+                        });
+                    #[cfg(not(feature="mii-hud-portrait-alpha"))]
                     publish_mii_presentation(entry,t.before.binding.owner,t.ticket.epoch,descriptor_kind(&t.descriptor));
                     let released=finish_install(t.token,"ordinary CPU1 exact native ready");
                     if t.replay.is_none() {state_for(Role::Cpu).lock().unwrap().cursor=t.destination.cursor;}

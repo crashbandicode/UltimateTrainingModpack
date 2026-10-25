@@ -451,6 +451,10 @@ unsafe fn settle_saved_track(entry: *mut u8, owner: u32, i: usize, track: Track)
         "saved Mii native ready; exact completion refused"
     };
     if done {
+        #[cfg(feature="mii-hud-portrait-alpha")]
+        publish_mii_presentation(entry, owner, track.epoch, track.after.canonical().class as u32,
+            super::PortraitIntent::Exact(track.after));
+        #[cfg(not(feature="mii-hud-portrait-alpha"))]
         publish_mii_presentation(entry, owner, track.epoch, track.after.canonical().class as u32);
     }
     let released = finish_install(track.token, reason);
