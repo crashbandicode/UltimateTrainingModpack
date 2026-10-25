@@ -31,6 +31,14 @@ pub(super) fn entry_preload(mode: u32, caller: usize) -> bool {
             | (Some(WaitingStageFamily::Quickplay), 0x23684b0 | 0x2369208 | 0x236ca48 | 0x237cce0))
 }
 
+/// A retained Quickplay waiting owner can recreate PracticeScene without the
+/// CSS driver's preload. Its constructor runs before the generic loader, so
+/// an empty practice resource slot can still take an entry-time selection.
+pub(super) fn unprepared_quickplay_entry(mode: u32, melee: u8, native_stage: u32, empty: bool) -> bool {
+    family(mode) == Some(WaitingStageFamily::Quickplay)
+        && waiting(mode, melee) && native_stage == 311 && empty
+}
+
 #[derive(Default)]
 pub struct StageCycle {
     last: Option<u32>,
@@ -147,6 +155,23 @@ mod tests {
         // because practice/rotation was disabled. Its entry has no override.
         cycle.cancel_preload();
         assert_eq!(cycle.enter(), None);
+        assert_eq!(cycle.prepare(&[0, 3]), Some(3));
+        assert_eq!(cycle.enter(), Some(3));
+    }
+
+    #[test]
+    fn retained_waiting_entry_requires_native_stage_and_an_unowned_resource_slot() {
+        assert!(unprepared_quickplay_entry(0x07010101, 0x0d, 311, true));
+        assert!(unprepared_quickplay_entry(0x87010101, 0x0d, 311, true));
+        assert!(!unprepared_quickplay_entry(0x07010101, 0x0e, 311, true));
+        assert!(!unprepared_quickplay_entry(0x02010000, 0x0d, 311, true));
+        assert!(!unprepared_quickplay_entry(0x07010101, 0x0d, 0, true));
+        assert!(!unprepared_quickplay_entry(0x07010101, 0x0d, 311, false));
+        let mut cycle = StageCycle::new();
+        cycle.prepare(&[0, 3]);
+        assert_eq!(cycle.enter(), Some(0));
+        // A match return has no driver preload; preparing at the constructor
+        // continues the same rotation rather than resetting it or skipping.
         assert_eq!(cycle.prepare(&[0, 3]), Some(3));
         assert_eq!(cycle.enter(), Some(3));
     }

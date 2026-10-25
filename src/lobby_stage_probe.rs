@@ -27,6 +27,27 @@ pub(super) fn qualified_waiting(mode: u32, melee: u8) -> bool {
     lobby_stage_cycle::waiting(mode, melee) && cycle_index(mode).is_some()
 }
 
+fn prepare_entry(index: usize) -> Option<u32> {
+    let menu = read(&MENU);
+    let stages = menu.lobby_stages.stages();
+    #[cfg(feature = "practice-stage-request-alpha")]
+    let prefs = crate::common::menu::stage_preferences();
+    let mut cycles = CYCLES.lock().unwrap();
+    let cycle = &mut cycles[index];
+    if menu.lobby_practice != OnOff::ON {
+        cycle.cancel_preload();
+        return None;
+    }
+    #[cfg(feature = "practice-stage-request-alpha")]
+    let selected = if prefs.mode == training_mod_tui::stage_menu::Mode::Direct {
+        cycle.prepare_direct(prefs.direct_stage)
+    } else if stages.is_empty() { None } else { cycle.prepare(&stages) };
+    #[cfg(not(feature = "practice-stage-request-alpha"))]
+    let selected = if stages.is_empty() { None } else { cycle.prepare(&stages) };
+    if selected.is_none() { cycle.cancel_preload(); }
+    selected
+}
+
 #[skyline::hook(offset = 0x25f7860, inline)]
 unsafe fn resource_request(ctx: &mut InlineCtx) {
     #[cfg(feature = "practice-stage-observer")]
@@ -62,28 +83,7 @@ unsafe fn resource_request(ctx: &mut InlineCtx) {
         && kind == 311
         && hash == 0x165a48f367
     {
-        let menu = read(&MENU);
-        let stages = menu.lobby_stages.stages();
-        #[cfg(feature = "practice-stage-request-alpha")]
-        let prefs = crate::common::menu::stage_preferences();
-        let mut cycles = CYCLES.lock().unwrap();
-        let cycle = &mut cycles[index];
-        if menu.lobby_practice != OnOff::ON {
-            cycle.cancel_preload();
-            return;
-        }
-        #[cfg(feature = "practice-stage-request-alpha")]
-        let selected = {
-            if prefs.mode == training_mod_tui::stage_menu::Mode::Direct {
-                cycle.prepare_direct(prefs.direct_stage)
-            } else if stages.is_empty() { None } else { cycle.prepare(&stages) }
-        };
-        #[cfg(not(feature = "practice-stage-request-alpha"))]
-        let selected = if stages.is_empty() { None } else { cycle.prepare(&stages) };
-        let Some(stage) = selected else {
-            cycle.cancel_preload();
-            return;
-        };
+        let Some(stage) = prepare_entry(index) else { return; };
         let record = (base + 0x454a7e8 + stage as usize * 72) as *const u8;
         let native_hash = crate::native_fields::read_unchecked::<u64>(record as usize, 24) & 0xffffffffff;
         crate::native_fields::write_unchecked(config as usize, 0, stage);
@@ -109,17 +109,33 @@ pub unsafe fn observe_loaded() {
 // Leave the native setter, resource loading and all other arguments intact.
 #[skyline::hook(offset = 0x1790e18, inline)]
 unsafe fn stage_entry(ctx: &mut InlineCtx) {
-    // Only the same family's resource preload above can prepare an entry.
     // Keep an already preloaded selection even if preferences change meanwhile.
     let Some(mode) = crate::common::game_mode::current() else { return; };
     if !mode.initialized || !qualified_waiting(mode.mode, mode.melee) {
         return;
     }
     let Some(index) = cycle_index(mode.mode) else { return; };
-    let Some(stage) = CYCLES.lock().unwrap()[index].enter() else {
-        return;
-    };
     let previous = ctx.registers[1].w();
+    let prepared = CYCLES.lock().unwrap()[index].enter();
+    let stage = if let Some(stage) = prepared {
+        stage
+    } else {
+        // Retained Quickplay returns omit the driver's stack preload. Run109
+        // captured this constructor with w1=311 and all four resource slots
+        // empty, before the generic 0x14f57c4 loader. Change only the setter's
+        // argument; that loader must build its resource from native config.
+        // Never rewrite its live descriptor or replace an occupied slot.
+        if !lobby_stage_cycle::unprepared_quickplay_entry(mode.mode, mode.melee, previous, true) {
+            return;
+        }
+        let base = getRegionAddress(Region::Text) as usize;
+        let empty = crate::native_fields::child(base, 0x532a9d0)
+            .and_then(|owner| crate::native_fields::read::<usize>(owner, 2 * 8)) == Some(0);
+        if !empty { return; }
+        prepare_entry(index);
+        let Some(stage) = CYCLES.lock().unwrap()[index].enter() else { return; };
+        stage
+    };
     ctx.registers[1].set_w(stage);
     crate::logging::diagnostic(format_args!(
         "[LobbyStageProbe] entry native={} selected={} mode={:?}",
@@ -143,6 +159,19 @@ pub fn init() {
     // then enter the same PracticeScene setup as LDN. Verify the callers as well
     // as the shared callee so normal match preloads cannot acquire this gate.
     let quickplay_checks: &[(usize, &[u32])] = &[
+        // Generic loader used after a retained waiting owner reconstructs its
+        // scene. It selects resource slot2 for melee0d, then reads the stage
+        // descriptor written by the native setter; it does not construct one.
+        (0x14f5754, &[
+            0x39418308, 0x7100351f, 0x1a9f17e8, 0xb001f1b4,
+            0x531f7913, 0xf944ea88, 0xf8735908, 0xb40000a8,
+            0xb9400108, 0x321f0108, 0x71000d1f, 0x54000220,
+        ]),
+        (0x14f5794, &[
+            0x9001ee88, 0xf942e108, 0xf100091f, 0x5400a5a2,
+            0x52801609, 0x9001ee8a, 0x9106014a, 0x9b092908,
+            0xf944ea80, 0x91114101, 0x2a1303e2, 0x94440828,
+        ]),
         (0x236841c, &[
             0xb9415269, 0x7100113f, 0x54000461, 0x528026e9, 0xb90063e9,
             0xd0017e09, 0xf944e920, 0xd29e6cea, 0xf2ab490a, 0x3901c3e8,
