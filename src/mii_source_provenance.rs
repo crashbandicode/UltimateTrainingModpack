@@ -114,7 +114,7 @@ impl super::Registry {
             // Both waiting families share helpers 5/6; only the current scene names the family.
             let current=super::super::super::mii_backend::current().filter(|l|l.helper(slot).is_some());
             if let Some(layout)=current.or_else(||[Layout::Training,Layout::Ldn,Layout::Quickplay]
-                .into_iter().find(|l|l.helper(slot).is_some())) {self.helpers.layout=layout;}
+                .iter().copied().find(|l|l.helper(slot).is_some())) {self.helpers.layout=layout;}
         }
         self.helpers.epoch = Some(epoch);
         if let Some(ordinal)=self.helpers.ordinal(slot) {
