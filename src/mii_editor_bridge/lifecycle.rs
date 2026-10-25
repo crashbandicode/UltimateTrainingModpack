@@ -8,6 +8,13 @@ struct Owner { scene: usize, context: usize, generation: u64, current: i32 }
 
 static SERIAL: AtomicU64 = AtomicU64::new(0);
 static OWNER: Mutex<Option<Owner>> = Mutex::new(None);
+
+/// One counter for both waiting rooms. Local Wireless calls this too, so a
+/// generation number cannot refer to the other room's checkpoint.
+pub(super) fn next_generation() -> Option<u64> {
+    let previous = SERIAL.fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| value.checked_add(1)).ok()?;
+    Some(previous + 1)
+}
 static UNBOUND_REPORTED: AtomicBool = AtomicBool::new(false);
 
 fn note(name: &'static str, values: [u64; 4]) {
@@ -54,9 +61,7 @@ unsafe fn initialized(scene: usize) {
     let previous = OWNER.lock().unwrap().take();
     if let Some(previous) = previous { retire(previous.generation, "resume_owner_replaced"); }
     let Some(context) = context(scene) else { return; };
-    let Ok(previous) = SERIAL.fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| value.checked_add(1))
-        else { return; };
-    let generation = previous + 1;
+    let Some(generation) = next_generation() else { return; };
     *OWNER.lock().unwrap() = Some(Owner { scene, context, generation, current: -1 });
     note("quickplay_owner_initialized", [scene as u64, context as u64, generation, 0]);
 }

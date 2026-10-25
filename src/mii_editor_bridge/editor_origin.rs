@@ -5,13 +5,12 @@
 pub(super) enum Admission {
     Training,
     Quickplay,
+    LocalWireless,
 }
 
 /// `mode` is the native mode word. Quickplay keeps the existing family mask.
-/// Local Wireless waiting is exactly `0x02010000` and is refused until its own
-/// scene owner is bound. Training's scene (`+0x50bad50`, state 5) and
-/// Quickplay's scene (`+0x50b7998`, parent `+0x50b9000`, context state 8) are
-/// not that owner.
+/// Local Wireless waiting is exactly `0x02010000` and uses parent vtable
+/// `0x50b8028`, not Training `0x50bad50` or Quickplay parent `0x50b9000`.
 pub(super) fn admit(
     native_training: bool, lobby_active: bool, mode: u32,
 ) -> Result<Admission, &'static str> {
@@ -22,9 +21,9 @@ pub(super) fn admit(
         return Ok(Admission::Quickplay);
     }
     if lobby_active && mode == 0x02010000 {
-        return Err("Local Wireless editor owner is not bound");
+        return Ok(Admission::LocalWireless);
     }
-    Err("Enter Training or Quickplay waiting practice to edit a Mii")
+    Err("Enter Training, Quickplay, or Local Wireless waiting practice to edit a Mii")
 }
 
 #[cfg(test)]
@@ -40,18 +39,18 @@ mod tests {
     }
 
     #[test]
-    fn local_wireless_does_not_reuse_either_owner() {
-        assert_eq!(
-            admit(false, true, 0x02010000),
-            Err("Local Wireless editor owner is not bound"),
-        );
+    fn local_wireless_is_its_own_admission() {
+        assert_eq!(admit(false, true, 0x02010000), Ok(Admission::LocalWireless));
+        assert_ne!(admit(false, true, 0x02010000), Ok(Admission::Quickplay));
+        assert_ne!(admit(false, true, 0x02010000), Ok(Admission::Training));
+        assert_eq!(admit(true, true, 0x02010000), Ok(Admission::Training));
         assert_eq!(
             admit(false, false, 0x02010000),
-            Err("Enter Training or Quickplay waiting practice to edit a Mii"),
+            Err("Enter Training, Quickplay, or Local Wireless waiting practice to edit a Mii"),
         );
         assert_eq!(
             admit(false, true, 0),
-            Err("Enter Training or Quickplay waiting practice to edit a Mii"),
+            Err("Enter Training, Quickplay, or Local Wireless waiting practice to edit a Mii"),
         );
     }
 }

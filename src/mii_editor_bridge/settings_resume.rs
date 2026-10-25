@@ -98,13 +98,14 @@ impl Job {
     }
 }
 
-/// Retained disabler. Training and Quickplay both keep the native cosmetic rows;
-/// this helper is not installed for either origin. Native `initialize` rebuilds
-/// both selectors on every Settings entry (component age 0), so a future caller
-/// still runs once per entry, never per frame.
+/// Retained disabler. Training and Quickplay keep the native cosmetic rows.
+/// Local Wireless Add New and Test do not enable those rows. Native
+/// `initialize` rebuilds both selectors on every Settings entry (component
+/// age 0), so a caller still runs once per entry, never per frame.
 pub(super) fn suppress_native_cosmetics(origin: Origin) -> bool {
     match origin {
         Origin::Training | Origin::Quickplay => false,
+        Origin::LocalWireless => true,
     }
 }
 struct Policy { context: usize, component: usize, last_age: u32, attempts: u16, settled: bool }
@@ -236,6 +237,7 @@ mod tests {
     fn quickplay_keeps_native_cosmetic_rows() {
         assert!(!suppress_native_cosmetics(Origin::Quickplay));
         assert!(!suppress_native_cosmetics(Origin::Training));
+        assert!(suppress_native_cosmetics(Origin::LocalWireless));
         let random = Snapshot::parse(Value::integer(2), Value::integer(1)).unwrap();
         assert_eq!(random, Snapshot { row: 2, area: 1 });
         let voice_row = Snapshot::parse(Value::integer(5), Value::integer(0)).unwrap();

@@ -10,38 +10,99 @@ pub(super) struct Owner {
     context: usize,
 }
 
+/// Child controller shared by both waiting rooms. Run107's Local Wireless
+/// callback entered `0x2310570` with this layout: self word, state 3, scene
+/// vtable `0x50b7998`, and stack top 3. The parent check is not shared.
+struct Child {
+    sequence: usize,
+    context: usize,
+}
+
+unsafe fn child(base: usize, context: usize) -> Option<Child> {
+    if !aligned(context) || read::<usize>(context, 0) != context
+        || read::<i32>(context, 0x178) != 3 { return None; }
+    let sequence: usize = read(context, 0x188);
+    let scene = sequence.checked_sub(0x50)?;
+    if !aligned(scene) || read::<usize>(scene, 0) != base + 0x50b7998
+        || read::<usize>(scene, 0xe8) != context { return None; }
+    let level: i32 = read(context, 0x174);
+    if !(0..19).contains(&level)
+        || read::<i32>(context, 0x128 + level as usize * 4) != 3 { return None; }
+    Some(Child { sequence, context })
+}
+
+unsafe fn child_age(context: usize) -> u32 { read(context, 0x17c) }
+unsafe fn child_result(sequence: usize) -> i32 { read(sequence, 0x40) }
+unsafe fn child_drained(sequence: usize) -> bool {
+    drained(sequence) && read::<usize>(sequence, 0x38) == 0
+}
+unsafe fn child_reenter(sequence: usize, context: usize) -> bool {
+    if !child_drained(sequence) { return false; }
+    // Dispatcher 0x2319200 consumes this byte on this child, runs the exit
+    // callback, resets age, and performs the complete state-3 entry.
+    write(context, 0x184, 1u8);
+    true
+}
+
+pub(super) const QUICKPLAY_PARENT: usize = 0x50b9000;
+pub(super) const LOCAL_WIRELESS_PARENT: usize = 0x50b8028;
+
+/// Parent frame `0x23374b0` keeps the slot at `+0xd0 + level*4` and the state
+/// at `+0x120` equal while waiting. Run107 was level 0, slot 6, state 6.
+/// Quickplay's state 8 is a different object and does not pass.
+pub(super) fn local_wireless_parent_waiting(level: i32, state: i32, top: i32) -> bool {
+    (0..0x13).contains(&level) && state == 6 && top == state
+}
+
 impl Owner {
     pub unsafe fn bind(base: usize, context: usize) -> Option<Self> {
-        if !aligned(context) || read::<usize>(context, 0) != context
-            || read::<i32>(context, 0x178) != 3 { return None; }
-        let sequence: usize = read(context, 0x188);
-        let scene = sequence.checked_sub(0x50)?;
-        if !aligned(scene) || read::<usize>(scene, 0) != base + 0x50b7998
-            || read::<usize>(scene, 0xe8) != context { return None; }
-        let level: i32 = read(context, 0x174);
-        if !(0..19).contains(&level)
-            || read::<i32>(context, 0x128 + level as usize * 4) != 3 { return None; }
-        let parent: usize = read(sequence, 0x18);
+        let child = child(base, context)?;
+        let parent: usize = read(child.sequence, 0x18);
         let parent_scene = parent.checked_sub(0x50)?;
-        if !aligned(parent_scene) || read::<usize>(parent_scene, 0) != base + 0x50b9000
-            || read::<usize>(parent, 0x38) != scene { return None; }
+        if !aligned(parent_scene) || read::<usize>(parent_scene, 0) != base + QUICKPLAY_PARENT
+            || read::<usize>(parent, 0x38) != child.sequence - 0x50 { return None; }
         let quickplay: usize = read(parent_scene, 0xe8);
         if !aligned(quickplay) || read::<i32>(quickplay, 0x150) != 8 { return None; }
-        Some(Self { sequence, context })
+        Some(Self { sequence: child.sequence, context: child.context })
     }
 
-    pub unsafe fn age(&self) -> u32 { read(self.context, 0x17c) }
-    pub unsafe fn result(&self) -> i32 { read(self.sequence, 0x40) }
-    pub unsafe fn drained(&self) -> bool {
-        drained(self.sequence) && read::<usize>(self.sequence, 0x38) == 0
+    pub unsafe fn age(&self) -> u32 { child_age(self.context) }
+    pub unsafe fn result(&self) -> i32 { child_result(self.sequence) }
+    pub unsafe fn drained(&self) -> bool { child_drained(self.sequence) }
+    pub unsafe fn reenter(&self) -> bool { child_reenter(self.sequence, self.context) }
+}
+
+/// Local Wireless parent is vtable `0x50b8028`. Its frame, init, and release
+/// are the parallel slots of Quickplay's parent, not those functions.
+pub(super) struct LdnOwner {
+    pub sequence: usize,
+    context: usize,
+}
+
+impl LdnOwner {
+    pub unsafe fn bind(base: usize, context: usize) -> Option<Self> {
+        let child = child(base, context)?;
+        if read::<usize>(child.context, 0x58) != base + 0x2310570 { return None; }
+        let parent: usize = read(child.sequence, 0x18);
+        let parent_scene = parent.checked_sub(0x50)?;
+        if !aligned(parent_scene)
+            || read::<usize>(parent_scene, 0) != base + LOCAL_WIRELESS_PARENT
+            || read::<usize>(parent, 0x38) != child.sequence - 0x50 { return None; }
+        let parent_context: usize = read(parent_scene, 0xe8);
+        if !aligned(parent_context) || read::<usize>(parent_context, 0) != parent
+            || read::<usize>(parent_context, 8) != parent_context { return None; }
+        let level: i32 = read(parent_context, 0x11c);
+        if !(0..0x13).contains(&level) { return None; }
+        let top: i32 = read(parent_context, 0xd0 + level as usize * 4);
+        let state: i32 = read(parent_context, 0x120);
+        if !local_wireless_parent_waiting(level, state, top) { return None; }
+        Some(Self { sequence: child.sequence, context: child.context })
     }
-    pub unsafe fn reenter(&self) -> bool {
-        if !self.drained() { return false; }
-        // Native dispatcher2319200 consumes this byte, runs the exit callback,
-        // resets age and performs the complete state3 entry. No stack snapshot.
-        write(self.context, 0x184, 1u8);
-        true
-    }
+
+    pub unsafe fn age(&self) -> u32 { child_age(self.context) }
+    pub unsafe fn result(&self) -> i32 { child_result(self.sequence) }
+    pub unsafe fn drained(&self) -> bool { child_drained(self.sequence) }
+    pub unsafe fn reenter(&self) -> bool { child_reenter(self.sequence, self.context) }
 }
 
 pub(super) unsafe fn service(base: usize) -> Option<usize> {
@@ -294,7 +355,7 @@ pub(super) unsafe fn interrupt_editor(
 
 #[cfg(test)]
 mod tests {
-    use super::revealed_preview_level;
+    use super::{local_wireless_parent_waiting, LOCAL_WIRELESS_PARENT, QUICKPLAY_PARENT, revealed_preview_level};
 
     #[test]
     fn preview_wait_pops_one_level_only_while_state_11_is_current() {
@@ -309,5 +370,20 @@ mod tests {
         assert_eq!(revealed_preview_level(10, 2, 10), None);
         // A stale top slot is not the waiter, even if the state word says 11.
         assert_eq!(revealed_preview_level(11, 2, 9), None);
+    }
+
+    #[test]
+    fn local_wireless_parent_is_not_quickplay_state_8() {
+        assert_ne!(LOCAL_WIRELESS_PARENT, QUICKPLAY_PARENT);
+        // Run107 waiting: level 0, state 6, stack top 6.
+        assert!(local_wireless_parent_waiting(0, 6, 6));
+        assert!(local_wireless_parent_waiting(18, 6, 6));
+        // Quickplay's parent state must not open this owner.
+        assert!(!local_wireless_parent_waiting(0, 8, 8));
+        // The child controller's slot 3 is not this parent's top.
+        assert!(!local_wireless_parent_waiting(0, 6, 3));
+        assert!(!local_wireless_parent_waiting(0, 5, 5));
+        assert!(!local_wireless_parent_waiting(0x13, 6, 6));
+        assert!(!local_wireless_parent_waiting(-1, 6, 6));
     }
 }

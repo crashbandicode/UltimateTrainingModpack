@@ -15,6 +15,7 @@ mod cosmetic_resume;
 mod editor_origin;
 mod return_gate;
 mod lifecycle;
+mod ldn_lifecycle;
 mod ui_resume;
 mod resume_adapter;
 mod screen_reentry;
@@ -44,7 +45,7 @@ static STATE: Mutex<Option<Session>> = Mutex::new(None);
 enum Phase { Requested, Quitting, Queued, Editing, Exiting, Returning, Finished, Refused }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Origin { Training, Quickplay }
+enum Origin { Training, Quickplay, LocalWireless }
 
 #[derive(Clone, Copy, Serialize)]
 struct Event { name: &'static str, phase: Phase, values: [u64; 4] }
@@ -125,6 +126,7 @@ pub(crate) fn request(request: training_mod_tui::mii_menu::EditorRequest) {
         )? {
             editor_origin::Admission::Training => Origin::Training,
             editor_origin::Admission::Quickplay => Origin::Quickplay,
+            editor_origin::Admission::LocalWireless => Origin::LocalWireless,
         };
         if !request.catalog.is_complete() { return Err("Mii catalog is incomplete"); }
         let seed = match request.seed {
@@ -180,9 +182,17 @@ fn begin_session(
     Ok(())
 }
 
-fn resume_checkpoint(ticket: ResumeTicket, checkpoint: ui_resume::Checkpoint) -> Result<(), &'static str> {
-    if !quickplay_available() { return Err("Waiting practice is not ready"); }
-    begin_session(Origin::Quickplay, checkpoint.seed, checkpoint.catalog,
+fn resume_checkpoint(
+    origin: Origin, ticket: ResumeTicket, checkpoint: ui_resume::Checkpoint,
+) -> Result<(), &'static str> {
+    let ready = match origin {
+        Origin::Quickplay => quickplay_available(),
+        Origin::LocalWireless => local_wireless_available()
+            && !unsafe { crate::common::is_native_training_mode() },
+        Origin::Training => false,
+    };
+    if !ready { return Err("Waiting practice is not ready"); }
+    begin_session(origin, checkpoint.seed, checkpoint.catalog,
         Some((ticket, checkpoint.screen, checkpoint.focus)))
 }
 
@@ -192,9 +202,19 @@ fn quickplay_available() -> bool {
             & 0x7fffff00 == 0x07010100
 }
 
-/// Queue the Quickplay editor catalog. No file IO, writer wait, or fighter capture here.
+pub(super) fn local_wireless_available() -> bool {
+    ENABLED.load(Ordering::Acquire) && crate::training::lobby::active()
+        && unsafe { native::read::<u32>(BASE.load(Ordering::Acquire), native::MODE) } == 0x02010000
+}
+
+fn waiting_catalog_ready() -> bool {
+    quickplay_available()
+        || (local_wireless_available() && !unsafe { crate::common::is_native_training_mode() })
+}
+
+/// Queue the waiting-room editor catalog. No file IO, writer wait, or fighter capture here.
 pub(crate) fn menu_ready(opening: u64) {
-    if !quickplay_available() || ACTIVE.load(Ordering::Acquire) { return; }
+    if !waiting_catalog_ready() || ACTIVE.load(Ordering::Acquire) { return; }
     crate::character_roster::mii_catalog_request::request(
         training_mod_consts::mii::catalog_request::Kind::Editor { opening },
     );
@@ -229,7 +249,7 @@ pub(crate) fn mount_opened_catalog(catalog: Snapshot, opening: u64) -> OpenedCat
 fn editor_opening_current(opening: u64) -> bool {
     crate::common::menu::quick_menu_active()
         && opening == crate::character_roster::mii_saved_alpha::menu_epoch()
-        && quickplay_available()
+        && waiting_catalog_ready()
         && !ACTIVE.load(Ordering::Acquire)
 }
 
@@ -691,6 +711,7 @@ pub(crate) fn init() {
         edit_frame, edit_decide, editor_release);
     connected::init();
     lifecycle::init();
+    ldn_lifecycle::init();
     name_keyboard::init();
     resume_adapter::init();
     ENABLED.store(true, Ordering::Release);

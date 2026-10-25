@@ -18,8 +18,8 @@ Authorized 2026-10-25: implement all fourteen source-audited gaps on a separate 
 | 10 | Full character-item selection | Quickplay | Pending |
 | 11 | Saved-Mii configuration selection and Player/CPU swaps | Quickplay | Pending |
 | 12 | Matching custom Mii practice HUD portraits | Quickplay | Pending |
-| 13 | Native Mii cosmetics and exact interruption/resume | Quickplay; supersedes former Training-only restriction | Pending |
-| 14 | Native Mii Add New/Test with return to practice | Local Wireless waiting | Pending |
+| 13 | Native Mii cosmetics and exact interruption/resume | Quickplay; supersedes former Training-only restriction | Source implemented in 6e3b994 and e006c49; runtime not run |
+| 14 | Native Mii Add New/Test with return to practice | Local Wireless waiting | Source implemented; runtime not run |
 
 Real-match fighter selection, matchmaking, results and replay-save behavior must remain native. The Player Ready card continues to identify the fighter selected for the real match. Practice changes affect the local practice fighters. A match beginning takes precedence over every editor, recording, save-state operation and load; pending work must retire with its scene and never dereference departed native objects. Resume unsaved editor state in the same lobby without implicitly saving. Explicit cancellation still cancels. Ordinary Training retains its existing behavior. Stage rotation remains exclusive to lobby practice; Training supports direct changes only.
 

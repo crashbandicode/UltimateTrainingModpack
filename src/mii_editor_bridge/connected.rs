@@ -1,5 +1,7 @@
-//! Private Quickplay adapter. The retained owner is custom orchestration; native
-//! practice, Test, editor teardown and matchmaking still perform their own work.
+//! Private waiting-room adapter. Quickplay and Local Wireless share the child
+//! controller at `0x2310570` and keep separate parent binds. The retained owner
+//! is custom orchestration; native practice, Test, editor teardown and
+//! matchmaking still perform their own work.
 use super::{connected_native as contract, native, current_thread,
     Origin, Phase, Session, ACTIVE, BASE, EDIT_LEAF_SCENE, EDIT_OWNER,
     EDIT_OWNED, EDIT_SCENE, RELEASED_SCENE, STATE};
@@ -10,7 +12,7 @@ static RETAINED: AtomicUsize = AtomicUsize::new(0);
 pub(super) fn forget(_seed: &super::draft::Draft) { super::ui_resume::discard(); }
 
 unsafe fn note_pending(s: &mut Session) {
-    if s.origin != Origin::Quickplay || s.interrupted { return; }
+    if !matches!(s.origin, Origin::Quickplay | Origin::LocalWireless) || s.interrupted { return; }
     let Some(event) = contract::pending_interruption(BASE.load(Ordering::Acquire)) else { return; };
     if event == 0 { return; }
     // A real opponent's Join returns ownership to native waiting practice,
@@ -101,28 +103,53 @@ fn relinquish(s: &mut Session, event: &'static str) {
     ACTIVE.store(false, Ordering::Release);
 }
 
-#[skyline::hook(offset = 0x2310570)]
-unsafe fn waiting_owner(context: usize, args: usize) -> usize {
-    if !ACTIVE.load(Ordering::Acquire) { return original!()(context, args); }
-    let base = BASE.load(Ordering::Acquire);
-    let Some(owner) = contract::Owner::bind(base, context) else { return original!()(context, args); };
+trait WaitingOwner {
+    fn sequence(&self) -> usize;
+    unsafe fn age(&self) -> u32;
+    unsafe fn result(&self) -> i32;
+    unsafe fn drained(&self) -> bool;
+    unsafe fn reenter(&self) -> bool;
+}
+
+impl WaitingOwner for contract::Owner {
+    fn sequence(&self) -> usize { self.sequence }
+    unsafe fn age(&self) -> u32 { contract::Owner::age(self) }
+    unsafe fn result(&self) -> i32 { contract::Owner::result(self) }
+    unsafe fn drained(&self) -> bool { contract::Owner::drained(self) }
+    unsafe fn reenter(&self) -> bool { contract::Owner::reenter(self) }
+}
+
+impl WaitingOwner for contract::LdnOwner {
+    fn sequence(&self) -> usize { self.sequence }
+    unsafe fn age(&self) -> u32 { contract::LdnOwner::age(self) }
+    unsafe fn result(&self) -> i32 { contract::LdnOwner::result(self) }
+    unsafe fn drained(&self) -> bool { contract::LdnOwner::drained(self) }
+    unsafe fn reenter(&self) -> bool { contract::LdnOwner::reenter(self) }
+}
+
+enum Drive { Original, Value(usize) }
+
+unsafe fn drive_waiting(
+    owner: &impl WaitingOwner, origin: Origin, bound: &'static str,
+    context: usize, base: usize,
+) -> Drive {
     let phase = {
         let mut state = STATE.lock().unwrap();
-        let Some(s) = state.as_mut().filter(|s| s.origin == Origin::Quickplay) else {
-            drop(state); return original!()(context, args);
+        let Some(s) = state.as_mut().filter(|s| s.origin == origin) else {
+            return Drive::Original;
         };
         if s.phase == Phase::Requested && s.owner == 0 && owner.age() > 0 && !owner.drained() {
             if !native::catalog_clean(base) {
                 relinquish(s, "connected_catalog_dirty");
-                drop(state); return original!()(context, args);
+                return Drive::Original;
             }
-            s.owner = owner.sequence;
+            s.owner = owner.sequence();
             s.mode = native::read(base, native::MODE);
             s.thread = current_thread();
-            s.event("quickplay_owner_bound", [owner.sequence as u64, context as u64, s.mode as u64, 0]);
+            s.event(bound, [owner.sequence() as u64, context as u64, s.mode as u64, 0]);
         }
-        if s.owner != owner.sequence || s.thread != current_thread() {
-            drop(state); return original!()(context, args);
+        if s.owner != owner.sequence() || s.thread != current_thread() {
+            return Drive::Original;
         }
         if s.phase == Phase::Quitting && !owner.drained() {
             s.wait_frames = s.wait_frames.saturating_add(1);
@@ -137,20 +164,20 @@ unsafe fn waiting_owner(context: usize, args: usize) -> usize {
             if owner.result() != 0 {
                 let mut state = STATE.lock().unwrap();
                 relinquish(state.as_mut().unwrap(), "practice_completed_before_editor");
-                drop(state); return original!()(context, args);
+                return Drive::Original;
             }
             if !contract::practice_resources_released(base) {
                 let mut state = STATE.lock().unwrap();
                 relinquish(state.as_mut().unwrap(), "practice_resources_not_released");
-                drop(state); return original!()(context, args);
+                return Drive::Original;
             }
             let inputs = native::practice_inputs(base);
             let input_baseline = native::input_snapshot(base);
-            native::register_editor_sequence(base, owner.sequence, true);
+            native::register_editor_sequence(base, owner.sequence(), true);
             native::write(base, 0x5307d40, 0u8);
-            EDIT_OWNER.store(owner.sequence, Ordering::Release);
+            EDIT_OWNER.store(owner.sequence(), Ordering::Release);
             EDIT_OWNED.store(true, Ordering::Release);
-            let queued = native::enqueue_sequence(base, owner.sequence, b"CharaMakeSequenceScene");
+            let queued = native::enqueue_sequence(base, owner.sequence(), b"CharaMakeSequenceScene");
             let mut state = STATE.lock().unwrap(); let s = state.as_mut().unwrap();
             s.inputs = inputs;
             s.input_baseline = Some(input_baseline);
@@ -163,29 +190,29 @@ unsafe fn waiting_owner(context: usize, args: usize) -> usize {
             }
             drop(state);
             if !queued {
-                native::register_editor_sequence(base, owner.sequence, false);
+                native::register_editor_sequence(base, owner.sequence(), false);
                 EDIT_OWNED.store(false, Ordering::Release);
                 EDIT_OWNER.store(0, Ordering::Release);
                 owner.reenter();
             }
-            0
+            Drive::Value(0)
         }
-        Phase::Queued | Phase::Editing => 0,
+        Phase::Queued | Phase::Editing => Drive::Value(0),
         Phase::Exiting if owner.drained() => {
-            if !super::save_ready_for_return(base) { return 0; }
+            if !super::save_ready_for_return(base) { return Drive::Value(0); }
             let (mode, inputs, interrupted, seed) = {
                 let state = STATE.lock().unwrap(); let s = state.as_ref().unwrap();
                 (s.mode, s.inputs, s.interrupted, s.seed)
             };
-            native::register_editor_sequence(base, owner.sequence, false);
+            native::register_editor_sequence(base, owner.sequence(), false);
             let observed = native::practice_inputs(base);
             let idle = native::preview_state(base).is_some_and(|(state, _)| state == 0);
             native::write(base, native::MODE, mode);
             let released = RELEASED_SCENE.load(Ordering::Acquire) != 0;
-            // These tables belong to the live online session. A peer joining
-            // updates its entry while the editor is open; treating that update
-            // as corruption refused an otherwise valid native return. Never
-            // restore or freeze them. The freshly bound Quickplay owner rebuilds
+            // These tables belong to the live session. A peer joining updates
+            // its entry while the editor is open; treating that update as
+            // corruption refused an otherwise valid native return. Never
+            // restore or freeze them. The freshly bound waiting owner rebuilds
             // practice from the current native session after editor release.
             let resources_released = contract::practice_resources_released(base);
             let catalog_clean = native::catalog_clean(base);
@@ -202,12 +229,38 @@ unsafe fn waiting_owner(context: usize, args: usize) -> usize {
             if !interrupted { forget(&seed); }
             if !reentered {
                 relinquish(s, "connected_reentry_refused");
-                drop(state); return original!()(context, args);
+                return Drive::Original;
             }
-            0
+            Drive::Value(0)
         }
-        Phase::Exiting => 0,
-        _ => original!()(context, args),
+        Phase::Exiting => Drive::Value(0),
+        _ => Drive::Original,
+    }
+}
+
+#[skyline::hook(offset = 0x2310570)]
+unsafe fn waiting_owner(context: usize, args: usize) -> usize {
+    if !ACTIVE.load(Ordering::Acquire) { return original!()(context, args); }
+    let base = BASE.load(Ordering::Acquire);
+    let origin = STATE.lock().unwrap().as_ref().map(|session| session.origin);
+    let driven = match origin {
+        Some(Origin::Quickplay) => {
+            let Some(owner) = contract::Owner::bind(base, context) else {
+                return original!()(context, args);
+            };
+            drive_waiting(&owner, Origin::Quickplay, "quickplay_owner_bound", context, base)
+        }
+        Some(Origin::LocalWireless) => {
+            let Some(owner) = contract::LdnOwner::bind(base, context) else {
+                return original!()(context, args);
+            };
+            drive_waiting(&owner, Origin::LocalWireless, "local_wireless_owner_bound", context, base)
+        }
+        _ => return original!()(context, args),
+    };
+    match driven {
+        Drive::Original => original!()(context, args),
+        Drive::Value(value) => value,
     }
 }
 
@@ -221,7 +274,7 @@ unsafe fn practice_frame(scene: usize, frame: usize) -> usize {
     let base = BASE.load(Ordering::Acquire);
     let begin = {
         let mut state = STATE.lock().unwrap();
-        let Some(s) = state.as_mut().filter(|s| s.origin == Origin::Quickplay
+        let Some(s) = state.as_mut().filter(|s| matches!(s.origin, Origin::Quickplay | Origin::LocalWireless)
             && s.thread == current_thread()) else { return result; };
         let Some(practice) = contract::Practice::bind(base, scene, frame, s.owner) else { return result; };
         if s.phase == Phase::Returning && (practice.ready(base) || practice.match_received()) {
@@ -260,9 +313,14 @@ unsafe fn scene_network_ready(scene: usize) -> bool {
     // callback survives the practice scene and may run several times per frame.
     if ACTIVE.load(Ordering::Acquire) {
         if let Ok(mut state) = STATE.try_lock() {
-            if let Some(s) = state.as_mut().filter(|s| s.origin == Origin::Quickplay
+            if let Some(s) = state.as_mut().filter(|s| matches!(s.origin, Origin::Quickplay | Origin::LocalWireless)
                 && s.phase == Phase::Requested) {
-                if !super::quickplay_available() || std::time::Instant::now() >= s.request_deadline {
+                let available = match s.origin {
+                    Origin::Quickplay => super::quickplay_available(),
+                    Origin::LocalWireless => super::local_wireless_available(),
+                    Origin::Training => false,
+                };
+                if !available || std::time::Instant::now() >= s.request_deadline {
                     relinquish(s, "connected_request_expired");
                 }
             }

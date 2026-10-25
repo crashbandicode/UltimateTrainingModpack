@@ -20,7 +20,7 @@ Add the class portrait in **Characters → Character Cycles**. When the [cycle](
 
 ![Smash's Mii Fighter editor, opened from Add New.](feature-walkthroughs/mii-editor.png)
 
-In an online (Quickplay) waiting room, the pages offer only Add New. Headgear, Outfit, Color, Voice and Random stay available. If a match interrupts the editor, that same unfinished screen, value, and cursor reopen when you return to waiting practice. Explicit Cancel still leaves without saving. Local Wireless Add New is not opened from this waiting room yet.
+In an online (Quickplay) waiting room, the pages offer only Add New. Headgear, Outfit, Color, Voice and Random stay available. If a match interrupts the editor, that same unfinished screen, value, and cursor reopen when you return to waiting practice. Explicit Cancel still leaves without saving. Local Wireless waiting practice opens Add New and Test on its own parent and returns to that room, including after a match interrupt. Headgear, Outfit, Color, Voice, and Random stay on their native Local Wireless rows.
 
 ## Opponents from your replays
 

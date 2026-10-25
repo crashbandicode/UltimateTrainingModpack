@@ -30,15 +30,19 @@ fn auto_observation(guard: u64, flags: u64) {
 }
 
 unsafe fn store(screen: ui_resume::Screen, focus: i32) -> bool {
-    let (owner, seed, catalog, restoring, queued) = {
+    let (origin, owner, seed, catalog, restoring, queued) = {
         let state = STATE.lock().unwrap();
-        let Some(s) = state.as_ref().filter(|s| s.origin == Origin::Quickplay
+        let Some(s) = state.as_ref().filter(|s| matches!(s.origin, Origin::Quickplay | Origin::LocalWireless)
             && s.interrupted && !s.snapshot_saved && s.thread == current_thread()) else { return true; };
-        (s.owner, s.seed, Arc::clone(&s.catalog), s.restore_ticket, s.phase == Phase::Queued)
+        (s.origin, s.owner, s.seed, Arc::clone(&s.catalog), s.restore_ticket, s.phase == Phase::Queued)
     };
     let base = BASE.load(Ordering::Acquire);
     let seed = if queued { seed } else { super::draft::Draft::Ready(native::snapshot_draft(base)) };
-    let generation = lifecycle::generation_for(owner);
+    let generation = match origin {
+        Origin::Quickplay => lifecycle::generation_for(owner),
+        Origin::LocalWireless => super::ldn_lifecycle::generation_for(owner),
+        Origin::Training => None,
+    };
     let result = generation.ok_or("resume_lobby_owner_missing").and_then(|generation| {
         seed.validate().map_err(|_| "resume_confirmed_draft_invalid")?;
         ui_resume::suspend(generation, ui_resume::Checkpoint { seed, catalog, screen, focus }, restoring)
@@ -403,22 +407,43 @@ pub(super) unsafe fn try_auto_return(scene: usize, frame: usize) {
         auto_observation(3, 0); return;
     }
     let context: usize = native::read(owner_scene, 0xe8);
-    let Some(owner) = contract::Owner::bind(base, context) else { auto_observation(4, 0); return; };
-    let Some(practice) = contract::Practice::bind(base, scene, frame, owner.sequence) else { auto_observation(5, 0); return; };
-    let Some(generation) = lifecycle::generation_for(owner.sequence) else { auto_observation(6, 0); return; };
+    if let Some(owner) = contract::Owner::bind(base, context) {
+        let Some(practice) = contract::Practice::bind(base, scene, frame, owner.sequence) else {
+            auto_observation(5, 0); return;
+        };
+        let Some(generation) = lifecycle::generation_for(owner.sequence) else {
+            auto_observation(6, 0); return;
+        };
+        resume_room(Origin::Quickplay, generation, practice, super::quickplay_available(), base);
+        return;
+    }
+    let Some(owner) = contract::LdnOwner::bind(base, context) else { auto_observation(4, 0); return; };
+    let Some(practice) = contract::Practice::bind(base, scene, frame, owner.sequence) else {
+        auto_observation(5, 0); return;
+    };
+    let Some(generation) = super::ldn_lifecycle::generation_for(owner.sequence) else {
+        auto_observation(6, 0); return;
+    };
+    let lobby_ready = super::local_wireless_available()
+        && !crate::common::is_native_training_mode();
+    resume_room(Origin::LocalWireless, generation, practice, lobby_ready, base);
+}
+
+unsafe fn resume_room(
+    origin: Origin, generation: u64, practice: contract::Practice, lobby_ready: bool, base: usize,
+) {
     let match_received = practice.match_received();
     let no_event = contract::pending_interruption(base) == Some(0);
     let native_ready = practice.ready(base);
     // The native match flag is never cleared on a receiving PracticeScene.
     // A subsequent ready instance under this generation is the return witness.
     ui_resume::observe_practice(generation, match_received, native_ready);
-    let lobby_ready = super::quickplay_available();
     auto_observation(7, u64::from(native_ready) | (u64::from(match_received) << 1)
         | (u64::from(no_event) << 2) | (u64::from(lobby_ready) << 3)
         | (ui_resume::readiness_bits(generation) << 4));
     let ready = !match_received && no_event && native_ready && lobby_ready;
     if let Some((ticket, checkpoint)) = ui_resume::begin(generation, ready, false) {
-        if let Err(reason) = super::resume_checkpoint(ticket, checkpoint) {
+        if let Err(reason) = super::resume_checkpoint(origin, ticket, checkpoint) {
             ui_resume::request_refused(ticket);
             note("automatic_resume_request_refused", [generation, 0, 0, 0]);
             crate::logging::diagnostic(format_args!("[MiiEditor] automatic resume request failed: {reason}"));
