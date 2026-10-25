@@ -3,9 +3,13 @@
 //! Random never leaves Settings: it is selector area 1. The child pages are
 //! editor states 5, 6, 7, and 9. Voice's native entry also pushes state 11;
 //! that preview is not the Test preview unless the stack slot under it is the
-//! Test state. Snapshots store the cursor and value fields the page handlers
-//! already read. They do not set a commit flag and do not write the draft.
+//! Test state. Voice stores fields its handler already reads. Headgear and
+//! Outfit restore `sort_id` before the scroller item. The tagged preview id is
+//! read back and is not written. Color calls the selector at ELF `0x376d990`
+//! and does not write the component highlight. Nothing here sets a commit
+//! flag or writes the saved draft.
 use super::{lua_vm::{Error, Value, Vm}, native, BASE};
+use std::convert::TryFrom;
 use std::sync::{atomic::Ordering, Mutex};
 
 /// Editor state 11 is the shared preview wait. Test pushes 10 then 11. Voice
@@ -47,11 +51,17 @@ pub(super) unsafe fn previous_state(context: usize) -> Option<i32> {
     Some(native::read(context, 0xf8 + (level as usize - 1) * 4))
 }
 
-const TAG: u64 = 0x5a00000000000000;
-const TAG_MASK: u64 = 0xff00000000000000;
+const HAT_TAG: u64 = 0x5a00000000000000;
+const HAT_TAG_MASK: u64 = 0xff00000000000000;
+/// Outfit ids in the open Pirate Outfit capture are `0x1300` in the top 16 bits.
+const OUTFIT_TAG: u64 = 0x1300000000000000;
+const OUTFIT_TAG_MASK: u64 = 0xffff000000000000;
 const ID_MASK: u64 = 0xffffffffff;
 /// Bridge bound, not a native hat-list length. A larger index is abandoned.
 const GEAR_CURSOR_MAX: u32 = 4095;
+/// Bridge bound. Captured pages were `sort_id` 0. `set_sort_id` forwards the
+/// integer to `sort_id_list` without a visible clamp.
+const SORT_MAX: u32 = 255;
 /// Native color browse rejects an index above 11 (`cmp #0xb`).
 const COLOR_MAX: u32 = 11;
 /// Bridge bounds. The voice script's `NUM_VOICE_TYPE` is not a fixed immediate.
@@ -61,6 +71,7 @@ const VOICE_AXIS_MAX: i32 = 255;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct GearSelection {
     pub cursor: u32,
+    pub sort: u32,
     pub live: u64,
     pub paired: u64,
 }
@@ -68,6 +79,7 @@ pub(super) struct GearSelection {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct ColorSelection {
     pub cursor: u32,
+    /// Equipped index at component `+0xdc`. Not written.
     pub paired: u32,
 }
 
@@ -79,16 +91,22 @@ pub(super) struct VoiceSelection {
 }
 
 fn tagged(value: u64) -> bool {
-    value & TAG_MASK == TAG && value & ID_MASK != 0
+    let hat = value & HAT_TAG_MASK == HAT_TAG;
+    let outfit = value & OUTFIT_TAG_MASK == OUTFIT_TAG;
+    (hat || outfit) && value & ID_MASK != 0
 }
 
-pub(super) fn gear(cursor: u32, live: u64, paired: u64) -> Option<GearSelection> {
-    (cursor <= GEAR_CURSOR_MAX && tagged(live) && tagged(paired))
-        .then_some(GearSelection { cursor, live, paired })
+pub(super) fn gear(cursor: u32, sort: u32, live: u64, paired: u64) -> Option<GearSelection> {
+    (cursor <= GEAR_CURSOR_MAX && sort <= SORT_MAX && tagged(live) && tagged(paired))
+        .then_some(GearSelection { cursor, sort, live, paired })
 }
 
-pub(super) fn color(cursor: u32, paired: u32) -> Option<ColorSelection> {
-    (cursor <= COLOR_MAX).then_some(ColorSelection { cursor, paired })
+/// `source_highlight` is selector `+0x254`. A component highlight whose source
+/// index differs is a torn read and is not a selection.
+pub(super) fn color(cursor: u32, paired: u32, source_highlight: u32, source_decided: u32) -> Option<ColorSelection> {
+    (cursor <= COLOR_MAX && paired <= COLOR_MAX && source_highlight == cursor
+        && source_decided == u32::MAX)
+        .then_some(ColorSelection { cursor, paired })
 }
 
 pub(super) fn voice(cursor: i32, voice_type: i32, voice_pitch: i32) -> Option<VoiceSelection> {
@@ -98,15 +116,62 @@ pub(super) fn voice(cursor: i32, voice_type: i32, voice_pitch: i32) -> Option<Vo
         .then_some(VoiceSelection { cursor, voice_type, voice_pitch })
 }
 
-/// Component offsets written back for an unfinished page. Commit gates and the
-/// draft stores (`+0x140` gear id, color `+0xd8`, voice flag `+0x100`) are absent.
-/// Color `+0xe0` is captured with the index and not written: this component
-/// family also uses `+0xe0` as its script-running word.
-pub(super) const GEAR_COMPONENT_WRITES: [usize; 3] = [0x148, 0x150, 0x164];
-pub(super) const COLOR_COMPONENT_WRITES: [usize; 1] = [0xdc];
-pub(super) const CONTEXT_CURSOR: usize = 0x1c8;
-#[cfg(test)]
-const COMMIT_OFFSETS: [usize; 5] = [0xb8, 0xe8, 0x100, 0x140, 0x168];
+// Gear restore writes no component word. `+0x140` is the preview id. ELF
+// `0x19cc3f0` compares it with the already indexed row and can store decide
+// byte `+0x168` on the mismatch side.
+/// Component highlight. ELF `0x19c90bc` loads it. When selector `+0x25c` is
+/// `-1`, a difference from selector `+0x254` is copied here at `0x19c90cc`
+/// and byte `+0xe8` is set. That byte is the highlight-dirty flag. `+0xdc`
+/// is the equipped index, copied from `+0x25c` only when that word is not `-1`.
+const COLOR_HIGHLIGHT: usize = 0xd8;
+const COLOR_EQUIPPED: usize = 0xdc;
+const COLOR_SOURCE: usize = 0xd0;
+const COLOR_SOURCE_HIGHLIGHT: usize = 0x254;
+const COLOR_SOURCE_DECIDED: usize = 0x25c;
+/// `selector.select(index, 0)`. `x0` is the object at component `+0xd0`.
+/// The call updates the button and stores the index at `+0x250` and `+0x254`.
+/// Its body does not store the decided index at `+0x25c`. The component's
+/// normal update copies the new highlight and refreshes the preview afterward.
+const COLOR_SELECT: usize = 0x376d990;
+
+/// What an open gear component is doing. `running` is the u32 at `+0xe8`.
+/// `commit` is the byte at `+0x168`. The preview id is the u64 at `+0x140`;
+/// the equipped id is the u64 at `+0x150`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum GearWindow {
+    /// Page is open and the preview id is a real tagged selection.
+    Open(GearSelection),
+    /// Decide byte is set. Let that native completion finish.
+    Deciding,
+    /// Running word is clear. The mirrors have already been dropped.
+    Closed,
+    /// Running word is neither the open value nor clear.
+    Pending,
+    /// Page is open, but the preview or equipped id is not a tagged selection.
+    Unreadable,
+}
+
+/// Ready requires the helper to have run, then the same sort, the same scroller
+/// index, and the same tagged id. The id alone is not the row. The index alone
+/// is not the item once the sort can change.
+pub(super) fn gear_row_ready(wrote: bool, seen: GearSelection, wanted: GearSelection) -> bool {
+    wrote
+        && seen.sort == wanted.sort
+        && seen.cursor == wanted.cursor
+        && seen.live == wanted.live
+        && seen.paired == wanted.paired
+}
+
+pub(super) fn gear_window(running: u32, commit: u8, preview: u64, equipped: u64) -> GearWindow {
+    if commit != 0 { return GearWindow::Deciding; }
+    if running == 0 { return GearWindow::Closed; }
+    if running != 1 { return GearWindow::Pending; }
+    // The scroller index and sort are not known here. Capture fills both.
+    match gear(0, 0, preview, equipped) {
+        Some(selection) => GearWindow::Open(selection),
+        None => GearWindow::Unreadable,
+    }
+}
 
 pub(super) enum Shot<T> {
     Wait,
@@ -124,11 +189,21 @@ struct Wait { context: usize, state: i32, frames: u16 }
 static WAIT: Mutex<Option<Wait>> = Mutex::new(None);
 struct VoiceRestore { context: usize, wanted: VoiceSelection, wrote: bool, failed: Option<u64> }
 static VOICE: Mutex<Option<VoiceRestore>> = Mutex::new(None);
+struct GearRestore { context: usize, wanted: GearSelection, wrote: bool, failed: Option<u64> }
+static GEAR: Mutex<Option<GearRestore>> = Mutex::new(None);
+struct ColorRestore { context: usize, wanted: ColorSelection, called: bool }
+static COLOR: Mutex<Option<ColorRestore>> = Mutex::new(None);
 
 pub(super) fn clear() {
-    *WAIT.lock().unwrap() = None;
+    clear_wait();
     *VOICE.lock().unwrap() = None;
+    *GEAR.lock().unwrap() = None;
+    *COLOR.lock().unwrap() = None;
 }
+
+// Capture also serves restore polling. A successful observation must not retire
+// a setter already issued while its native preview catches up on the next frame.
+fn clear_wait() { *WAIT.lock().unwrap() = None; }
 
 fn attempts(context: usize, state: i32) -> u16 {
     let mut slot = WAIT.lock().unwrap();
@@ -170,18 +245,45 @@ pub(super) unsafe fn capture_gear(context: usize, state: i32) -> Shot<GearSelect
     if native::read::<u32>(context, 0x14c) < 1 {
         return abandon_or_wait(context, state, 3);
     }
-    // `+0xe8` set and `+0x168` set is the native decide/commit pair.
-    if native::read::<u32>(component, 0xe8) != 0 || native::read::<u8>(component, 0x168) != 0 {
-        return Shot::Wait;
+    let window = gear_window(
+        native::read(component, 0xe8),
+        native::read(component, 0x168),
+        native::read(component, 0x140),
+        native::read(component, 0x150),
+    );
+    match window {
+        GearWindow::Open(mut selection) => match read_gear_row(component) {
+            Ok(row) => {
+                selection.cursor = row.item;
+                selection.sort = row.sort;
+                clear_wait();
+                Shot::Found(selection)
+            }
+            Err(Error::Binding | Error::Stack | Error::Identity) => abandon_or_wait(context, state, 3),
+            Err(error) => Shot::Abandoned { state, detail: 0x100 + error.code() as u64 },
+        },
+        GearWindow::Unreadable => abandon_or_wait(context, state, 4),
+        GearWindow::Deciding => abandon_or_wait(context, state, 5),
+        GearWindow::Closed => abandon_or_wait(context, state, 6),
+        GearWindow::Pending => abandon_or_wait(context, state, 7),
     }
-    match gear(
-        native::read(component, GEAR_COMPONENT_WRITES[2]),
-        native::read(component, GEAR_COMPONENT_WRITES[0]),
-        native::read(component, GEAR_COMPONENT_WRITES[1]),
-    ) {
-        Some(selection) => { clear(); Shot::Found(selection) }
-        None => abandon_or_wait(context, state, 4),
-    }
+}
+
+pub(super) fn gear_item(value: i32) -> Option<u32> {
+    u32::try_from(value).ok().filter(|item| *item <= GEAR_CURSOR_MAX)
+}
+
+struct GearRow { sort: u32, item: u32 }
+
+unsafe fn read_gear_row(component: usize) -> Result<GearRow, Error> {
+    let mut vm = Vm::bind_gear(BASE.load(Ordering::Acquire), component)?;
+    let page = Vm::gear_page(component)?;
+    let [done, sort, item] = vm.call::<3>(include_bytes!("lua_helpers/gear_capture.luac"), &[page])?;
+    if done.int() != Some(0) { return Err(Error::Value); }
+    let sort = u32::try_from(sort.int().ok_or(Error::Value)?).map_err(|_| Error::Value)?;
+    if sort > SORT_MAX { return Err(Error::Value); }
+    let item = gear_item(item.int().ok_or(Error::Value)?).ok_or(Error::Value)?;
+    Ok(GearRow { sort, item })
 }
 
 pub(super) unsafe fn capture_color(context: usize, state: i32) -> Shot<ColorSelection> {
@@ -191,11 +293,18 @@ pub(super) unsafe fn capture_color(context: usize, state: i32) -> Shot<ColorSele
     if native::read::<u32>(context, 0x14c) < 1 {
         return abandon_or_wait(context, state, 3);
     }
-    if native::read::<u32>(component, 0xb8) != 0 || native::read::<u8>(component, 0xe8) != 0 {
-        return Shot::Wait;
-    }
-    match color(native::read(component, COLOR_COMPONENT_WRITES[0]), native::read(component, 0xe0)) {
-        Some(selection) => { clear(); Shot::Found(selection) }
+    let Some(source) = color_source(component) else {
+        return abandon_or_wait(context, state, 4);
+    };
+    // Byte `+0xe8` is highlight-dirty, set when `0x19c9020` copies `+0x254`
+    // into `+0xd8`. It is not a commit, and `+0xb8` stays 2 on an open page.
+    match color(
+        native::read(component, COLOR_HIGHLIGHT),
+        native::read(component, COLOR_EQUIPPED),
+        native::read(source, COLOR_SOURCE_HIGHLIGHT),
+        native::read(source, COLOR_SOURCE_DECIDED),
+    ) {
+        Some(selection) => { clear_wait(); Shot::Found(selection) }
         None => abandon_or_wait(context, state, 4),
     }
 }
@@ -221,7 +330,7 @@ pub(super) unsafe fn capture_voice(context: usize, state: i32) -> Shot<VoiceSele
         return Shot::Wait;
     }
     match read_voice(component) {
-        Ok(selection) => { clear(); Shot::Found(selection) }
+        Ok(selection) => { clear_wait(); Shot::Found(selection) }
         Err(Error::Binding) => abandon_or_wait(context, state, 3),
         Err(error) => Shot::Abandoned { state, detail: 0x100 + error.code() as u64 },
     }
@@ -244,22 +353,67 @@ pub(super) unsafe fn prepare(context: usize, screen: &super::ui_resume::Screen) 
 }
 
 unsafe fn apply_gear(context: usize, holder: usize, wanted: GearSelection) {
+    let failed = {
+        let mut job = GEAR.lock().unwrap();
+        if job.as_ref().is_none_or(|job| job.context != context || job.wanted != wanted) {
+            *job = Some(GearRestore { context, wanted, wrote: false, failed: None });
+        }
+        let job = job.as_mut().unwrap();
+        job.wrote || job.failed.is_some()
+    };
+    if failed { return; }
     let Some(component) = pointer(context, holder) else { return; };
-    if native::read::<u32>(context, 0x14c) < 1
-        || native::read::<u32>(component, 0xe8) != 0
-        || native::read::<u8>(component, 0x168) != 0 { return; }
-    native::write(component, GEAR_COMPONENT_WRITES[0], wanted.live);
-    native::write(component, GEAR_COMPONENT_WRITES[1], wanted.paired);
-    native::write(component, GEAR_COMPONENT_WRITES[2], wanted.cursor);
-    native::write(context, CONTEXT_CURSOR, wanted.cursor);
+    let result: Result<(), Error> = (|| {
+        let mut vm = Vm::bind_gear(BASE.load(Ordering::Acquire), component)?;
+        let page = Vm::gear_page(component)?;
+        let sort = i32::try_from(wanted.sort).map_err(|_| Error::Value)?;
+        let item = i32::try_from(wanted.cursor).map_err(|_| Error::Value)?;
+        vm.call::<0>(include_bytes!("lua_helpers/gear_focus.luac"), &[
+            page, Value::integer(sort), Value::integer(item),
+        ])?;
+        Ok(())
+    })();
+    if let Some(job) = GEAR.lock().unwrap().as_mut() {
+        match result {
+            Ok(()) => job.wrote = true,
+            Err(Error::Binding) => {}
+            Err(error) => job.failed = Some(error.code() as u64),
+        }
+    }
+}
+
+unsafe fn color_source(component: usize) -> Option<usize> {
+    // Native Color state 2 is the interactive page. Entry/exit use the same
+    // allocation, but their selector is not eligible for a restore operation.
+    if native::read::<i32>(component, 0xb8) != 2 { return None; }
+    let source: usize = native::read(component, COLOR_SOURCE);
+    if !native::aligned(source) { return None; }
+    let vtable: usize = native::read(source, 0);
+    native::aligned(vtable).then_some(source)
 }
 
 unsafe fn apply_color(context: usize, wanted: ColorSelection) {
+    let called = {
+        let mut job = COLOR.lock().unwrap();
+        if job.as_ref().is_none_or(|job| job.context != context || job.wanted != wanted) {
+            *job = Some(ColorRestore { context, wanted, called: false });
+        }
+        job.as_ref().unwrap().called
+    };
+    if called { return; }
     let Some(component) = pointer(context, HOLD_COLOR) else { return; };
-    if native::read::<u32>(context, 0x14c) < 1
-        || native::read::<u32>(component, 0xb8) != 0
-        || native::read::<u8>(component, 0xe8) != 0 { return; }
-    native::write(component, COLOR_COMPONENT_WRITES[0], wanted.cursor);
+    if native::read::<u32>(context, 0x14c) < 1 { return; }
+    let Some(source) = color_source(component) else { return; };
+    if native::read::<u32>(source, COLOR_SOURCE_DECIDED) != u32::MAX { return; }
+    let select: unsafe extern "C" fn(usize, u32, u32) =
+        std::mem::transmute(BASE.load(Ordering::Acquire) + COLOR_SELECT);
+    select(source, wanted.cursor, 0);
+    let published = native::read::<u32>(source, COLOR_SOURCE_HIGHLIGHT) == wanted.cursor
+        && native::read::<u32>(source, COLOR_SOURCE_DECIDED) == u32::MAX;
+    if !published { return; }
+    if let Some(job) = COLOR.lock().unwrap().as_mut() {
+        if job.context == context && job.wanted == wanted { job.called = true; }
+    }
 }
 
 unsafe fn prepare_voice(context: usize, wanted: VoiceSelection) {
@@ -300,18 +454,23 @@ pub(super) enum Poll { Pending, Ready, Failed(u64) }
 
 pub(super) unsafe fn poll_gear(context: usize, state: i32, wanted: GearSelection) -> Poll {
     if native::read::<i32>(context, 0x148) != state { return Poll::Pending; }
+    let (failed, wrote) = GEAR.lock().unwrap().as_ref()
+        .map(|job| (job.failed, job.wrote)).unwrap_or((None, false));
+    if let Some(detail) = failed { return Poll::Failed(detail); }
+    if !wrote { return Poll::Pending; }
     match capture_gear(context, state) {
-        Shot::Found(seen) if seen == wanted => Poll::Ready,
+        Shot::Found(seen) if gear_row_ready(wrote, seen, wanted) => Poll::Ready,
         Shot::Abandoned { detail, .. } => Poll::Failed(detail),
-        Shot::Wait | Shot::Found(_) => Poll::Pending,
+        _ => Poll::Pending,
     }
 }
 
 pub(super) unsafe fn poll_color(context: usize, wanted: ColorSelection) -> Poll {
     if native::read::<i32>(context, 0x148) != 7 { return Poll::Pending; }
+    if !COLOR.lock().unwrap().as_ref().is_some_and(|job|
+        job.context == context && job.wanted == wanted && job.called) { return Poll::Pending; }
     match capture_color(context, 7) {
-        // `paired` (+0xe0) is recorded and not written back.
-        Shot::Found(seen) if seen.cursor == wanted.cursor => Poll::Ready,
+        Shot::Found(seen) if seen == wanted => Poll::Ready,
         Shot::Abandoned { detail, .. } => Poll::Failed(detail),
         _ => Poll::Pending,
     }
@@ -359,24 +518,98 @@ mod tests {
 
     #[test]
     fn selections_reject_commit_shaped_or_untagged_values() {
-        let live = TAG | 0x11;
-        let paired = TAG | 0x22;
-        assert_eq!(gear(4, live, paired), Some(GearSelection { cursor: 4, live, paired }));
-        assert_eq!(gear(4, 0x11, paired), None, "untagged id is not a hat or outfit");
-        assert_eq!(gear(GEAR_CURSOR_MAX + 1, live, paired), None);
-        assert_eq!(color(11, 0), Some(ColorSelection { cursor: 11, paired: 0 }));
-        assert_eq!(color(3, 99), Some(ColorSelection { cursor: 3, paired: 99 }));
-        assert_eq!(color(12, 0), None);
+        let live = HAT_TAG | 0x11;
+        let paired = HAT_TAG | 0x22;
+        assert_eq!(gear(4, 0, live, paired), Some(GearSelection { cursor: 4, sort: 0, live, paired }));
+        assert_eq!(gear(4, 0, 0x11, paired), None, "untagged id is not a hat or outfit");
+        let outfit_live = 0x13002b147bc59435;
+        let outfit_paired = 0x1300291cce3b03f5;
+        assert_eq!(gear(4, 0, outfit_live, outfit_paired).map(|gear| (gear.live, gear.paired)),
+            Some((outfit_live, outfit_paired)));
+        assert_eq!(gear(4, 0, 0x13ffff0000000000, outfit_paired), None, "outfit sentinel is not a row");
+        assert_eq!(gear(GEAR_CURSOR_MAX + 1, 0, live, paired), None);
+        assert_eq!(gear(4, SORT_MAX + 1, live, paired), None);
+        assert_eq!(color(11, 0, 11, u32::MAX), Some(ColorSelection { cursor: 11, paired: 0 }));
+        assert_eq!(color(3, 99, 3, u32::MAX), None);
+        assert_eq!(color(3, 5, 3, 3), None, "native confirmation is already in progress");
+        assert_eq!(color(12, 0, 12, u32::MAX), None);
+        assert_eq!(color(7, 5, 6, u32::MAX), None, "highlight without its source index");
         assert_eq!(voice(3, 1, 2), Some(VoiceSelection { cursor: 3, voice_type: 1, voice_pitch: 2 }));
         assert_eq!(voice(-1, 1, 2), None);
+        assert_eq!(gear_item(7), Some(7));
+        assert_eq!(gear_item(0), Some(0));
+        assert_eq!(gear_item(-1), None);
     }
 
     #[test]
-    fn restore_does_not_write_commit_fields() {
-        let gear_writes = GEAR_COMPONENT_WRITES.iter().copied().chain([CONTEXT_CURSOR]);
-        let color_writes = COLOR_COMPONENT_WRITES.iter().copied();
-        assert!(COMMIT_OFFSETS.iter().all(|offset| !gear_writes.clone().any(|write| write == *offset)));
-        assert!(COMMIT_OFFSETS.iter().all(|offset| !color_writes.clone().any(|write| write == *offset)));
+    fn gear_ready_needs_the_sort_the_index_and_the_tagged_id() {
+        let live = HAT_TAG | 0x11;
+        let other = HAT_TAG | 0x33;
+        let equipped = HAT_TAG | 0x22;
+        let wanted = gear(4, 1, live, equipped).expect("wanted");
+        assert!(!gear_row_ready(false, wanted, wanted));
+        assert!(gear_row_ready(true, wanted, wanted));
+        assert!(!gear_row_ready(true, gear(0, 1, live, equipped).expect("index"), wanted));
+        assert!(!gear_row_ready(true, gear(4, 0, live, equipped).expect("sort"), wanted));
+        assert!(!gear_row_ready(true, gear(4, 1, other, equipped).expect("id"), wanted));
+        assert!(!gear_row_ready(true, gear(4, 1, live, HAT_TAG | 0x44).expect("equipped"), wanted));
+    }
+
+    #[test]
+    fn open_headgear_keeps_the_preview_id_and_a_closed_page_does_not() {
+        // Run109 component 0x11fdc49880 while 1-Up was highlighted and unconfirmed.
+        // `+0x148`/`+0x150` were the equipped default. `+0x140` was the other tagged id.
+        // `+0x164` was 0. `+0xe8` was 1 and byte `+0x168` was 0.
+        const PREVIEW: u64 = 0x5a000114d6b13212;
+        const EQUIPPED: u64 = 0x5a00000fa9efa5ea;
+        match gear_window(1, 0, PREVIEW, EQUIPPED) {
+            GearWindow::Open(selection) => {
+                assert_eq!(selection.live, PREVIEW);
+                assert_eq!(selection.paired, EQUIPPED);
+                assert_ne!(selection.live, selection.paired);
+                // Scroller index and sort are filled by the page read, not here.
+                assert_eq!(selection.cursor, 0);
+                assert_eq!(selection.sort, 0);
+            }
+            other => panic!("open page did not keep the preview: {:?}", other),
+        }
+        // Highlight still on the equipped hat: the preview id is that hat, not a cancel.
+        match gear_window(1, 0, EQUIPPED, EQUIPPED) {
+            GearWindow::Open(selection) => assert_eq!(selection.live, EQUIPPED),
+            other => panic!("equipped highlight was dropped: {:?}", other),
+        }
+        assert_eq!(gear_window(1, 1, PREVIEW, EQUIPPED), GearWindow::Deciding);
+        assert_eq!(gear_window(0, 0, 0, 0), GearWindow::Closed);
+        assert_eq!(gear_window(2, 0, PREVIEW, EQUIPPED), GearWindow::Pending);
+        assert_eq!(gear_window(1, 0, 0, EQUIPPED), GearWindow::Unreadable);
+        assert_eq!(gear_window(1, 0, 0x5affff0000000000, EQUIPPED), GearWindow::Unreadable);
+        // Pirate Outfit, unconfirmed. Top 16 bits are 0x1300, not the hat tag.
+        const OUTFIT_PREVIEW: u64 = 0x13002b147bc59435;
+        const OUTFIT_EQUIPPED: u64 = 0x1300291cce3b03f5;
+        match gear_window(1, 0, OUTFIT_PREVIEW, OUTFIT_EQUIPPED) {
+            GearWindow::Open(selection) => {
+                assert_eq!(selection.live, OUTFIT_PREVIEW);
+                assert_eq!(selection.paired, OUTFIT_EQUIPPED);
+            }
+            other => panic!("open outfit was dropped: {:?}", other),
+        }
+        assert_eq!(gear_window(1, 0, 0x13ffff0000000000, OUTFIT_EQUIPPED), GearWindow::Unreadable);
+    }
+
+    #[test]
+    fn color_highlight_requires_the_same_source_index() {
+        // Cyan was highlight 6 and pink was 7. Equipped blue stayed 5 at +0xdc.
+        // Selector +0x25c stays the captured decided word. -1 is all bits set.
+        let cyan = color(6, 5, 6, u32::MAX).expect("cyan");
+        let pink = color(7, 5, 7, u32::MAX).expect("pink");
+        assert_eq!(cyan.cursor, 6);
+        assert_eq!(pink.cursor, 7);
+        assert_eq!(cyan.paired, 5);
+        assert_eq!(pink.paired, 5);
+        assert_ne!(cyan.cursor, cyan.paired);
+        assert_eq!(color(7, 5, 5, u32::MAX), None);
+        assert_ne!(pink, color(7, 6, 7, u32::MAX).expect("equipped changed"));
+        assert_eq!(color(7, 5, 7, 5), None, "decided source is not an unfinished highlight");
     }
 
     #[test]

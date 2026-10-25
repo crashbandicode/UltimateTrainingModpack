@@ -75,6 +75,19 @@ impl Vm {
     pub(super) unsafe fn bind_from(base: usize, component: usize, minimum_age: u32) -> Result<Self, Error> {
         if !aligned(component) || read::<i32>(component, 0xe0) != 1
             || read::<u32>(component, 0xe4) < minimum_age { return Err(Error::Binding); }
+        Self::attach(base, component)
+    }
+
+    /// Headgear and Outfit leave `+0xe0` and `+0xe4` at 0 while the page is
+    /// open. `+0xe8 == 1` and decide byte `+0x168 == 0` are that gate. The
+    /// holder at `+0x40` is the same player chain Voice uses.
+    pub(super) unsafe fn bind_gear(base: usize, component: usize) -> Result<Self, Error> {
+        if !aligned(component) || read::<u32>(component, 0xe8) != 1
+            || read::<u8>(component, 0x168) != 0 { return Err(Error::Binding); }
+        Self::attach(base, component)
+    }
+
+    unsafe fn attach(base: usize, component: usize) -> Result<Self, Error> {
         let holder: usize = read(component, 0x40);
         if !aligned(holder) { return Err(Error::Binding); }
         let player: usize = read(holder, 0);
@@ -190,6 +203,34 @@ impl Vm {
         if page.tag != 0x45 || initialized.tag != 0x45 || page.bits != initialized.bits {
             return Err(Error::Identity);
         }
+        Ok(page)
+    }
+
+    /// Headgear and Outfit yield inside a 2-upvalue, 28-instruction frame.
+    /// Upvalue 0 is the environment. Upvalue 1 is the page table. The yielded
+    /// function is the light C at ELF `0x39034d0`; its caller link is `+0x10`.
+    pub(super) unsafe fn gear_page(component: usize) -> Result<Value, Error> {
+        let holder: usize = read(component, 0x40);
+        if !aligned(holder) { return Err(Error::Binding); }
+        let player: usize = read(holder, 0);
+        if !aligned(player) { return Err(Error::Binding); }
+        let coroutine: usize = read(player, 8);
+        if !aligned(coroutine) { return Err(Error::Binding); }
+        let ci: usize = read(coroutine, 0x20);
+        if !aligned(ci) { return Err(Error::Binding); }
+        let current_slot: usize = read(ci, 0);
+        if !aligned(current_slot) { return Err(Error::Binding); }
+        let current: Value = read(current_slot, 0);
+        if current.tag != 0x16 { return Err(Error::Binding); }
+        let previous: usize = read(ci, 0x10);
+        if !aligned(previous) { return Err(Error::Binding); }
+        let slot: usize = read(previous, 0);
+        if !aligned(slot) { return Err(Error::Binding); }
+        let closure: Value = read(slot, 0);
+        Self::check_closure(closure, 2, 28)?;
+        let environment = Self::upvalue(closure, 0)?;
+        let page = Self::upvalue(closure, 1)?;
+        if environment.tag != 0x45 || page.tag != 0x45 { return Err(Error::Identity); }
         Ok(page)
     }
 

@@ -1,0 +1,3 @@
+-- Page table is upvalue 1. sort_id selects the native order; the scroller item is the row in that order.
+local page = ...
+return 0, page.sort_id, page.scroller:get_selected_item()
