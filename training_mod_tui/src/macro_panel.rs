@@ -80,6 +80,8 @@ struct Loaded {
 
 struct NameDraft {
     name: String,
+    /// Native caret in UTF-16 units; independent of the terminal grid selection.
+    native_cursor: usize,
     page: usize,
     cursor: usize,
     frames: Vec<InputFrame>,
@@ -200,6 +202,27 @@ impl MacroUi {
         match &self.screen { Screen::Save(draft) => Some(&draft.name), _ => None }
     }
 
+    pub fn native_name_cursor(&self) -> Option<usize> {
+        match &self.screen { Screen::Save(draft) => Some(draft.native_cursor), _ => None }
+    }
+
+    /// Checkpoint an unfinished native edit, without confirmation or any I/O
+    /// effect. Empty/whitespace drafts are valid; final save validation is separate.
+    /// Rejected text/caret leaves the entire existing draft untouched.
+    pub fn checkpoint_native_name(&mut self, name: &str, cursor_utf16: usize) -> bool {
+        let Screen::Save(draft) = &mut self.screen else { return false };
+        if name.chars().count() > MAX_NAME_CHARS || name.chars().any(char::is_control) {
+            return false;
+        }
+        let units: Vec<u16> = name.encode_utf16().collect();
+        if cursor_utf16 > units.len() || String::from_utf16(&units[..cursor_utf16]).is_err() {
+            return false;
+        }
+        draft.name = name.to_owned();
+        draft.native_cursor = cursor_utf16;
+        true
+    }
+
     pub fn native_name_view(&self) -> Option<View> {
         let Screen::Save(draft) = &self.screen else { return None };
         Some(View { title: "Save Recording".into(), selected: 0,
@@ -211,6 +234,7 @@ impl MacroUi {
     /// Validation failure leaves the full draft available for correction/retry.
     pub fn confirm_native_name(&mut self, name: String) -> Effect {
         let Screen::Save(draft) = &mut self.screen else { return Effect::None };
+        draft.native_cursor = name.encode_utf16().count();
         draft.name = name;
         self.finish_save()
     }
@@ -299,6 +323,7 @@ impl MacroUi {
         self.held_save = None;
         self.screen = Screen::Save(Box::new(NameDraft {
             name: "Recording".to_owned(),
+            native_cursor: "Recording".encode_utf16().count(),
             page: 0,
             cursor: 31,
             frames,
@@ -509,6 +534,7 @@ impl MacroUi {
     pub fn restore_draft(&mut self, recording: MacroRecording) {
         self.screen = Screen::Save(Box::new(NameDraft {
             name: recording.name.clone(),
+            native_cursor: recording.name.encode_utf16().count(),
             page: 0,
             cursor: 31,
             frames: recording.frames.clone(),
@@ -625,6 +651,7 @@ impl MacroUi {
             Key::Clear => {
                 if let Screen::Save(draft) = &mut self.screen {
                     draft.name.clear();
+                    draft.native_cursor = 0;
                 }
                 Effect::None
             }
@@ -684,6 +711,7 @@ impl MacroUi {
             return;
         }
         draft.name.push(ch);
+        draft.native_cursor = draft.name.encode_utf16().count();
     }
 
     fn pop_char(&mut self) {
@@ -691,6 +719,7 @@ impl MacroUi {
             return;
         };
         draft.name.pop();
+        draft.native_cursor = draft.name.encode_utf16().count();
     }
 
     fn extra(&mut self) -> Effect {
@@ -798,6 +827,7 @@ impl MacroUi {
         };
         let draft = NameDraft {
             name: source.recording.name.clone(),
+            native_cursor: source.recording.name.encode_utf16().count(),
             page: 0,
             cursor: 31,
             frames: source.recording.frames.clone(),
@@ -1298,6 +1328,78 @@ mod tests {
         ui.on_pad(Pad::Back);
         ui.invalidate_practice_context();
         assert!(!ui.is_open(), "a cancelled draft must not reappear on return");
+    }
+
+    #[test]
+    fn native_checkpoint_survives_repeated_interruption_without_commit() {
+        let mut ui = MacroUi::new();
+        let mut original = sample(Placement { delta_x: 7.0, delta_y: -2.0, ..Placement::default() });
+        original.start = StartState::neutral(0x48, 0, 1.0);
+        original.set_mii(exact_mii()).unwrap();
+        ui.restore_draft(original.clone());
+        ui.on_pad(Pad::Left);
+        let grid_selection = ui.view().unwrap().selected;
+        for (text, caret) in [("😀 middle", 2), ("still unfinished", 6)] {
+            assert!(ui.checkpoint_native_name(text, caret));
+            ui.invalidate_practice_context();
+            ui.invalidate_practice_context();
+            assert_eq!(ui.name_prompt(), Some(text));
+            assert_eq!(ui.native_name_cursor(), Some(caret));
+            assert_eq!(ui.view().unwrap().selected, grid_selection);
+            assert!(ui.loaded_id().is_none());
+            assert!(!ui.playback_allowed());
+        }
+        let Effect::Save(saved) = ui.confirm_native_name(ui.name_prompt().unwrap().to_owned()) else {
+            panic!("only explicit confirm may save");
+        };
+        assert_eq!(saved.name, "still unfinished");
+        assert_eq!(saved.frames, original.frames);
+        assert_eq!(saved.start, original.start);
+        assert_eq!(saved.placement, original.placement);
+        assert_eq!(saved.mii, original.mii);
+    }
+
+    #[test]
+    fn native_checkpoint_rejects_invalid_values_atomically_and_keeps_empty_drafts() {
+        let mut ui = MacroUi::new();
+        ui.restore_draft(sample(Placement::default()));
+        let full = "😀".repeat(48); // 48 scalars, 96 UTF-16 units.
+        assert!(ui.checkpoint_native_name(&full, 2));
+        for (bad, caret) in [("a".repeat(49), 0), ("x\0y".into(), 0),
+            ("x\ny".into(), 0), ("😀".into(), 1), ("a".into(), 2)] {
+            assert!(!ui.checkpoint_native_name(&bad, caret));
+            assert_eq!(ui.name_prompt(), Some(full.as_str()));
+            assert_eq!(ui.native_name_cursor(), Some(2));
+        }
+        assert!(ui.checkpoint_native_name("", 0));
+        ui.invalidate_practice_context();
+        assert_eq!(ui.name_prompt(), Some(""));
+        assert!(matches!(ui.confirm_native_name("".into()), Effect::Notify(_)));
+        assert_eq!(ui.name_prompt(), Some(""), "invalid confirmation cannot discard a draft");
+        assert!(matches!(ui.on_pad(Pad::Back), Effect::None));
+        ui.invalidate_practice_context();
+        assert_eq!(ui.name_prompt(), None);
+        assert_eq!(ui.native_name_cursor(), None);
+        assert!(!ui.checkpoint_native_name("late callback", 0));
+        assert!(matches!(ui.confirm_native_name("late enter".into()), Effect::None));
+    }
+
+    #[test]
+    fn native_caret_survives_placement_but_not_new_draft_or_discard() {
+        let mut ui = MacroUi::new();
+        ui.restore_draft(sample(Placement::default()));
+        ui.restored_target(1, (4.0, 8.0));
+        assert!(ui.checkpoint_native_name("custom name", 3));
+        ui.native_name_placement();
+        assert!(!ui.checkpoint_native_name("wrong screen", 0));
+        ui.on_pad(Pad::Back);
+        assert_eq!(ui.name_prompt(), Some("custom name"));
+        assert_eq!(ui.native_name_cursor(), Some(3));
+        ui.close_transient(); // A new lobby discards all unfinished naming state.
+        assert_eq!(ui.native_name_cursor(), None);
+        ui.offer_save(frames(), start(), false, "13.0.5");
+        assert_eq!(ui.name_prompt(), Some("Recording"));
+        assert_eq!(ui.native_name_cursor(), Some(9));
     }
 
     #[test]

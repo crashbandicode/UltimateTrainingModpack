@@ -31,22 +31,27 @@ pub fn suspend_waiting() {
     lock_write(&UI).invalidate_practice_context();
     crate::replay_capture::suspend_waiting();
     cancel_character_selection();
-    NAME_JOB.lock().unwrap().take();
+    retire_name(true);
     SESSION_GENERATION.fetch_add(1, Ordering::Relaxed);
 }
 pub fn waiting_scene_changed(same_lobby: bool) {
-    if !same_lobby && SUSPENDED.swap(false, Ordering::AcqRel) {
-        lock_write(&UI).close_transient();
-        crate::replay_capture::discard_waiting();
+    if !same_lobby {
+        retire_name(false);
+        if SUSPENDED.swap(false, Ordering::AcqRel) {
+            lock_write(&UI).close_transient();
+            crate::replay_capture::discard_waiting();
+        }
     }
 }
 pub fn resume_waiting() {
-    if super::lobby::active() && practice::enabled()
+    if waiting_name_ready() { SUSPENDED.store(false, Ordering::Release); }
+}
+fn waiting_name_ready() -> bool {
+    super::lobby::active() && practice::enabled()
         && crate::character_roster::waiting_drafts_ready()
         && unsafe { crate::common::is_ready_go() }
         && try_get_module_accessor(FighterId::Player).is_some()
         && try_get_module_accessor(FighterId::CPU).is_some()
-    { SUSPENDED.store(false, Ordering::Release); }
 }
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 // A preview's normal stop/restore advances the motion generation while its
@@ -109,7 +114,58 @@ fn submit_loaded_character() {
 }
 static NAME_JOB: std::sync::Mutex<Option<NameJob>> = std::sync::Mutex::new(None);
 
-struct NameJob { id: u64, generation: u64, replay: bool }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NamePhase { Active, Closing, Parked, Discarding }
+
+#[derive(Clone, Copy)]
+struct NameJob { id: u64, generation: u64, replay: bool, waiting: bool, phase: NamePhase }
+
+/// Retirement callbacks may be on another thread. Retain the native job until
+/// the owning UI boundary has captured values and acknowledged Finalize.
+fn retire_name(keep_waiting: bool) {
+    let mut pending = NAME_JOB.lock().unwrap();
+    let Some(job) = pending.as_mut() else { return };
+    if job.waiting && keep_waiting && job.phase != NamePhase::Discarding {
+        if job.phase == NamePhase::Parked { return; }
+        job.phase = NamePhase::Closing;
+    } else if job.waiting && job.phase != NamePhase::Parked {
+        job.phase = NamePhase::Discarding;
+    } else {
+        crate::native_keyboard::interrupt(job.id);
+        pending.take();
+        return;
+    }
+    crate::native_keyboard::interrupt(job.id);
+}
+
+/// Evaluated before opening and again after Calc, outside all keyboard locks.
+fn waiting_name_allowed() -> bool {
+    if suspended() || !waiting_name_ready() { return false; }
+    NAME_JOB.lock().unwrap().as_ref().is_some_and(|job| job.waiting
+        && job.phase == NamePhase::Active
+        && job.generation == SESSION_GENERATION.load(Ordering::Relaxed))
+}
+
+fn resume_name() {
+    if !NAME_JOB.lock().unwrap().as_ref().is_some_and(|job| job.phase == NamePhase::Parked) { return; }
+    if suspended() || !waiting_name_ready() || crate::native_keyboard::busy() { return; }
+    let mut pending = NAME_JOB.lock().unwrap();
+    let Some(job) = pending.as_mut().filter(|job| job.phase == NamePhase::Parked) else { return };
+    let values = {
+        let ui = lock_read(&UI);
+        ui.name_prompt().zip(ui.native_name_cursor()).map(|(name, cursor)| (name.to_owned(), cursor))
+    };
+    let Some((name, cursor)) = values else { pending.take(); return };
+    let id = NAME_SERIAL.fetch_add(1, Ordering::Relaxed);
+    match crate::native_keyboard::request_inline(id, &name, cursor) {
+        Ok(()) => {
+            job.id = id;
+            job.generation = SESSION_GENERATION.load(Ordering::Relaxed);
+            job.phase = NamePhase::Active;
+        }
+        Err(error) => { pending.take(); drop(pending); notify(&error); }
+    }
+}
 // Only flags set by this panel are released, and only on the same live object.
 static PANEL_STOPS: RwLock<Vec<(u32, usize, usize)>> = RwLock::new(Vec::new());
 
@@ -235,13 +291,20 @@ pub fn clip_foreground() -> bool {
 pub fn naming_pending() -> bool { NAME_JOB.lock().unwrap().is_some() }
 
 fn request_native_name() {
-    if crate::native_keyboard::busy() || naming_pending() { return; }
-    let Some(initial) = lock_read(&UI).name_prompt().map(str::to_owned) else { return };
+    if suspended() || crate::native_keyboard::busy() || naming_pending() { return; }
+    let values = {
+        let ui = lock_read(&UI);
+        ui.name_prompt().zip(ui.native_name_cursor()).map(|(name, cursor)| (name.to_owned(), cursor))
+    };
+    let Some((initial, cursor)) = values else { return };
     let id = NAME_SERIAL.fetch_add(1, Ordering::Relaxed);
     let job = NameJob { id, generation: SESSION_GENERATION.load(Ordering::Relaxed),
-        replay: crate::replay_capture::panel_visible() };
+        replay: crate::replay_capture::panel_visible(), waiting: super::lobby::is_waiting_scene(),
+        phase: NamePhase::Active };
     *NAME_JOB.lock().unwrap() = Some(job);
-    if let Err(error) = crate::native_keyboard::request(id, "Name macro", &initial) {
+    let result = if job.waiting { crate::native_keyboard::request_inline(id, &initial, cursor) }
+        else { crate::native_keyboard::request(id, "Name macro", &initial) };
+    if let Err(error) = result {
         NAME_JOB.lock().unwrap().take();
         notify(&error);
     }
@@ -249,18 +312,44 @@ fn request_native_name() {
 
 /// Poll outside input mapping and without holding UI/game locks across the applet.
 pub fn service_keyboard() {
-    crate::native_keyboard::service();
+    resume_name();
+    crate::native_keyboard::service(waiting_name_allowed);
+    // Every Calc checkpoints text/caret without invoking confirm_native_name.
+    // A new-lobby discard cannot publish a late callback into another draft.
+    {
+        let mut pending = NAME_JOB.lock().unwrap();
+        if let Some(job) = pending.as_mut().filter(|job| job.waiting && job.phase != NamePhase::Discarding) {
+            if let Some((text, cursor)) = crate::native_keyboard::snapshot(job.id) {
+                if !lock_write(&UI).checkpoint_native_name(&text, cursor) {
+                    job.phase = NamePhase::Discarding;
+                    crate::native_keyboard::interrupt(job.id);
+                }
+            }
+        }
+    }
     let Some((id, result)) = crate::native_keyboard::poll() else { return };
     // A stale completion may race a new scene's request. Never retire the newer
     // job just because the old applet finally returned.
+    let ready = !suspended() && waiting_name_ready();
     let job = {
         let mut pending = NAME_JOB.lock().unwrap();
-        if pending.as_ref().is_some_and(|job| job.id == id) { pending.take() } else { None }
+        let Some(job) = pending.as_mut().filter(|job| job.id == id) else { return };
+        if job.phase == NamePhase::Discarding { pending.take(); return; }
+        // Only an acknowledged, closed keyboard may become a value-only parked
+        // request. An interruption racing the completion still wins over Enter.
+        if job.waiting && !matches!(result, crate::native_keyboard::KeyboardResult::Cancelled)
+            && (job.phase == NamePhase::Closing || !ready
+                || job.generation != SESSION_GENERATION.load(Ordering::Relaxed)
+                || matches!(result, crate::native_keyboard::KeyboardResult::Interrupted)) {
+            job.phase = NamePhase::Parked;
+            return;
+        }
+        pending.take()
     };
     let Some(job) = job else { return };
     crate::logging::diagnostic(format_args!("[NativeKeyboard] consume id={} replay={}", id, job.replay));
-    if job.id != id || job.generation != SESSION_GENERATION.load(Ordering::Relaxed)
-        || !practice::enabled() || suspended()
+    if !job.waiting && (job.generation != SESSION_GENERATION.load(Ordering::Relaxed)
+        || !practice::enabled() || suspended())
     { return; }
     // The closing applet's confirm/cancel must not become a gameplay input.
     super::frame_counter::reset_frame_count(*menu::MENU_CLOSE_FRAME_COUNTER);
@@ -273,11 +362,12 @@ pub fn service_keyboard() {
             apply_effect(effect);
         }
         crate::native_keyboard::KeyboardResult::Cancelled => {
-            if job.replay { lock_write(&UI).on_pad(Pad::Back); }
+            if job.waiting || job.replay { lock_write(&UI).on_pad(Pad::Back); }
         }
         crate::native_keyboard::KeyboardResult::Failed(code) => {
             notify(&format!("System keyboard failed ({code:#X}); draft kept"));
         }
+        crate::native_keyboard::KeyboardResult::Interrupted => {}
     }
     assign(&menu::MENU_RECEIVED_INPUT, true);
     crate::logging::diagnostic(format_args!("[NativeKeyboard] applied id={}", id));
@@ -598,7 +688,7 @@ pub fn take_legacy() -> Option<(f32, i32)> {
 pub fn clear_session() {
     GENERATION.fetch_add(1, Ordering::Relaxed);
     SESSION_GENERATION.fetch_add(1, Ordering::Relaxed);
-    NAME_JOB.lock().unwrap().take();
+    retire_name(suspended());
     if !suspended() {
         lock_write(&UI).close_transient();
         crate::replay_capture::close_editor();
