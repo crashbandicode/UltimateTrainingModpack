@@ -11,8 +11,8 @@ Authorized 2026-10-25: implement all fourteen source-audited gaps on a separate 
 | 3 | Named macro library/editor and replay-clip editing/preview | Both waiting modes | Quickplay named save, interrupted naming return and 500-frame clip preview observed. Active-CPU browser deadlock fixed in source; combined validation pending |
 | 4 | Training-style L+R+A quick reset | Both waiting modes | Implemented; Quickplay reset observed |
 | 5 | Hitbox and grab-box visualization | Both waiting modes | Implemented; Quickplay jab/aerial hitboxes and whiffed grab volumes observed |
-| 6 | Hidden CPU tech animations | Both waiting modes | Implemented; applicable-tech runtime check pending |
-| 7 | Practice-stage hazards setting | Both waiting modes | Implemented; active hazards runtime check pending |
+| 6 | Hidden CPU tech animations | Both waiting modes | Implemented; Quickplay charged-hit landing hid the CPU during its tech and restored visibility afterward |
+| 7 | Practice-stage hazards setting | Both waiting modes | Implemented; Quickplay WarioWare microgames ran with On and remained absent after reloading with Off |
 | 8 | Immediate stage change and per-entry stage rotation | Quickplay (LDN already implemented) | Direct Quickplay change observed. Missing return preload fixed at the empty-resource native stage setter; combined build/return validation pending |
 | 9 | Full managed Kirby hat selection | Quickplay | Implemented; Quickplay managed Mario/Link hats observed |
 | 10 | Full character-item selection | Quickplay | Implemented; Quickplay absent-source Stitch-Face grant and save/load observed |
