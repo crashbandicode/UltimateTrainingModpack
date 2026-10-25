@@ -41,15 +41,21 @@
     },
     {
       "name": "settings_capture.lua",
-      "source_sha256": "5990f7b3ea96e84632bf34c9ed7f69bcc89c05ae4a9dd7a94bbe39bb39450209",
-      "bytes": 559,
-      "bytecode_sha256": "d4612ce8623b16e6f96823b04c049194e4596556919d1e2f3011a6b7cc927726"
+      "source_sha256": "6ebcec535f6289ae4abc23be97edd363ebf5711966aee02b371b808f277ad03d",
+      "bytes": 478,
+      "bytecode_sha256": "984a537395d78c8555b3264eacd03028241384e858bd701bfcbb8fb92da9608c"
     },
     {
       "name": "settings_focus.lua",
-      "source_sha256": "d6860ef3632562ca2bf2f7b44d91023f260b5f89535aa33bc2a406c53562ad77",
-      "bytes": 470,
-      "bytecode_sha256": "a8359e851a3156b175b3f2c7399b877c0598ea824a96577c5c6a82d46bb2b9dd"
+      "source_sha256": "029070cab093fc75174c61c113e65f3eecc99771d5ad9dec4c75a6458a0a4944",
+      "bytes": 386,
+      "bytecode_sha256": "f2527e45cfbb58c9c57c296df7ac8249a24da07c184364c0a98a492568b9b06d"
+    },
+    {
+      "name": "settings_random.lua",
+      "source_sha256": "0e6e0f5a6521490590c661e88c79cec9f80aa4af431c3ca51c493c7f947d038a",
+      "bytes": 540,
+      "bytecode_sha256": "e9df46fec86e4a133aff1501ed594c160d1701ef42b99d314e9f04633e41bef6"
     },
     {
       "name": "settings_policy.lua",

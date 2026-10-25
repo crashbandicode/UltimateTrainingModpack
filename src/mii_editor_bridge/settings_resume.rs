@@ -9,8 +9,8 @@ pub(super) struct Snapshot {
     pub row: i32,
     // 0: settings list; 1: Random; 2: Test; 3: native Save footer.
     pub area: i32,
-    // The unfinished ID_POPUP_MMIIF_EDIT_RANDOM prompt. Area 1 alone is the
-    // Random highlight, which is not that confirmation.
+    // The page coroutine is inside wrapped update_random. Area 1 alone is the
+    // Random highlight, which has not entered that method.
     pub confirming: bool,
 }
 
@@ -47,6 +47,7 @@ pub(super) fn clear() { *JOB.lock().unwrap() = None; }
 pub(super) fn release() {
     clear();
     *POLICY.lock().unwrap() = None;
+    *WRAP.lock().unwrap() = None;
 }
 
 pub(super) fn capture(context: usize) -> Option<Result<Option<Snapshot>, Error>> {
@@ -103,14 +104,16 @@ impl Job {
                     self.operation = Operation::Restore { wanted, applied: true };
                     return Ok(seen);
                 }
-                // A busy manager may still be the previous prompt. Opening
-                // again would stack ID_POPUP_MMIIF_EDIT_RANDOM. A highlight
-                // is not busy, so that is the one open.
-                let open = i32::from(wanted.confirming && seen.is_some_and(|seen| !seen.confirming));
-                vm.call::<0>(include_bytes!("lua_helpers/settings_focus.luac"), &[
-                    settings, Value::integer(wanted.row), Value::integer(wanted.area),
-                    Value::integer(open),
-                ])?;
+                vm.call::<0>(include_bytes!("lua_helpers/settings_focus.luac"),
+                    &[settings, Value::integer(wanted.row), Value::integer(wanted.area)])?;
+                // The page coroutine consumes the queue on its next
+                // update_selector1. This pcall only sets the flag.
+                if wanted.confirming && seen.is_some_and(|seen| !seen.confirming) {
+                    let [status] = vm.call::<1>(include_bytes!("lua_helpers/settings_random.luac"),
+                        &[settings, Value::integer(1)])?;
+                    if status.int() == Some(2) { return Ok(None); }
+                    if status.int() != Some(0) { return Err(Error::Value); }
+                }
                 self.operation = Operation::Restore { wanted, applied: true };
                 Ok(None)
             }
@@ -196,11 +199,84 @@ unsafe fn apply_policy(context: usize, component: usize) {
     }
 }
 
+struct WrapLatch {
+    context: usize,
+    component: usize,
+    last_age: u32,
+    attempts: u16,
+    settled: bool,
+}
+
+static WRAP: Mutex<Option<WrapLatch>> = Mutex::new(None);
+
+impl WrapLatch {
+    const ATTEMPTS: u16 = 120;
+
+    fn due(slot: &mut Option<Self>, context: usize, component: usize, age: u32) -> bool {
+        if !slot.as_ref().is_some_and(|entry| entry.context == context
+            && entry.component == component && age >= entry.last_age) {
+            *slot = None;
+        }
+        let entry = slot.get_or_insert_with(|| Self {
+            context, component, last_age: 0, attempts: 0, settled: false,
+        });
+        entry.last_age = age;
+        age >= 1 && !entry.settled && entry.attempts < Self::ATTEMPTS
+    }
+
+    fn record(&mut self, result: &Result<i32, Error>) -> Option<(&'static str, [u64; 4])> {
+        self.attempts = self.attempts.saturating_add(1);
+        let (age, attempts) = (u64::from(self.last_age), u64::from(self.attempts));
+        let failed = |code: u64| Some(("settings_random_wrapper_failed", [code, age, attempts, 0]));
+        match result {
+            Ok(installed @ (0 | 1)) => {
+                self.settled = true;
+                Some(("settings_random_wrapped", [u64::from(*installed == 1), age, attempts, 0]))
+            }
+            Ok(2) | Err(Error::Binding | Error::Stack) if self.attempts < Self::ATTEMPTS => None,
+            Ok(2) => { self.settled = true; failed(0) }
+            Err(error) => { self.settled = true; failed(error.code() as u64) }
+            Ok(_) => { self.settled = true; failed(Error::Value.code() as u64) }
+        }
+    }
+}
+
+/// Local Wireless replaces `update_random` when its cosmetic policy settles.
+/// Wrapping before that assignment would put the native method back in front
+/// of the replacement. Quickplay and Training have no such replacement.
+fn wrapper_after_policy(suppress: bool, policy_settled: bool) -> bool {
+    !suppress || policy_settled
+}
+
+unsafe fn install_random_wrapper(component: usize) -> Result<i32, Error> {
+    // Age 1 is before main enables input. Capture keeps the age >= 2 bind.
+    let mut vm = Vm::bind_from(BASE.load(Ordering::Acquire), component, 1)?;
+    let settings = vm.settings()?;
+    let [status] = vm.call::<1>(include_bytes!("lua_helpers/settings_random.luac"),
+        &[settings, Value::integer(0)])?;
+    status.int().ok_or(Error::Value)
+}
+
+unsafe fn ensure_random_wrapper(context: usize, component: usize) {
+    let age: u32 = native::read(component, 0xe4);
+    if !WrapLatch::due(&mut WRAP.lock().unwrap(), context, component, age) { return; }
+    let result = install_random_wrapper(component);
+    let event = WRAP.lock().unwrap().as_mut()
+        .filter(|entry| entry.context == context && entry.component == component)
+        .and_then(|entry| entry.record(&result));
+    if let Some((name, values)) = event {
+        if let Some(session) = STATE.lock().unwrap().as_mut() { session.event(name, values); }
+        if name == "settings_random_wrapper_failed" {
+            crate::logging::diagnostic(format_args!("[MiiEditor] random wrapper failed: {result:?}"));
+        }
+    }
+}
+
 #[skyline::hook(offset = 0x19ca590)]
 unsafe fn settings_frame(component: usize) {
     let context = EDIT_CONTEXT.load(Ordering::Acquire);
-    // The ordinary editor pays no Lua work: an unowned editor never reaches the
-    // session lock, and an owned Training editor only compares its origin.
+    // An unowned editor never reaches the session lock. An owned Settings page
+    // installs the Random wrapper once, before main enables input.
     let pending = JOB.lock().unwrap().as_ref().is_some_and(|job|
         job.context == context && job.result.is_none());
     let origin = if EDIT_OWNED.load(Ordering::Acquire) && context != 0 {
@@ -210,11 +286,19 @@ unsafe fn settings_frame(component: usize) {
     } else { None };
     let owned = origin.is_some();
     let suppress = origin.is_some_and(suppress_native_cosmetics);
-    let bound = owned && (pending || suppress) && {
+    let bound = owned && {
         let holder: usize = native::read(context, 0x178);
         native::aligned(holder) && native::read::<usize>(holder, 0x80) == component
     };
     if bound && suppress { apply_policy(context, component); }
+    // Age 1 is the first main resume, and this hook runs before it. The
+    // method table already holds update_random. Local Wireless must finish
+    // its replacement first.
+    let policy_settled = POLICY.lock().unwrap().as_ref().is_some_and(|entry|
+        entry.settled && entry.context == context && entry.component == component);
+    if bound && wrapper_after_policy(suppress, policy_settled) {
+        ensure_random_wrapper(context, component);
+    }
     // Age 0 starts the coroutine; wait until its default selection has run.
     if bound && pending && native::read::<u32>(component, 0xe4) > 1 {
         let mut job = JOB.lock().unwrap().take().unwrap();
@@ -275,10 +359,34 @@ mod tests {
         assert!(Snapshot::parse(Value::integer(2), Value::integer(1), Value::integer(2)).is_err());
         let focus = include_str!("lua_helpers/settings_focus.lua");
         let capture = include_str!("lua_helpers/settings_capture.lua");
-        assert!(focus.contains("open_database(\"ID_POPUP_MMIIF_EDIT_RANDOM\")"));
+        let random = include_str!("lua_helpers/settings_random.lua");
+        assert!(!focus.contains("open_database"));
         assert!(!focus.contains("set_random"));
+        assert!(capture.contains("mii_resume_random_pending"));
+        assert!(!capture.contains("is_busy"));
         assert!(!capture.contains("get_result"));
-        assert!(!capture.contains("set_random"));
+        assert!(random.contains("update_random(self)"));
+        assert!(random.contains("self:update_random()"));
+        assert!(!random.contains("set_random"));
+        assert!(!random.contains("open_database"));
+        assert!(!random.contains("pcall"));
+        assert!(!random.contains("get_decided_button_id"));
+        assert!(wrapper_after_policy(false, false));
+        assert!(!wrapper_after_policy(true, false));
+        assert!(wrapper_after_policy(true, true));
+    }
+
+    #[test]
+    fn random_wrapper_latches_once_per_settings_page() {
+        let mut slot = None;
+        assert!(!WrapLatch::due(&mut slot, 1, 2, 0), "age 0 has not built the method table");
+        assert!(WrapLatch::due(&mut slot, 1, 2, 1));
+        assert_eq!(slot.as_mut().unwrap().record(&Ok(2)), None);
+        assert!(WrapLatch::due(&mut slot, 1, 2, 1));
+        assert_eq!(slot.as_mut().unwrap().record(&Ok(1)),
+            Some(("settings_random_wrapped", [1, 1, 2, 0])));
+        assert!(!WrapLatch::due(&mut slot, 1, 2, 4), "one install per page");
+        assert!(WrapLatch::due(&mut slot, 1, 9, 1), "a new component wraps again");
     }
 
     #[test]
