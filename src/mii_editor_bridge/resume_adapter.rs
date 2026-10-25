@@ -38,13 +38,15 @@ unsafe fn store(screen: ui_resume::Screen, focus: i32) -> bool {
     };
     let base = BASE.load(Ordering::Acquire);
     let seed = if queued { seed } else {
-        // The live row is the confirmed draft, except a gear preview can already
-        // occupy the packed hat or outfit field. Put the equipped id back on
-        // this copy. The cursor restore still carries the preview id.
+        // The live row is the confirmed draft, except an open preview can
+        // already occupy the packed hat, outfit, or colour field. Put the
+        // equipped value back on this copy. The cursor restore still carries
+        // the preview.
         let mut row = native::snapshot_draft(base);
         match screen {
             ui_resume::Screen::Headgear(gear) => cosmetic_resume::keep_equipped_part(&mut row, true, gear),
             ui_resume::Screen::Outfit(gear) => cosmetic_resume::keep_equipped_part(&mut row, false, gear),
+            ui_resume::Screen::Color(color) => cosmetic_resume::keep_equipped_color(&mut row, color),
             _ => {}
         }
         super::draft::Draft::Ready(row)

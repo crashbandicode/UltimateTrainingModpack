@@ -8,7 +8,7 @@
 //! read back and is not written. Color calls the selector at ELF `0x376d990`
 //! and does not write the component highlight. Nothing here sets a commit
 //! flag or the live draft. A checkpoint copy may put the equipped id back
-//! into the hat or outfit field when that field still holds the preview.
+//! into the hat, outfit, or colour field when that field still holds the preview.
 use super::{lua_vm::{Error, Value, Vm}, native, BASE};
 use std::convert::TryFrom;
 use std::sync::{atomic::Ordering, Mutex};
@@ -175,6 +175,22 @@ pub(super) fn keep_equipped_part(row: &mut [u8], hat: bool, gear: GearSelection)
     bytes.copy_from_slice(field);
     if u64::from_le_bytes(bytes) == gear.live && gear.live != gear.paired {
         row[offset..offset + 8].copy_from_slice(&gear.paired.to_le_bytes());
+    }
+}
+
+/// Saved-row colour is the byte at `+0x140`. While Color is open and component
+/// `+0xb8` is not 0, ELF `0x180b698` stores highlight `+0xd8` there after
+/// highlight-dirty `+0xe8` is set. Entry `0x180b890` loads that byte and
+/// `0x19c9fe0` copies it into `+0xd8`, `+0xdc`, and `+0xe0`. This puts the
+/// equipped index back on the checkpoint copy when the byte is still the
+/// preview. Any other byte, including the equipped index itself, stays. The
+/// live draft and the voice byte at `+0x141` are not written.
+pub(super) fn keep_equipped_color(row: &mut [u8], color: ColorSelection) {
+    let (Ok(preview), Ok(equipped)) = (u8::try_from(color.cursor), u8::try_from(color.paired)) else {
+        return;
+    };
+    if row.get(0x140).copied() == Some(preview) && preview != equipped {
+        row[0x140] = equipped;
     }
 }
 
@@ -666,6 +682,33 @@ mod tests {
         keep_equipped_part(&mut row, true, same);
         assert_eq!(at(&row, 0x138), equipped);
         keep_equipped_part(&mut [], true, selected_gear);
+    }
+
+    #[test]
+    fn checkpoint_keeps_the_equipped_color_when_the_packed_byte_is_the_preview() {
+        let selected = color(7, 5, 7, u32::MAX).expect("pink");
+        let mut row = vec![0u8; 0x142];
+        row[0x130] = 0x11;
+        row[0x140] = 7;
+        row[0x141] = 37;
+        keep_equipped_color(&mut row, selected);
+        assert_eq!(row[0x140], 5);
+        assert_eq!(row[0x141], 37);
+        assert_eq!(row[0x130], 0x11);
+        keep_equipped_color(&mut row, selected);
+        assert_eq!(row[0x140], 5);
+        row[0x140] = 6;
+        keep_equipped_color(&mut row, selected);
+        assert_eq!(row[0x140], 6);
+        let same = color(5, 5, 5, u32::MAX).expect("blue");
+        row[0x140] = 7;
+        keep_equipped_color(&mut row, same);
+        assert_eq!(row[0x140], 7);
+        row[0x140] = 5;
+        keep_equipped_color(&mut row, same);
+        assert_eq!(row[0x140], 5);
+        keep_equipped_color(&mut [], selected);
+        assert_eq!(row[0x141], 37);
     }
 
 }
