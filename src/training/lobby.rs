@@ -14,6 +14,8 @@ macro_rules! trace {
 static NATIVE_UI_BUSY: AtomicBool = AtomicBool::new(false);
 static UI_READY: AtomicBool = AtomicBool::new(false);
 static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
+// Setting-plus-tuple edge for the hazard receipt; UI readiness is not part of it.
+static WAS_REQUESTED: AtomicBool = AtomicBool::new(false);
 static SEEN_ENTRIES: AtomicU32 = AtomicU32::new(0);
 static LAST_MODE: AtomicU64 = AtomicU64::new(u64::MAX);
 static CPU_OPTIONS_DIRTY: AtomicBool = AtomicBool::new(true);
@@ -135,13 +137,19 @@ pub fn update() {
             );
         }
     }
-    if !requested() {
+    let requested_now = requested();
+    if !requested_now {
         UI_READY.store(false, Ordering::Release);
+    }
+    // Disabling practice by its setting (or leaving the waiting family) releases the
+    // hazard receipt. A waiting-UI readiness drop alone must not: the override would
+    // otherwise be gone until the next stage load while practice stays requested.
+    if WAS_REQUESTED.swap(requested_now, Ordering::AcqRel) && !requested_now {
+        crate::hazard_manager::depart();
     }
     let now = active();
     let previous = WAS_ACTIVE.swap(now, Ordering::AcqRel);
     if now != previous {
-        if !now { crate::hazard_manager::depart(); }
         SEEN_ENTRIES.store(0, Ordering::Relaxed);
         super::clear_session_state();
         settings_changed();
@@ -151,7 +159,8 @@ pub fn update() {
             game_mode::current()
         );
     }
-    unsafe { super::practice::refresh(); }
+    // The practice entry lease is refreshed once per game frame from the P1 body's
+    // frame callback, not from every caller of this update.
 }
 
 pub unsafe fn observe_fighter(accessor: &mut smash::app::BattleObjectModuleAccessor) {

@@ -188,6 +188,12 @@ unsafe extern "C" fn fighter_vtable_on_frame_inner(fighter: &mut smash::app::Fig
 
 unsafe extern "C" fn fighter_vtable_on_frame(fighter: &mut smash::app::Fighter) {
     lobby::update();
+    // One native entry-lease refresh per game frame, on the P1 body's own callback.
+    // Entry destruction and scene changes still retire immediately through
+    // `practice::entry_departed` / `practice::scene_departed`.
+    if fighter.battle_object.entry_id == 0 {
+        practice::refresh();
+    }
     tech::restore_visibility(&mut *fighter.battle_object.module_accessor);
     let trace_identity = [fighter as *mut _ as u64, fighter.battle_object.module_accessor as u64,
         u64::from(fighter.battle_object.battle_object_id), u64::from(fighter.battle_object.kind), fighter.battle_object.entry_id];

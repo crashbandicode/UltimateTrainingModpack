@@ -36,16 +36,43 @@ static LOAD_ADDRESS: LazyLock<usize> = LazyLock::new(get_hazard_hook_address);
 // retain the native original and update the last value actually written.
 static WAITING_OVERRIDE: Mutex<Option<policy::Override>> = Mutex::new(None);
 
+/// Game-thread release: the scene tuple changed or practice was disabled by its
+/// setting. Restores the native byte while it still holds our last write.
 pub fn depart() {
     let mut owned = WAITING_OVERRIDE.lock().unwrap();
-    let Some(previous) = owned.take() else { return; };
-    unsafe {
-        let address = *HAZARD_FLAG_ADDRESS;
-        if let Some(original) = crate::native_fields::read::<u8>(address, 0)
-            .and_then(|observed| previous.restore(observed)) {
-            crate::native_fields::write_unchecked(address, 0, original);
-        }
+    if let Some(previous) = owned.take() {
+        unsafe { restore(previous); }
     }
+}
+
+/// Stage-load release: retire only a receipt recorded for a different scene than the
+/// one now loading. The same waiting scene reloading its stage keeps its receipt and
+/// re-records below. Nothing else about practice is touched from the stage loader.
+fn depart_unless_scene(current: Option<policy::Scene>) {
+    let mut owned = WAITING_OVERRIDE.lock().unwrap();
+    let departed = (*owned).filter(|previous| previous.departs(current));
+    if let Some(previous) = departed {
+        *owned = None;
+        unsafe { restore(previous); }
+    }
+}
+
+unsafe fn restore(previous: policy::Override) {
+    let address = *HAZARD_FLAG_ADDRESS;
+    if let Some(original) = crate::native_fields::read::<u8>(address, 0)
+        .and_then(|observed| previous.restore(observed)) {
+        crate::native_fields::write_unchecked(address, 0, original);
+    }
+}
+
+/// The two waiting families the shared PracticeScene setup builds, as the one shared
+/// classification; the waiting UI need not be ready yet because stage loading
+/// precedes it. `None` for Training, matches, arenas and every other scene.
+fn waiting_scene(mode: crate::common::game_mode::Mode) -> Option<policy::Scene> {
+    use training_mod_consts::mii::backend::Layout;
+    Layout::scene(mode.initialized, mode.melee, mode.mode, true)
+        .filter(|layout| layout.waiting())
+        .map(|_| policy::Scene { melee: mode.melee, mode: mode.mode })
 }
 
 fn get_hazard_flag_address() -> usize {
@@ -102,21 +129,21 @@ fn get_hazard_hook_address() -> usize {
 
 #[hook(offset = *LOAD_ADDRESS, inline)]
 fn hazard_intercept(_ctx: &skyline::hooks::InlineCtx) {
-    // Stage loading can precede the first fighter/UI update. Retire the previous
-    // scene before recording this scene's override, not at that later callback.
-    crate::training::lobby::update();
+    // Stage loading can precede the first fighter/UI update. Retire only the hazard
+    // receipt here, by its recorded scene identity, so the native byte is back before
+    // this load reads it. Every other practice retirement stays on the game thread's
+    // own scene update; this hook never runs it.
+    let scene = crate::common::game_mode::current().and_then(waiting_scene);
+    depart_unless_scene(scene);
     unsafe {
         if is_training_mode() {
             mod_handle_hazards();
-        } else if crate::common::game_mode::current().is_some_and(|mode|
-            mode.initialized && mode.melee == 0x0d
-                && (mode.mode == 0x02010000 || mode.mode & 0x7fffff00 == 0x07010100))
-            && crate::training::lobby::requested() {
+        } else if let Some(scene) = scene.filter(|_| crate::training::lobby::requested()) {
             let address = *HAZARD_FLAG_ADDRESS;
             let mut owned = WAITING_OVERRIDE.lock().unwrap();
             let Some(before) = crate::native_fields::read::<u8>(address, 0) else { return; };
             let written = u8::from(read(&MENU).stage_hazards == OnOff::ON);
-            *owned = Some(policy::Override::record(*owned, before, written));
+            *owned = Some(policy::Override::record(*owned, scene, before, written));
             crate::native_fields::write_unchecked(address, 0, written);
         }
     }

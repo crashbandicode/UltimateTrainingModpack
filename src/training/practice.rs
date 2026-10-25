@@ -67,6 +67,10 @@ pub fn retire() {
     }
 }
 
+/// Once per game frame, from the P1 body's frame callback: retire a lease whose
+/// entries were replaced and resume suspended waiting drafts. The two native entry
+/// resolutions below are the only per-frame cost; immediate retirement on entry
+/// destruction or scene change does not wait for this.
 pub unsafe fn refresh() {
     if !enabled() { return; }
     if !OWNED.lock().unwrap().active() && !super::named_macros::suspended() { return; }
