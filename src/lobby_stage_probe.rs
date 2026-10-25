@@ -132,7 +132,7 @@ unsafe fn stage_entry(ctx: &mut InlineCtx) {
         let empty = crate::native_fields::child(base, 0x532a9d0)
             .and_then(|owner| crate::native_fields::read::<usize>(owner, 2 * 8)) == Some(0);
         if !empty { return; }
-        prepare_entry(index);
+        if prepare_entry(index).is_none() { return; }
         let Some(stage) = CYCLES.lock().unwrap()[index].enter() else { return; };
         stage
     };
