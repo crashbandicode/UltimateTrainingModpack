@@ -1,6 +1,6 @@
 use crate::info;
 use crate::offsets::OFFSET_ACTIVATE_AUTONOMY;
-use smash::app::{self, lua_bind::*, smashball::is_training_mode};
+use smash::app::{self, lua_bind::*};
 use smash::lib::lua_const::*;
 
 #[repr(C)]
@@ -33,7 +33,7 @@ pub struct WeaponWorkModule {
 // Prevent Order Loss
 #[skyline::hook(offset = *OFFSET_ACTIVATE_AUTONOMY)]
 pub unsafe fn autonomy_handle(weapon: *mut app::Weapon, work_module: *mut WeaponWorkModule) {
-    if !is_training_mode() {
+    if !crate::training::save_states::effects_enabled() {
         return original!()(weapon, work_module);
     }
     let pikmin_boma = (*work_module).owner;

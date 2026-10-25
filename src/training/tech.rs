@@ -18,7 +18,13 @@ use training_mod_sync::*;
 
 static TECH_ROLL_DIRECTION: RwLock<Direction> = RwLock::new(Direction::empty());
 static MISS_TECH_ROLL_DIRECTION: RwLock<Direction> = RwLock::new(Direction::empty());
-static NEEDS_VISIBLE: RwLock<bool> = RwLock::new(false);
+static HIDDEN: RwLock<Option<(u32, usize, f32, usize)>> = RwLock::new(None);
+
+pub fn forget_hidden_entry(entry: usize) {
+    let mut hidden = lock_write(&HIDDEN);
+    if hidden.is_some_and(|(_, _, _, owner)| owner == entry) { *hidden = None; }
+}
+pub fn forget_hidden_scene() { assign(&HIDDEN, None); }
 static DEFAULT_FIXED_CAM_CENTER: RwLock<Vector3f> = RwLock::new(Vector3f {
     x: 0.0,
     y: 0.0,
@@ -348,12 +354,27 @@ unsafe fn get_snake_laydown_lockout_time(module_accessor: &mut BattleObjectModul
     )
 }
 
-pub unsafe fn hide_tech() {
+/// Restore only the body whose visibility we changed, on its own live callback.
+/// A replacement never inherits the old body's cursor/visibility receipt.
+pub unsafe fn restore_visibility(module: &mut BattleObjectModuleAccessor) {
+    let identity = (module.battle_object_id, module as *mut _ as usize);
+    let owned = read(&HIDDEN);
+    if let Some((object, address, cursor, _)) = owned {
+        if identity == (object, address) && (!super::practice::enabled()
+            || read(&MENU).tech_hide == OnOff::OFF
+            || ![*FIGHTER_STATUS_KIND_DOWN, *FIGHTER_STATUS_KIND_PASSIVE, *FIGHTER_STATUS_KIND_PASSIVE_FB]
+                .contains(&StatusModule::status_kind(module))) {
+            VisibilityModule::set_whole(module, true);
+            WorkModule::set_float(module, cursor, *FIGHTER_INSTANCE_WORK_ID_FLOAT_CURSOR_OFFSET_Y);
+            assign(&HIDDEN, None);
+        }
+    }
+}
+
+pub unsafe fn hide_tech(module_accessor: &mut BattleObjectModuleAccessor) {
     if !is_training_mode() || read(&MENU).tech_hide == OnOff::OFF {
         return;
     }
-    let module_accessor = try_get_module_accessor(FighterId::CPU)
-        .expect("Could not get CPU module accessor in hide_tech");
     // Handle invisible tech animations
     let status = StatusModule::status_kind(module_accessor);
     let teching_statuses = [
@@ -362,6 +383,12 @@ pub unsafe fn hide_tech() {
         *FIGHTER_STATUS_KIND_PASSIVE_FB, // Tech Roll
     ];
     if teching_statuses.contains(&status) {
+        let identity = (module_accessor.battle_object_id, module_accessor as *mut _ as usize);
+        if read(&HIDDEN).is_none_or(|(object, address, _, _)| identity != (object, address)) {
+            let Some(entry) = super::practice::entry(1) else { return; };
+            let cursor = WorkModule::get_float(module_accessor, *FIGHTER_INSTANCE_WORK_ID_FLOAT_CURSOR_OFFSET_Y);
+            assign(&HIDDEN, Some((identity.0, identity.1, cursor, entry)));
+        }
         // Force hide the cursor with fixed camera
         WorkModule::set_float(
             module_accessor,
@@ -370,7 +397,6 @@ pub unsafe fn hide_tech() {
         );
         // Disable visibility
         if MotionModule::frame(module_accessor) >= 6.0 {
-            assign(&NEEDS_VISIBLE, true);
             VisibilityModule::set_whole(module_accessor, false);
             EffectModule::set_visible_kind(module_accessor, Hash40::new("sys_nopassive"), false);
             EffectModule::set_visible_kind(module_accessor, Hash40::new("sys_down_smoke"), false);
@@ -384,17 +410,11 @@ pub unsafe fn hide_tech() {
         }
         if MotionModule::end_frame(module_accessor) - MotionModule::frame(module_accessor) <= 5.0 {
             // Re-enable visibility
-            assign(&NEEDS_VISIBLE, false);
             VisibilityModule::set_whole(module_accessor, true);
         }
     } else {
         // If the CPU's tech status was interrupted, make them visible again
-        let mut needs_visible_lock = lock_write(&NEEDS_VISIBLE);
-        if *needs_visible_lock {
-            *needs_visible_lock = false;
-            VisibilityModule::set_whole(module_accessor, true);
-        }
-        drop(needs_visible_lock);
+        restore_visibility(module_accessor);
     }
 }
 

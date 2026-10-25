@@ -3,6 +3,9 @@ use skyline::hook;
 use skyline::hooks::A64InlineHook;
 use skyline::text_iter::{add_get_imm, adrp_get_imm, Instruction::*, TextIter};
 use smash::app::smashball::is_training_mode;
+use std::sync::Mutex;
+
+mod policy;
 
 use crate::common::consts::*;
 use crate::logging::*;
@@ -29,6 +32,21 @@ enum HookState {
 
 static HAZARD_FLAG_ADDRESS: LazyLock<usize> = LazyLock::new(get_hazard_flag_address);
 static LOAD_ADDRESS: LazyLock<usize> = LazyLock::new(get_hazard_hook_address);
+// Serialize receipt publication with the write/restore. Repeated waiting loads
+// retain the native original and update the last value actually written.
+static WAITING_OVERRIDE: Mutex<Option<policy::Override>> = Mutex::new(None);
+
+pub fn depart() {
+    let mut owned = WAITING_OVERRIDE.lock().unwrap();
+    let Some(previous) = owned.take() else { return; };
+    unsafe {
+        let address = *HAZARD_FLAG_ADDRESS;
+        if let Some(original) = crate::native_fields::read::<u8>(address, 0)
+            .and_then(|observed| previous.restore(observed)) {
+            crate::native_fields::write_unchecked(address, 0, original);
+        }
+    }
+}
 
 fn get_hazard_flag_address() -> usize {
     let mut state = HazardState::Begin;
@@ -84,9 +102,22 @@ fn get_hazard_hook_address() -> usize {
 
 #[hook(offset = *LOAD_ADDRESS, inline)]
 fn hazard_intercept(_ctx: &skyline::hooks::InlineCtx) {
+    // Stage loading can precede the first fighter/UI update. Retire the previous
+    // scene before recording this scene's override, not at that later callback.
+    crate::training::lobby::update();
     unsafe {
         if is_training_mode() {
             mod_handle_hazards();
+        } else if crate::common::game_mode::current().is_some_and(|mode|
+            mode.initialized && mode.melee == 0x0d
+                && (mode.mode == 0x02010000 || mode.mode & 0x7fffff00 == 0x07010100))
+            && crate::training::lobby::requested() {
+            let address = *HAZARD_FLAG_ADDRESS;
+            let mut owned = WAITING_OVERRIDE.lock().unwrap();
+            let Some(before) = crate::native_fields::read::<u8>(address, 0) else { return; };
+            let written = u8::from(read(&MENU).stage_hazards == OnOff::ON);
+            *owned = Some(policy::Override::record(*owned, before, written));
+            crate::native_fields::write_unchecked(address, 0, written);
         }
     }
 }
@@ -94,7 +125,8 @@ fn hazard_intercept(_ctx: &skyline::hooks::InlineCtx) {
 fn mod_handle_hazards() {
     unsafe {
         let address = *HAZARD_FLAG_ADDRESS as *mut u8;
-        *address = (read(&MENU).stage_hazards == OnOff::ON) as u8;
+        crate::native_fields::write_unchecked(address as usize, 0,
+            (read(&MENU).stage_hazards == OnOff::ON) as u8);
     }
 }
 

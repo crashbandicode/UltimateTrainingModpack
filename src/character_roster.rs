@@ -312,6 +312,20 @@ pub fn waiting_choice_settled(role: usize) -> bool {
     !memory.restoration_pending([Role::Player.enabled(), Role::Cpu.enabled()])
 }
 
+/// Drafts resume after both returning entries have been observed and remembered
+/// choices reconciled. Resuming on the first ready CSS body would let the later
+/// automatic roster install close an unfinished panel as ordinary swap cleanup.
+pub fn waiting_drafts_ready() -> bool {
+    if busy() { return false; }
+    if !cfg!(feature = "waiting-roster-reload") { return true; }
+    if STATES.iter().any(|state| {
+        let state = state.lock().unwrap();
+        state.observed.is_none() || state.pending.is_some() || state.active.is_some()
+    }) { return false; }
+    !WAITING_MEMORY.lock().unwrap()
+        .restoration_pending([Role::Player.enabled(), Role::Cpu.enabled()])
+}
+
 fn finish_install(token: InstallToken, reason: &str) -> bool {
     let finished = INSTALL.finish(token);
     #[cfg(feature = "source-ldn-capacity-link-probe")]
@@ -620,6 +634,7 @@ pub fn scene_changed(mode: game_mode::Mode) {
         .unwrap()
         .scene_changed(mode.initialized, mode.melee, mode.mode);
     crate::kirby_hats::scene_changed(same_lobby);
+    training::named_macros::waiting_scene_changed(same_lobby);
     OWNED_BUTTONS.store(0, Ordering::Relaxed);
     for role in [Role::Player, Role::Cpu] {
         ORIGINAL_KINDS[role as usize].store(u32::MAX, Ordering::Release);
@@ -996,6 +1011,7 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
                     if fresh_lobby {
                         trace!("[CharacterRoster] fresh waiting entry lifetime; cleared both practice choices");
                         crate::kirby_hats::fresh_lobby();
+                        training::named_macros::waiting_scene_changed(false);
                     }
                     role.sync_selection(fighter);
                 }
@@ -1176,6 +1192,7 @@ pub unsafe fn on_destroy(entry: *const u8) {
         return;
     }
     let owner = read::<u32>(entry, 0xe0);
+    training::practice::entry_departed(entry as usize);
     #[cfg(feature="mii-saved-alpha")]
     mii_saved_alpha::on_destroy(entry,owner);
     #[cfg(feature="mii-ordinary-player-alpha")]

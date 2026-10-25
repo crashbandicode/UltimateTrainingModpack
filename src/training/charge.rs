@@ -509,10 +509,10 @@ pub unsafe fn handle_charge(
             return;
         }
         if let Some(_has_copy_ability) = charge.has_charge {
-            let cpu_module_accessor = &mut *try_get_module_accessor(FighterId::CPU)
-                .expect("Could not get CPU module accessor for Kirby copy ability charge setup");
-            let player_module_accessor = &mut *try_get_module_accessor(FighterId::Player)
-                .expect("Could not get Player module accessor for Kirby copy ability charge setup");
+            let Some(cpu) = try_get_module_accessor(FighterId::CPU) else { return; };
+            let Some(player) = try_get_module_accessor(FighterId::Player) else { return; };
+            let cpu_module_accessor = &mut *cpu;
+            let player_module_accessor = &mut *player;
             let opponent_module_accessor: &mut app::BattleObjectModuleAccessor =
                 if ptr::eq(module_accessor, player_module_accessor) {
                     cpu_module_accessor

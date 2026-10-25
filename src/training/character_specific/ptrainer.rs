@@ -2,7 +2,7 @@ use crate::offsets::OFFSET_POKEMON_DECIDE;
 use crate::training::frame_counter;
 use crate::training::save_states;
 use skyline::hooks::InlineCtx;
-use smash::app::{self, lua_bind::*, smashball::is_training_mode};
+use smash::app::{self, lua_bind::*};
 use smash::hash40;
 use smash::lib::lua_const::*;
 use smash::phx::Hash40;
@@ -142,7 +142,7 @@ pub unsafe fn handle_pokemon_sound_effect(hash: Hash40) -> Hash40 {
 // Choose which pokemon to switch to!
 #[skyline::hook(offset = *OFFSET_POKEMON_DECIDE, inline)]
 unsafe fn handle_pokemon_decide(ctx: &mut InlineCtx) {
-    if !is_training_mode() || !save_states::is_loading() {
+    if !crate::training::practice::enabled() || !save_states::is_loading() {
         return;
     }
     let x20 = ctx.registers[20].x();

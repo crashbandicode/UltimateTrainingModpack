@@ -523,6 +523,18 @@ impl MacroUi {
     pub fn close_transient(&mut self) {
         self.screen = Screen::Closed;
         self.held_save = None;
+        self.clear_anchor();
+    }
+
+    /// Keep exact unfinished panels and draft values across a waiting match, but
+    /// invalidate the old stage anchor and all playback/character acknowledgments.
+    pub fn invalidate_practice_context(&mut self) {
+        self.clear_anchor();
+        self.character_ready = false;
+        self.claimed = false;
+    }
+
+    fn clear_anchor(&mut self) {
         self.playback_on = false;
         self.emitted = None;
         self.emitted_tick = None;
@@ -1266,6 +1278,47 @@ mod tests {
         assert_eq!(ui.marker(), Some((5.0, 8.0)));
         ui.close_transient();
         assert!(!ui.open_editor(None));
+    }
+
+    #[test]
+    fn waiting_interruption_preserves_unfinished_name_and_explicit_cancel() {
+        let mut ui = MacroUi::new();
+        let original = sample(Placement { delta_x: 7.0, delta_y: -2.0, ..Placement::default() });
+        ui.restore_draft(original.clone());
+        ui.on_pad(Pad::Left);
+        let before = ui.view();
+        ui.invalidate_practice_context();
+        assert_eq!(ui.view(), before);
+        assert_eq!(ui.name_prompt(), Some("Drill"));
+        assert!(!ui.playback_allowed());
+        let Effect::Save(saved) = ui.confirm_native_name("Returned drill".into()) else { panic!("explicit save expected"); };
+        assert_eq!(saved.frames, original.frames);
+        assert_eq!(saved.placement, original.placement);
+        ui.restore_draft(*saved);
+        ui.on_pad(Pad::Back);
+        ui.invalidate_practice_context();
+        assert!(!ui.is_open(), "a cancelled draft must not reappear on return");
+    }
+
+    #[test]
+    fn waiting_interruption_keeps_placement_edits_but_drops_old_stage_anchor() {
+        let mut ui = MacroUi::new();
+        ui.commit_loaded("drill".into(), sample(Placement::default()), Some(0x08)).unwrap();
+        assert!(ui.open_editor(Some((4.0, 8.0))));
+        ui.on_pad(Pad::Confirm); // X +1, still an uncommitted draft.
+        goto(&mut ui, 9);
+        let before = ui.view();
+        ui.invalidate_practice_context();
+        assert_eq!(ui.view(), before);
+        assert_eq!(ui.marker(), None);
+        assert_eq!(ui.loaded_placement().unwrap().delta_x, 0.0);
+        assert!(matches!(ui.on_pad(Pad::Confirm), Effect::Notify(_)));
+        assert_eq!(ui.loaded_placement().unwrap().delta_x, 1.0);
+        assert!(!ui.playback_allowed());
+        ui.observe_cpu(Some(0x08), false);
+        assert!(ui.playback_allowed());
+        ui.restored_target(2, (12.0, 6.0));
+        assert_eq!(ui.restored_target(2, (99.0, 99.0)), Some((13.0, 6.0)));
     }
 
     #[test]

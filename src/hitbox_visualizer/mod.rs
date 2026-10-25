@@ -221,7 +221,8 @@ unsafe fn mod_handle_attack(lua_state: u64) {
     }
 
     // Hitbox Visualization
-    if crate::common::is_native_training_mode() && read(&MENU).hitbox_vis == OnOff::ON {
+    if crate::training::practice::visualizes(sv_system::battle_object_module_accessor(lua_state))
+        && read(&MENU).hitbox_vis == OnOff::ON {
         // get all necessary grabbox params
         let id = l2c_agent.pop_lua_stack(1); // int
         let joint = l2c_agent.pop_lua_stack(3); // hash40
@@ -268,7 +269,7 @@ unsafe fn mod_handle_attack(lua_state: u64) {
 
 #[skyline::hook(replace = sv_animcmd::CATCH)]
 unsafe fn handle_catch(lua_state: u64) {
-    if crate::common::is_native_training_mode() {
+    if crate::training::practice::visualizes(sv_system::battle_object_module_accessor(lua_state)) {
         mod_handle_catch(lua_state);
     }
 
@@ -324,7 +325,7 @@ pub unsafe fn handle_set_rebound(
     module_accessor: *mut app::BattleObjectModuleAccessor,
     rebound: bool,
 ) {
-    if crate::common::is_native_training_mode() {
+    if crate::training::practice::visualizes(module_accessor) {
         mod_handle_handle_set_rebound(module_accessor, rebound);
     }
 

@@ -1,10 +1,10 @@
 //! Native input preview, using the existing Training save-state/playback paths.
 //! UI requests carry values only. Game-object work runs on the CPU callback.
 use std::sync::{atomic::{AtomicU8, Ordering}, Mutex};
-use smash::{app::{self, lua_bind::WorkModule, BattleObjectModuleAccessor, Fighter}, lib::lua_const::*};
+use smash::app::{self, BattleObjectModuleAccessor, Fighter};
 use training_mod_macros::{MacroRecording, StartState};
 
-use crate::training::{input_record, save_states};
+use crate::training::{input_record, save_states, practice};
 
 enum Request { Play { recording: Box<MacroRecording>, revision: u64 }, Stop }
 #[derive(Clone, Copy, PartialEq)]
@@ -104,18 +104,16 @@ pub fn complete() {
 }
 
 unsafe fn primary_cpu(module: &mut BattleObjectModuleAccessor) -> bool {
-    WorkModule::get_int(module, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID)
-        == crate::consts::FighterId::CPU as i32
-        && crate::common::is_operation_cpu(module)
-        && app::utility::get_kind(module) != *FIGHTER_KIND_NANA
+    practice::primary_cpu(module) && crate::common::is_operation_cpu(module)
 }
 
 pub unsafe fn before_frame(module: &mut BattleObjectModuleAccessor) {
-    if !crate::common::is_native_training_mode() {
+    if !practice::scene_enabled() {
         if occupied() { input_record::stop_playback(); save_states::cancel_pending(); }
         clear_session();
         return;
     }
+    if !practice::enabled() { return; }
     if !primary_cpu(module) {
         return;
     }
@@ -143,7 +141,7 @@ pub unsafe fn before_frame(module: &mut BattleObjectModuleAccessor) {
     let request = REQUEST.lock().unwrap().take();
     match request {
         Some(Request::Play { recording, revision }) => {
-            if recording.validate().is_err() || recording.start.fighter_kind != app::utility::get_kind(module) {
+            if !practice::acquire() || recording.validate().is_err() || recording.start.fighter_kind != app::utility::get_kind(module) {
                 fail("Wait for the selected CPU fighter before previewing");
                 return;
             }
@@ -170,7 +168,7 @@ pub unsafe fn before_frame(module: &mut BattleObjectModuleAccessor) {
 }
 
 pub unsafe fn after_frame(module: &mut BattleObjectModuleAccessor) {
-    if !crate::common::is_native_training_mode() || !primary_cpu(module) { return; }
+    if !practice::enabled() || !primary_cpu(module) { return; }
     let loading = save_states::is_loading();
     let action = {
         let mut session = SESSION.lock().unwrap();

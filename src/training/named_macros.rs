@@ -18,10 +18,36 @@ use training_mod_tui::macro_panel::{Effect, LibraryRow, MacroUi, Pad, View};
 
 use crate::common::consts::{FighterId, MacroSource, MENU};
 use crate::common::input::{Buttons, MappedInputs};
-use crate::common::{is_native_training_mode, menu, try_get_module_accessor};
+use crate::common::{menu, try_get_module_accessor};
+use super::practice;
 use crate::training::ui::notifications::notification;
 
 static UI: RwLock<MacroUi> = RwLock::new(MacroUi::new());
+static SUSPENDED: AtomicBool = AtomicBool::new(false);
+
+pub fn suspended() -> bool { SUSPENDED.load(Ordering::Acquire) }
+pub fn suspend_waiting() {
+    if SUSPENDED.swap(true, Ordering::AcqRel) { return; }
+    lock_write(&UI).invalidate_practice_context();
+    crate::replay_capture::suspend_waiting();
+    cancel_character_selection();
+    NAME_JOB.lock().unwrap().take();
+    SESSION_GENERATION.fetch_add(1, Ordering::Relaxed);
+}
+pub fn waiting_scene_changed(same_lobby: bool) {
+    if !same_lobby && SUSPENDED.swap(false, Ordering::AcqRel) {
+        lock_write(&UI).close_transient();
+        crate::replay_capture::discard_waiting();
+    }
+}
+pub fn resume_waiting() {
+    if super::lobby::active() && practice::enabled()
+        && crate::character_roster::waiting_drafts_ready()
+        && unsafe { crate::common::is_ready_go() }
+        && try_get_module_accessor(FighterId::Player).is_some()
+        && try_get_module_accessor(FighterId::CPU).is_some()
+    { SUSPENDED.store(false, Ordering::Release); }
+}
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 // A preview's normal stop/restore advances the motion generation while its
 // export keyboard is open. Only session cleanup invalidates that naming draft.
@@ -85,7 +111,13 @@ static NAME_JOB: std::sync::Mutex<Option<NameJob>> = std::sync::Mutex::new(None)
 
 struct NameJob { id: u64, generation: u64, replay: bool }
 // Only flags set by this panel are released, and only on the same live object.
-static PANEL_STOPS: RwLock<Vec<(u32, usize)>> = RwLock::new(Vec::new());
+static PANEL_STOPS: RwLock<Vec<(u32, usize, usize)>> = RwLock::new(Vec::new());
+
+pub fn forget_stopped_entry(entry: usize) {
+    lock_write(&PANEL_STOPS).retain(|&(_, _, owner)| owner != entry);
+}
+
+pub fn forget_stopped_scene() { lock_write(&PANEL_STOPS).clear(); }
 static RESTORING: AtomicBool = AtomicBool::new(false);
 // 0 = no automatic action, 1 = record, 2 = playback after both fighters restore.
 static RESTORE_ACTION: AtomicU8 = AtomicU8::new(0);
@@ -183,11 +215,12 @@ pub fn source_is_named() -> bool {
 }
 
 pub fn panel_visible() -> bool {
-    lock_read(&UI).is_open() || crate::replay_capture::panel_visible()
-        || crate::replay_capture::browser_visible()
+    !suspended() && (lock_read(&UI).is_open() || crate::replay_capture::panel_visible()
+        || crate::replay_capture::browser_visible())
 }
 
 pub fn panel_view() -> Option<View> {
+    if suspended() { return None; }
     let ui = lock_read(&UI);
     ui.native_name_view().or_else(|| ui.view())
         .or_else(crate::replay_capture::browser_view)
@@ -195,7 +228,7 @@ pub fn panel_view() -> Option<View> {
 }
 
 pub fn clip_foreground() -> bool {
-    !lock_read(&UI).is_open() && crate::replay_capture::panel_visible()
+    !suspended() && !lock_read(&UI).is_open() && crate::replay_capture::panel_visible()
         && !naming_pending() && !crate::native_keyboard::busy()
 }
 
@@ -227,7 +260,7 @@ pub fn service_keyboard() {
     let Some(job) = job else { return };
     crate::logging::diagnostic(format_args!("[NativeKeyboard] consume id={} replay={}", id, job.replay));
     if job.id != id || job.generation != SESSION_GENERATION.load(Ordering::Relaxed)
-        || unsafe { !is_native_training_mode() }
+        || !practice::enabled() || suspended()
     { return; }
     // The closing applet's confirm/cancel must not become a gameplay input.
     super::frame_counter::reset_frame_count(*menu::MENU_CLOSE_FRAME_COUNTER);
@@ -357,8 +390,8 @@ pub fn open_editor() {
 }
 
 fn practice_ready() -> bool {
-    if unsafe { !is_native_training_mode() } {
-        notify("Named macros are available in Training");
+    if !practice::enabled() || !unsafe { practice::acquire() } {
+        notify("Wait for both practice fighters");
         return false;
     }
     if crate::training::recording_or_playback()
@@ -566,8 +599,10 @@ pub fn clear_session() {
     GENERATION.fetch_add(1, Ordering::Relaxed);
     SESSION_GENERATION.fetch_add(1, Ordering::Relaxed);
     NAME_JOB.lock().unwrap().take();
-    lock_write(&UI).close_transient();
-    crate::replay_capture::close_editor();
+    if !suspended() {
+        lock_write(&UI).close_transient();
+        crate::replay_capture::close_editor();
+    }
     cancel_motion();
     RESTORING.store(false, Ordering::Relaxed);
     RESTORE_ACTION.store(0, Ordering::Relaxed);
@@ -745,9 +780,7 @@ pub unsafe fn prepare_playback_start(module_accessor: &mut BattleObjectModuleAcc
 }
 
 unsafe fn observation_fighter(module_accessor: &mut BattleObjectModuleAccessor) -> bool {
-    crate::common::is_native_training_mode()
-        && WorkModule::get_int(module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID) == FighterId::CPU as i32
-        && smash::app::utility::get_kind(module_accessor) != *FIGHTER_KIND_NANA
+    practice::primary_cpu(module_accessor)
 }
 
 /// Pair the pre-original boundary with the post-original observations below.
@@ -891,7 +924,7 @@ pub fn service_character() {
     } else if named { NAMED_SOURCE_ACTIVE.store(true,Ordering::Release); }
     // Persisted selection exists before the stage is playable. Native Training
     // mode and an observed entry alone also hold during the initial load screen.
-    if unsafe { !is_native_training_mode() || !Fighter::is_ready_go() }
+    if !practice::enabled() || suspended() || unsafe { !Fighter::is_ready_go() }
         || panel_visible() || crate::replay_capture::loading() || !source_is_named()
     {
         return;
@@ -933,17 +966,20 @@ pub unsafe fn hold_panel_fighter(module_accessor: &mut BattleObjectModuleAccesso
     let id = module_accessor.battle_object_id;
     let pointer = module_accessor as *mut BattleObjectModuleAccessor as usize;
     let mut owned = lock_write(&PANEL_STOPS);
-    let found = owned.iter().position(|&(object, address)| object == id && address == pointer);
+    let found = owned.iter().position(|&(object, address, _)| object == id && address == pointer);
     // Keep P1 held while the editor is parked for a CPU reload. The new CPU must
     // remain free to finish its native install and land before preview acquisition.
     let hold_panel = panel_visible() || (crate::replay_capture::loading()
         && WorkModule::get_int(module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID)
             == FighterId::Player as i32);
-    if is_native_training_mode() && hold_panel && !crate::replay_preview::needs_native_update(module_accessor) {
+    let entry = if hold_panel && !crate::replay_preview::needs_native_update(module_accessor) {
+        practice::panel_entry(module_accessor)
+    } else { None };
+    if let Some(entry) = entry {
         if found.is_none() && !StopModule::is_special_stop(module_accessor) {
             StopModule::set_special_stop(module_accessor, true);
-            owned.retain(|&(object, _)| object != id);
-            owned.push((id, pointer));
+            owned.retain(|&(object, _, _)| object != id);
+            owned.push((id, pointer, entry));
         }
     } else if let Some(index) = found {
         StopModule::set_special_stop(module_accessor, false);

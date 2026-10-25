@@ -144,9 +144,6 @@ pub unsafe fn tick(layout: *mut Layout) {
         Err(error) => panic!("Invalid UTF-8 sequence: {}", error),
     };
     let root_pane = &mut *(*layout).root_pane;
-    if layout_name == "info_training" || !is_native_training_mode() {
-        crate::replay_capture::service_reload();
-    }
     let waiting_host = layout_name == "info_waiting" && lobby::requested();
     if waiting_host {
         lobby::set_ui_ready(
@@ -160,6 +157,13 @@ pub unsafe fn tick(layout: *mut Layout) {
         );
         lobby::update();
     }
+    // One editor clock per practice layout. Advancing on every non-Training
+    // layout would exhaust a waiting CPU reload's 600-frame deadline in seconds.
+    if (layout_name == "info_training" && is_native_training_mode())
+        || (waiting_host && lobby::active())
+        || !crate::training::practice::scene_enabled() {
+        crate::replay_capture::service_reload();
+    }
     if layout_name == "info_waiting" && !lobby::active() {
         if let Some(host) = root_pane.find_pane_by_name_recursive("TrModPort") {
             host.set_visible(false);
@@ -172,7 +176,7 @@ pub unsafe fn tick(layout: *mut Layout) {
 
     // Set HUD to invisible if HUD is toggled off
     if (is_training_mode()
-        || (is_native_training_mode() && crate::replay_capture::loading()))
+        || (crate::training::practice::scene_enabled() && crate::replay_capture::loading()))
         && is_ready_go()
         && [
             "info_playercursor",
@@ -211,7 +215,8 @@ pub unsafe fn tick(layout: *mut Layout) {
 
     // Formerly right after info_training's calculate. Only that game calculate separated the
     // two points, and it reads no modpack state, so the held range-edit repeat keeps its cadence.
-    if layout_name == "info_training" && is_native_training_mode() {
+    if (layout_name == "info_training" && is_native_training_mode())
+        || (waiting_host && lobby::active()) {
         crate::replay_capture::after_draw();
     }
     crate::practice_trace::event(504, [layout as u64, 0, 0, 0, 0]);

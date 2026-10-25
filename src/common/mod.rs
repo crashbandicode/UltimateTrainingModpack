@@ -79,7 +79,11 @@ pub fn try_get_module_accessor(
         }
         let current_fighter_id = FighterEntry::current_fighter_id(fighter_entry);
         let accessor = app::sv_battle_object::module_accessor(current_fighter_id as u32);
-        (!accessor.is_null()).then_some(accessor)
+        if accessor.is_null() || (*accessor).battle_object_id != current_fighter_id as u32
+            || !is_fighter(&*accessor)
+            || WorkModule::get_int(accessor, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID) != entry_id_int
+        { return None; }
+        Some(accessor)
     }
 }
 

@@ -10,7 +10,8 @@ use PossessionState::*;
 use crate::common::consts::{FighterId, HitstunPlayback, OnOff, RecordTrigger};
 use crate::common::input::*;
 use crate::common::offsets::OFFSET_SET_CPU_CONTROLS;
-use crate::common::{button_config, is_native_training_mode as is_training_mode};
+use crate::common::button_config;
+use super::practice;
 use crate::common::{is_in_hitstun, is_in_shieldstun, try_get_module_accessor, MENU};
 use crate::training::mash;
 use crate::training::ui::notifications::{clear_notification, color_notification};
@@ -91,8 +92,7 @@ unsafe fn should_mash_playback() {
         return;
     }
     let mut should_playback = false;
-    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-        .expect("Could not get CPU module accessor in should_mash_playback");
+    let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else { return; };
     // depending on our current status, we want to wait for different timings to begin playback
 
     // TODO: This isn't the best way to write this I'm sure, want to rewrite
@@ -171,6 +171,7 @@ fn into_transition_term(starting_status: StartingStatus) -> i32 {
 }
 
 pub unsafe fn handle_recording() {
+    if !practice::enabled() { return; }
     if crate::replay_preview::occupied() {
         // Preview completion never consults the user's loop/slot/record-on-load
         // settings. Let the last emitted input run before ending injection.
@@ -245,7 +246,7 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
         // Handle recording end
         let input_record_frame = read(&INPUT_RECORD_FRAME);
         let last_frame = read(&CURRENT_FRAME_LENGTH)
-            - usize::from(!crate::training::named_macros::using_frames());
+            .saturating_sub(usize::from(!crate::training::named_macros::using_frames()));
         if (input_record == Record || input_record == Playback) && input_record_frame >= last_frame
         {
             let named_capture =
@@ -315,7 +316,8 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
 
     // Handle Possession Coloring
     let possession = read(&POSSESSION);
-    if entry_id_int == 1 && possession == Lockout {
+    let cpu_entry = super::lobby::entry_id(FighterId::CPU);
+    if entry_id_int == cpu_entry && possession == Lockout {
         clear_notification("Input Recording");
         color_notification(
             "Input Recording".to_string(),
@@ -335,7 +337,7 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
             1.0,
             *MODEL_COLOR_TYPE_COLOR_BLEND,
         );
-    } else if entry_id_int == 1 && possession == Standby {
+    } else if entry_id_int == cpu_entry && possession == Standby {
         clear_notification("Input Recording");
         color_notification(
             "Input Recording".to_string(),
@@ -355,7 +357,7 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
             1.0,
             *MODEL_COLOR_TYPE_COLOR_BLEND,
         );
-    } else if entry_id_int == 1 && possession == Cpu {
+    } else if entry_id_int == cpu_entry && possession == Cpu {
         clear_notification("Input Recording");
         color_notification(
             "Input Recording".to_string(),
@@ -375,7 +377,7 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
             0.0,
             *MODEL_COLOR_TYPE_COLOR_BLEND,
         );
-    } else if entry_id_int == 1 && possession == Player && read(&INPUT_RECORD) == Playback {
+    } else if entry_id_int == cpu_entry && possession == Player && read(&INPUT_RECORD) == Playback {
         // Need to re-read INPUT_RECORD instead of using the local variable because we might have assigned to it early
         // Displays if the inputs from the current frame were a result of playback
         let input_record_frame = read(&INPUT_RECORD_FRAME);
@@ -398,11 +400,10 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
 }
 
 pub unsafe fn start_named_lockout() {
-    if !is_training_mode() || crate::replay_preview::occupied() {
+    if !practice::enabled() || !practice::acquire() || crate::replay_preview::occupied() {
         return;
     }
-    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-        .expect("Could not get CPU module accessor in start_named_lockout");
+    let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else { return; };
     let start = crate::training::named_macros::snapshot_start(&mut *cpu_module_accessor);
     crate::training::named_macros::remember_legacy(read(&RECORDED_LR), read(&STARTING_STATUS));
     crate::training::named_macros::begin_capture(start);
@@ -449,11 +450,10 @@ fn restore_named_legacy() {
 }
 
 pub unsafe fn lockout_record() {
-    if !is_training_mode() || crate::replay_preview::occupied() {
+    if !practice::enabled() || !practice::acquire() || crate::replay_preview::occupied() {
         return;
     }
-    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-        .expect("Could not get CPU module accessor in lockout_record");
+    let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else { return; };
     let recording_duration = read(&MENU).recording_duration.into_frames();
     crate::logging::diagnostic(format_args!(
         "[PracticeRecording] record_lockout cpu_kind=0x{:x} frames={}",
@@ -479,13 +479,14 @@ pub unsafe fn lockout_record() {
 }
 
 pub unsafe fn playback_named() -> bool {
-    if !is_training_mode() || crate::replay_preview::occupied() {
+    if !practice::enabled() || !practice::acquire() || crate::replay_preview::occupied() {
         return false;
     }
     if read(&INPUT_RECORD) == Pause {
         warn!("Tried to playback during lockout!");
         return false;
     }
+    let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else { return false; };
     let Some(info) = crate::training::named_macros::begin_playback() else {
         crate::training::ui::notifications::notification(
             "Named Macro".to_owned(),
@@ -494,8 +495,6 @@ pub unsafe fn playback_named() -> bool {
         );
         return false;
     };
-    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-        .expect("Could not get CPU module accessor in playback_named");
     crate::training::named_macros::remember_legacy(read(&RECORDED_LR), read(&STARTING_STATUS));
     assign(&RECORDED_LR, info.facing);
     assign(&STARTING_STATUS, info.status);
@@ -509,7 +508,7 @@ pub unsafe fn playback_named() -> bool {
 }
 
 pub unsafe fn playback_preview(recording: training_mod_macros::MacroRecording) -> bool {
-    if !is_training_mode() || recording.validate().is_err() { return false; }
+    if !practice::enabled() || !practice::acquire() || recording.validate().is_err() { return false; }
     let Some(cpu) = try_get_module_accessor(FighterId::CPU) else { return false; };
     let info = crate::training::named_macros::begin_preview(recording);
     crate::training::named_macros::remember_legacy(read(&RECORDED_LR), read(&STARTING_STATUS));
@@ -526,7 +525,7 @@ pub unsafe fn playback_preview(recording: training_mod_macros::MacroRecording) -
 
 // Returns whether we did playback
 pub unsafe fn playback(slot: Option<usize>) -> bool {
-    if !is_training_mode() || crate::replay_preview::occupied() {
+    if !practice::enabled() || !practice::acquire() || crate::replay_preview::occupied() {
         return false;
     }
     if read(&INPUT_RECORD) == Pause {
@@ -534,9 +533,10 @@ pub unsafe fn playback(slot: Option<usize>) -> bool {
         return false;
     }
     if let Some(slot) = slot {
-        let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-            .expect("Could not get CPU module accessor in playback");
+        if slot >= TOTAL_SLOT_COUNT { return false; }
+        let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else { return false; };
         let frame_length = read(&P1_FRAME_LENGTH_MAPPING)[slot];
+        if frame_length == 0 || frame_length > FINAL_RECORD_MAX { return false; }
         assign(&CURRENT_FRAME_LENGTH, frame_length);
         assign(&CURRENT_PLAYBACK_SLOT, slot);
         assign(&INPUT_RECORD, Playback);
@@ -552,7 +552,7 @@ pub unsafe fn playback(slot: Option<usize>) -> bool {
 }
 
 pub unsafe fn playback_ledge(slot: Option<usize>) {
-    if !is_training_mode() {
+    if !practice::enabled() {
         return;
     }
     let did_playback = playback(slot);
@@ -561,8 +561,7 @@ pub unsafe fn playback_ledge(slot: Option<usize>) {
         *buffer_frame = 5; // So we can make sure the option is buffered and won't get ledge trumped if delay is 0
                            // drop down from ledge can't be buffered on the same frame as jump/attack/roll/ngu so we have to do this
                            // Need to buffer 1 less frame for non-lassos
-        let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-            .expect("Could not get CPU module accessor in playback_ledge");
+        let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else { return; };
         let status_kind = StatusModule::status_kind(cpu_module_accessor);
         if status_kind == *FIGHTER_STATUS_KIND_CLIFF_CATCH {
             *buffer_frame -= 1;
@@ -626,6 +625,7 @@ pub unsafe fn is_input_neutral(input_frame: usize) -> bool {
 }
 
 pub unsafe fn handle_final_input_mapping(player_idx: i32, out: *mut MappedInputs) {
+    if !practice::enabled() { return; }
     if player_idx == 0 {
         // if player 1
         if read(&INPUT_RECORD) == Record {
@@ -652,8 +652,7 @@ pub unsafe fn handle_final_input_mapping(player_idx: i32, out: *mut MappedInputs
             if *input_record_frame == 1 {
                 // We're on the second frame of recording, grabbing the status should give us the status that resulted from the first frame of input
                 // We'll want to save this status so that we use the correct TRANSITION TERM for hitstun cancelling out of damage fly
-                let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-                    .expect("Could not get CPU module accessor in handle_final_input_mapping");
+                let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else { return; };
                 let status = StatusModule::status_kind(cpu_module_accessor);
                 assign(&STARTING_STATUS, status);
                 // TODO: Handle this based on slot later instead
@@ -684,12 +683,14 @@ unsafe fn set_cpu_controls(p_data: *mut *mut u8) {
     call_original!(p_data);
     #[cfg(feature = "cpu-pilot-probe")]
     if crate::cpu_pilot::thinking() { return; }
-    if !is_training_mode() {
+    super::lobby::update();
+    if !practice::enabled() {
         return;
     }
 
-    let controller_data = *p_data.add(1) as *mut ControlModuleInternal;
-    let _controller_no = (*controller_data).controller_index;
+    let Some(controls) = crate::native_fields::child(p_data as usize, 8) else { return; };
+    if !practice::owns_cpu_controls(controls) { return; }
+    let controller_data = controls as *mut ControlModuleInternal;
 
     // Check if we need to begin playback this frame due to a mash toggle
     // TODO: Setup STARTING_STATUS based on current playback slot here
@@ -767,7 +768,7 @@ unsafe fn set_cpu_controls(p_data: *mut *mut u8) {
         {
             // The first FIM after lockout supplies frame0. Do not skip it by
             // advancing the CPU clock before that input actually exists.
-            (*controller_data)._clear();
+            neutral_controls(&mut *controller_data);
             return;
         }
         // Named capture and playback read their own buffer. The frame counter

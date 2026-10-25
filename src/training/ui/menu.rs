@@ -920,10 +920,10 @@ pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
     {
         let tab = app.selected_tab().id;
         let submenu = app.selected_submenu().id;
-        if matches!(tab, "input" | "save_state")
+        if (!crate::training::practice::scene_enabled() && matches!(tab, "input" | "save_state"))
             || (!cfg!(feature = "waiting-roster-reload")
                 && matches!(tab, "player_characters" | "cpu_characters"))
-            || matches!(
+            || (!crate::training::practice::scene_enabled() && matches!(
                 submenu,
                 "save_state_save"
                     | "save_state_load"
@@ -933,7 +933,7 @@ pub unsafe fn draw(root_pane: &Pane, native_root: &Pane) {
                     | "lra_reset"
                     | "hitbox_vis"
                     | "tech_hide"
-            )
+            ))
         {
             root_pane
                 .find_pane_by_name_recursive_expect("FooterTxt")

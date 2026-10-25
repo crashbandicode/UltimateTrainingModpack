@@ -75,6 +75,7 @@ pub(crate) fn mash_settings_changed(
 
 /// Cancel a departing practice session without touching game objects or game RNG.
 pub fn clear_session_state() {
+    practice::forget();
     crate::practice_trace::checkpoint(20, [0; 5]);
     crate::kirby_hats::cancel_pending();
     crate::character_items::cancel_pending();
@@ -94,6 +95,8 @@ pub fn clear_session_state() {
     throw::reset_pummel_delay();
     frame_counter::reset_all();
     save_states::cancel_pending();
+    save_states::clear_quick_reset();
+    reset::clear_session_state();
     ui::notifications::clear_all_notifications();
     named_macros::clear_session();
     crate::replay_preview::clear_session();
@@ -102,6 +105,9 @@ pub fn clear_session_state() {
     }
     crate::practice_trace::checkpoint(21, [0; 5]);
 }
+
+pub mod practice;
+mod practice_policy;
 
 #[cfg(debug_assertions)]
 mod debug;
@@ -181,6 +187,8 @@ pub unsafe fn handle_get_command_flag_cat(
 unsafe extern "C" fn fighter_vtable_on_frame_inner(fighter: &mut smash::app::Fighter);
 
 unsafe extern "C" fn fighter_vtable_on_frame(fighter: &mut smash::app::Fighter) {
+    lobby::update();
+    tech::restore_visibility(&mut *fighter.battle_object.module_accessor);
     let trace_identity = [fighter as *mut _ as u64, fighter.battle_object.module_accessor as u64,
         u64::from(fighter.battle_object.battle_object_id), u64::from(fighter.battle_object.kind), fighter.battle_object.entry_id];
     crate::practice_trace::event(200, trace_identity);
@@ -244,7 +252,7 @@ fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) 
             // Training mash/DI/ledge/shield automations during the clip preview.
             combo::once_per_frame(module_accessor);
             save_states::save_states(module_accessor);
-            if is_operation_cpu(module_accessor) {
+            if practice::primary_cpu(module_accessor) {
                 named_macros::service_restore(module_accessor);
                 named_macros::observe_playback_start(module_accessor);
                 input_record::handle_recording();
@@ -268,25 +276,30 @@ fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) 
                 !(read(&MENU).stale_dodges.as_bool()),
                 *FIGHTER_INSTANCE_WORK_ID_FLAG_DISABLE_ESCAPE_PENALTY,
             );
-            if crate::common::is_native_training_mode() {
+            if practice::primary_cpu(module_accessor) {
                 named_macros::observe_playback_start(module_accessor);
                 input_record::handle_recording();
             }
             frame_counter::tick_ingame();
-            if crate::common::is_native_training_mode() {
-                tech::hide_tech();
+            if practice::primary_cpu(module_accessor) {
+                tech::hide_tech(module_accessor);
             }
         }
 
         combo::once_per_frame(module_accessor);
-        if crate::common::is_native_training_mode() {
+        if practice::role(module_accessor).is_some() {
             named_macros::service_character();
+            if !practice::enabled() { return; }
             hitbox_visualizer::once_per_frame(module_accessor);
             save_states::save_states(module_accessor);
-            if is_operation_cpu(module_accessor) {
+            if practice::primary_cpu(module_accessor) {
                 named_macros::service_restore(module_accessor);
                 named_macros::preview(module_accessor);
             }
+        } else if crate::common::is_native_training_mode() && practice::enabled() {
+            // Extra native Training CPUs retain visualization; they still do
+            // not own either of the two save/record slots.
+            hitbox_visualizer::once_per_frame(module_accessor);
         }
         tech::once_per_frame(module_accessor);
         clatter::handle_clatter(module_accessor);
@@ -634,7 +647,7 @@ pub unsafe fn handle_se(
     bool4: bool,
     se_type: enSEType,
 ) -> u64 {
-    if !crate::common::is_native_training_mode() {
+    if !save_states::effects_enabled() {
         return original!()(
             module_accessor,
             my_hash,
@@ -686,7 +699,7 @@ pub unsafe fn handle_fighter_play_se(
     bool4: bool,
     se_type: enSEType,
 ) -> u64 {
-    if !crate::common::is_native_training_mode() {
+    if !save_states::effects_enabled() {
         return original!()(sound_module, my_hash, bool1, bool2, bool3, bool4, se_type);
     }
     // Supress Buff Sound Effects while buffing
@@ -730,7 +743,7 @@ pub unsafe fn handle_effect_follow(
     arg11: bool,
     arg12: bool,
 ) -> u64 {
-    if !crate::common::is_native_training_mode() {
+    if !save_states::effects_enabled() {
         return original!()(
             module_accessor,
             eff_hash,
@@ -785,7 +798,7 @@ pub unsafe fn handle_fighter_joint_effect(
     arg7: i32,
     arg9: i32,
 ) -> u64 {
-    if !crate::common::is_native_training_mode() {
+    if !save_states::effects_enabled() {
         return original!()(
             module_accessor,
             eff_hash,
@@ -830,7 +843,7 @@ pub unsafe fn handle_effect(
     arg8: bool,
     arg9: i32,
 ) -> u64 {
-    if !crate::common::is_native_training_mode() {
+    if !save_states::effects_enabled() {
         return original!()(
             module_accessor,
             eff_hash,
@@ -877,7 +890,7 @@ pub unsafe fn handle_effect(
 #[skyline::hook(offset = *OFFSET_CAN_FUTTOBI_BACK)]
 pub unsafe fn handle_star_ko(my_long_ptr: &mut u64) -> bool {
     let ori = original!()(my_long_ptr);
-    if !crate::common::is_native_training_mode() {
+    if !save_states::effects_enabled() {
         ori
     } else {
         false
@@ -963,7 +976,7 @@ unsafe fn handle_final_input_mapping(
     // would make that repeated call mistake our own neutralization for a release.
     let editor_close_owned = player_idx == 0
         && crate::replay_capture::owns_close_input(
-            crate::common::is_native_training_mode(),
+            practice::scene_enabled(),
             controller_struct.controller.current_buttons.b(),
         );
     #[cfg(feature = "named-input-trace")]
@@ -976,7 +989,7 @@ unsafe fn handle_final_input_mapping(
     let editor_was_loading = crate::replay_capture::loading();
     let editor_was_open = crate::replay_capture::panel_visible();
     if player_idx == 0
-        && crate::common::is_native_training_mode()
+        && practice::scene_enabled() && !lobby::native_ui_busy()
         && (editor_was_loading || closing_during_reload || editor_close_owned
             || (crate::replay_preview::occupied() && !named_macros::panel_visible()
                 && !crate::replay_preview::recovery_available()))
@@ -1002,7 +1015,7 @@ unsafe fn handle_final_input_mapping(
         }
         return;
     }
-    if player_idx == 0 && crate::common::is_native_training_mode()
+    if player_idx == 0 && practice::scene_enabled() && !lobby::native_ui_busy()
         && crate::replay_preview::recovery_available() && !named_macros::panel_visible() {
         // After the closing B has been consumed, leave native Plus/menu input
         // intact. Pending cleanup still owns the CPU and suppresses autoplay.
@@ -1021,6 +1034,12 @@ unsafe fn handle_final_input_mapping(
         return;
     }
 
+    if player_idx == 0 && reset::waiting_shortcut(&controller_struct.controller) {
+        *out = MappedInputs::empty();
+        input_delay::clear_session_state();
+        return;
+    }
+
     // Check if we should apply hot reload configs
     // Non-mutable pull
     dev_config::handle_final_input_mapping(player_idx, controller_struct);
@@ -1036,7 +1055,7 @@ unsafe fn handle_final_input_mapping(
     // Grab button input requests from player
     // MUTATES controller state to kill start presses for menu
     button_config::handle_final_input_mapping(player_idx, controller_struct);
-    let named_stopped = crate::common::is_native_training_mode()
+    let named_stopped = practice::enabled()
         && input_record::handle_named_stop_request(player_idx);
     if player_idx == 0 {
         crate::character_roster::handle_input(&mut *out);
@@ -1086,7 +1105,7 @@ unsafe fn handle_final_input_mapping(
 
     // Potentially apply input recording, thus with delay
     // MUTATES controller state to apply recording or playback
-    if crate::common::is_native_training_mode() {
+    if practice::enabled() {
         input_record::handle_final_input_mapping(player_idx, out);
     }
 }

@@ -85,7 +85,7 @@ pub fn permits_entry(entry: i32) -> bool {
 }
 
 pub fn available_actions(mut actions: Action) -> Action {
-    if is_waiting_scene() {
+    if is_waiting_scene() && !super::practice::enabled() {
         actions.PLAYBACK_1 = 0;
         actions.PLAYBACK_2 = 0;
         actions.PLAYBACK_3 = 0;
@@ -96,7 +96,7 @@ pub fn available_actions(mut actions: Action) -> Action {
 }
 
 pub fn available_ledge_options(mut options: LedgeOption) -> LedgeOption {
-    if is_waiting_scene() {
+    if is_waiting_scene() && !super::practice::enabled() {
         options.PLAYBACK_1 = 0;
         options.PLAYBACK_2 = 0;
         options.PLAYBACK_3 = 0;
@@ -114,15 +114,12 @@ pub fn update() {
             | (u64::from(mode.melee) << 32)
             | (u64::from(mode.initialized) << 40);
         if LAST_MODE.swap(key, Ordering::Relaxed) != key {
+            crate::hazard_manager::depart();
             // A native Training departure need not change lobby::active(). Drop
             // preview values and pending injection at the actual scene boundary.
-            if crate::replay_preview::occupied() {
-                super::named_macros::clear_session();
-                crate::replay_preview::clear_session();
-                super::save_states::cancel_pending();
-                unsafe { super::input_record::stop_playback(); }
-            }
+            if WAS_ACTIVE.load(Ordering::Acquire) { super::named_macros::suspend_waiting(); }
             crate::character_roster::scene_changed(mode);
+            super::practice::scene_departed();
             #[cfg(feature = "practice-stage-request-alpha")]
             crate::practice_stage_request::depart();
             // A scene switch invalidates the previous layout even if the next
@@ -144,6 +141,7 @@ pub fn update() {
     let now = active();
     let previous = WAS_ACTIVE.swap(now, Ordering::AcqRel);
     if now != previous {
+        if !now { crate::hazard_manager::depart(); }
         SEEN_ENTRIES.store(0, Ordering::Relaxed);
         super::clear_session_state();
         settings_changed();
@@ -153,6 +151,7 @@ pub fn update() {
             game_mode::current()
         );
     }
+    unsafe { super::practice::refresh(); }
 }
 
 pub unsafe fn observe_fighter(accessor: &mut smash::app::BattleObjectModuleAccessor) {

@@ -112,12 +112,12 @@ fn notify(message: String) {
 }
 
 pub fn open_editor() {
-    if unsafe { !crate::common::is_native_training_mode() || !Fighter::is_ready_go() }
+    if !crate::training::practice::enabled() || unsafe { !Fighter::is_ready_go() || !crate::training::practice::acquire() }
         || crate::training::recording_or_playback()
         || unsafe { crate::training::save_states::is_loading() }
         || crate::character_roster::busy() || crate::replay_preview::occupied() || loading()
     {
-        notify("Open the replay window in idle Training".into());
+        notify("Open the replay window in idle practice".into());
         return;
     }
     let mut rows = Vec::new();
@@ -209,7 +209,7 @@ fn open_capture(id: &str) -> Result<(), String> {
 }
 
 pub fn browser_visible() -> bool {
-    BROWSER.lock().unwrap().is_some()
+    !crate::training::named_macros::suspended() && BROWSER.lock().unwrap().is_some()
 }
 
 pub fn browser_view() -> Option<View> {
@@ -245,10 +245,29 @@ pub fn browser_input(pad: Pad) {
 }
 
 pub fn panel_visible() -> bool {
-    EDITOR.lock().unwrap().is_some()
+    !crate::training::named_macros::suspended() && EDITOR.lock().unwrap().is_some()
 }
 
-pub fn loading() -> bool { RELOAD.lock().unwrap().is_some() }
+pub fn loading() -> bool { !crate::training::named_macros::suspended() && RELOAD.lock().unwrap().is_some() }
+
+pub fn suspend_waiting() {
+    let revision = SELECTION_REVISION.fetch_add(1, Ordering::AcqRel) + 1;
+    if let Some(editor) = EDITOR.lock().unwrap().as_mut() { editor.pause(); }
+    if let Some(reload) = RELOAD.lock().unwrap().as_mut() {
+        reload.editor.pause();
+        reload.requested = false;
+        reload.ticks = 0;
+        reload.revision = revision;
+        reload.resolving = None;
+    }
+    REVISION.fetch_add(1, Ordering::Relaxed);
+    *HOLD.lock().unwrap() = (0, 0, false);
+}
+
+pub fn discard_waiting() {
+    RELOAD.lock().unwrap().take();
+    close_editor_inner(false);
+}
 pub fn loading_view() -> Option<View> {
     loading().then(|| View { title: "Clip Editor".into(), selected: 0,
         labels: vec!["Loading preview fighter...".into()], footer: "B: close editor".into() })
@@ -262,11 +281,13 @@ pub fn cancel_reload() {
 /// Only the value-only editor survives its requested CPU install. Native preview
 /// cleanup must finish before handing control to the existing character loader.
 pub unsafe fn service_reload() {
-    if !crate::common::is_native_training_mode() {
+    if crate::training::named_macros::suspended() { return; }
+    if !crate::training::practice::scene_enabled() {
         let had_reload=RELOAD.lock().unwrap().take().is_some();
         if had_reload || panel_visible() || browser_visible() {close_editor_inner(had_reload);}
         return;
     }
+    if crate::training::lobby::native_ui_busy() { return; }
     let cpu=crate::common::try_get_module_accessor(crate::consts::FighterId::CPU);
     let current=cpu.map(|cpu|app::utility::get_kind(&mut *cpu));
     let mut reload=RELOAD.lock().unwrap();

@@ -72,20 +72,26 @@ impl<T: Copy> WaitingSession<T> {
     /// Returns the shared continuation decision for other value-only practice state.
     ///
     /// A match excursion keeps the waiting mode word and changes only the melee byte:
-    /// local wireless uses `0x01` (13.0.5 runtime trace); Quickplay keeps its `0x0701xxxx`
-    /// word and uses `0x0e` (`cpu_pilot` LanOnline1v1 tuple `0x0e/0x07010101`). Other
-    /// intermediate tuples are unobserved and clear the choices rather than guess.
+    /// local wireless uses `0x01` (13.0.5 runtime trace); Quickplay stays in the
+    /// `0x070101xx` family and uses `0x0e` (`cpu_pilot` LanOnline1v1 tuple
+    /// `0x0e/0x07010101`). Other families clear the choices.
     pub fn scene_changed(&mut self, initialized: bool, melee: u8, mode: u32) -> bool {
-        let online = mode & 0x7fff0000 == 0x07010000;
-        let excursion = |melee: u8| matches!(melee, 0x01 | 0x0d) || (online && melee == 0x0e);
-        let same_lobby = initialized
-            && excursion(melee)
-            && (mode == 0x02010000 || online)
-            && self
-                .scene
-                .is_some_and(|(old_initialized, old_melee, old_mode)| {
-                    old_initialized && old_mode == mode && excursion(old_melee)
-                });
+        // Quickplay's match tuple is melee 0x0e / mode 0x07010101 (the native
+        // CPU adapter uses that exact tuple). Waiting is melee 0x0d; the mode's
+        // submode byte and high bit may differ. This is value-only continuity,
+        // never permission to run practice tools in the intervening match.
+        fn lobby(initialized: bool, melee: u8, mode: u32) -> Option<u32> {
+            if !initialized { return None; }
+            if mode == 0x02010000 && matches!(melee, 0x01 | 0x0d) {
+                Some(mode)
+            } else if mode & 0x7fffff00 == 0x07010100
+                && matches!(melee, 0x01 | 0x0d | 0x0e) {
+                Some(0x07010100)
+            } else { None }
+        }
+        let current = lobby(initialized, melee, mode);
+        let same_lobby = current.is_some() && self.scene
+            .and_then(|(initialized, melee, mode)| lobby(initialized, melee, mode)) == current;
         for choice in &mut self.choices {
             if same_lobby {
                 choice.scene_changed();
@@ -176,6 +182,26 @@ mod tests {
     }
 
     #[test]
+    fn quickplay_match_submode_preserves_values_but_other_lobbies_do_not() {
+        let mut session = WaitingSession::empty();
+        assert!(!session.scene_changed(true, 0x0d, 0x87010100));
+        session.commit(0, 30);
+        session.commit(1, 40);
+        session.player_departed();
+        assert!(session.scene_changed(true, 0x0e, 0x07010101));
+        assert!(session.scene_changed(true, 0x0d, 0x87010100));
+        assert!(!session.observe(1, 20));
+        assert!(!session.observe(0, 10));
+        assert_eq!(session.restore_target(0), Some(30));
+        assert_eq!(session.restore_target(1), Some(40));
+        // Arena/other online families are not a same-Quickplay-lobby return.
+        assert!(!session.scene_changed(true, 0x0d, 0x07010200));
+        assert!(!session.scene_changed(true, 0x0d, 0x87010100));
+        assert_eq!(session.restore_target(0), None);
+        assert_eq!(session.restore_target(1), None);
+    }
+
+    #[test]
     fn recreated_ldn_room_with_identical_tuple_forgets_both_roles() {
         let mut session = WaitingSession::empty();
         session.scene_changed(true, 0x0d, 0x02010000);
@@ -215,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn quickplay_match_excursion_preserves_choices_only_within_its_mode_word() {
+    fn quickplay_match_excursion_preserves_choices_only_within_its_mode_family() {
         let mut session = WaitingSession::empty();
         session.scene_changed(true, 0x0d, 0x07010101);
         session.observe(0, 10);
@@ -235,12 +261,12 @@ mod tests {
         assert!(!local.scene_changed(true, 0x0e, 0x02010000));
         local.scene_changed(true, 0x0d, 0x02010000);
         assert_eq!(local.restore_target(0), None);
-        // A different online mode word is another lobby.
+        // A different online family is another lobby; submode bytes are native transitions.
         let mut moved = WaitingSession::empty();
         moved.scene_changed(true, 0x0d, 0x07010101);
         moved.commit(1, 40);
-        assert!(!moved.scene_changed(true, 0x0e, 0x07010102));
-        moved.scene_changed(true, 0x0d, 0x07010102);
+        assert!(!moved.scene_changed(true, 0x0e, 0x07010200));
+        moved.scene_changed(true, 0x0d, 0x07010200);
         assert_eq!(moved.restore_target(1), None);
     }
 

@@ -185,7 +185,8 @@ pub unsafe fn is_enable_transition_term(
     let ledge_case = read(&LEDGE_CASE);
     let ledge_delay = read(&LEDGE_DELAY);
     if crate::training::lobby::is_waiting_scene()
-        && (ledge_case == LedgeOption::empty() || ledge_case.is_playback())
+        && (ledge_case == LedgeOption::empty()
+            || (ledge_case.is_playback() && !super::practice::enabled()))
     {
         return None;
     }

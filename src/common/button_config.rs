@@ -264,6 +264,7 @@ pub fn clear_session_state() {
 /// Observe ownership without consuming a request needed by its normal handler.
 pub fn has_pending_request() -> bool {
     let native_training = unsafe { crate::common::is_native_training_mode() };
+    let practice = crate::training::practice::enabled();
     lock_read(&BUTTON_COMBO_REQUESTS)
         .iter()
         .any(|(combo, requested)| {
@@ -271,15 +272,15 @@ pub fn has_pending_request() -> bool {
                 && match combo {
                     ButtonCombo::OpenMenu => true,
                     ButtonCombo::SaveState | ButtonCombo::LoadState => {
-                        native_training && read(&MENU).save_state_enable == OnOff::ON
+                        practice && read(&MENU).save_state_enable == OnOff::ON
                     }
                     ButtonCombo::InputRecord => {
-                        native_training
+                        practice
                             && read(&MENU)
                                 .record_trigger
                                 .contains(&training_mod_consts::RecordTrigger::COMMAND)
                     }
-                    ButtonCombo::InputPlayback => native_training,
+                    ButtonCombo::InputPlayback => practice,
                     ButtonCombo::CpuCycle | ButtonCombo::PlayerCycle => native_training,
                 }
         })

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use log::{info, warn};
 use parking_lot::Mutex;
@@ -9,7 +9,6 @@ use smash::cpp::l2c_value::LuaConst;
 use smash::hash40;
 use smash::lib::lua_const::*;
 use smash::phx::{Hash40, Vector3f};
-use std::ptr;
 use training_mod_consts::{CharacterItem, SaveDamage, SaveStateSlot};
 
 use SaveState::*;
@@ -162,10 +161,14 @@ pub fn load_from_file() -> SaveStateSlots {
     };
 
     info!("Checking for previous save state settings in {SAVE_STATES_TOML_PATH}...");
-    filesystem::read_toml(SAVE_STATES_TOML_PATH).unwrap_or_else(|e| {
+    let mut slots: SaveStateSlots = filesystem::read_toml(SAVE_STATES_TOML_PATH).unwrap_or_else(|e| {
         warn!("Could not load previous save state settings! {e}");
         defaults
-    })
+    });
+    // Persisted positions are data, never permission to resume a native operation
+    // from a prior process/entry lifetime.
+    for state in slots.player.iter_mut().chain(slots.cpu.iter_mut()) { state.state = NoAction; }
+    slots
 }
 
 fn save_to_file(save_state_slots: SaveStateSlots) {
@@ -180,6 +183,57 @@ pub fn cancel_pending() {
     for state in &mut slots.cpu {
         state.state = NoAction;
     }
+    QUICK_RESET_ACTIVE.store(false, Ordering::Release);
+    end_preview_restore();
+}
+
+static QUICK_RESET_ACTIVE: AtomicBool = AtomicBool::new(false);
+static QUICK_RESET_STATES: Mutex<[SavedState; 2]> = Mutex::new([default_save_state!(); 2]);
+
+pub fn clear_quick_reset() {
+    QUICK_RESET_ACTIVE.store(false, Ordering::Release);
+    *QUICK_RESET_STATES.lock() = [default_save_state!(); 2];
+}
+
+/// Waiting has no Training menu/reset owner. Remember its fresh native idle
+/// spawn values per entry lifetime and reuse the death/rebirth restore protocol.
+/// These temporary anchors never overwrite a user's numbered saved slots.
+unsafe fn observe_quick_reset(module: &mut app::BattleObjectModuleAccessor, role: usize) {
+    if QUICK_RESET_STATES.lock()[role].fighter_kind >= 0 { return; }
+    if !super::lobby::active() || !crate::common::is_ready_go()
+        || app::utility::get_kind(module) == *FIGHTER_KIND_NANA
+        || StatusModule::status_kind(module) != *FIGHTER_STATUS_KIND_WAIT
+        || !super::practice::acquire() { return; }
+    let mut states = QUICK_RESET_STATES.lock();
+    if states[role].fighter_kind >= 0 { return; }
+    let kind = app::utility::get_kind(module);
+    states[role] = SavedState {
+        x: PostureModule::pos_x(module), y: PostureModule::pos_y(module),
+        lr: PostureModule::lr(module), fighter_kind: kind,
+        charge: charge::get_charge(module, kind),
+        steve_state: steve::save_steve_state(module),
+        ..default_save_state!()
+    };
+}
+
+pub unsafe fn request_quick_reset() -> bool {
+    if !super::lobby::active() || !super::practice::enabled()
+        || !super::practice::acquire() || is_loading() { return false; }
+    let mut states = QUICK_RESET_STATES.lock();
+    if states.iter().any(|s| s.fighter_kind < 0) { return false; }
+    input_record::stop_playback();
+    for state in states.iter_mut() { state.state = KillPlayer; }
+    MIRROR_STATE = 1.0;
+    QUICK_RESET_ACTIVE.store(true, Ordering::Release);
+    true
+}
+
+unsafe fn waiting_saved_pair_valid(slot: usize) -> bool {
+    if !super::lobby::active() { return true; }
+    [*save_state_player(slot), *save_state_cpu(slot)].iter().all(|s|
+        s.fighter_kind >= 0 && s.x.is_finite() && s.y.is_finite()
+            && s.percent.is_finite() && s.percent >= 0.0 && matches!(s.lr, -1.0 | 1.0)
+            && [*SITUATION_KIND_GROUND, *SITUATION_KIND_AIR, *SITUATION_KIND_CLIFF].contains(&s.situation_kind))
 }
 
 // A preview always uses the explicitly selected saved slot, original facing and
@@ -191,8 +245,8 @@ pub fn end_preview_restore() {
 }
 
 pub unsafe fn request_preview_restore() -> Result<(), &'static str> {
-    if !crate::common::is_native_training_mode() || read(&MENU).save_state_enable == OnOff::OFF {
-        return Err("Enable save states and save a Training setup first");
+    if !super::practice::enabled() || !super::practice::acquire() || read(&MENU).save_state_enable == OnOff::OFF {
+        return Err("Enable save states and save a practice setup first");
     }
     let pinned = PREVIEW_SLOT.load(Ordering::Relaxed);
     let slot = if pinned == usize::MAX {
@@ -200,6 +254,7 @@ pub unsafe fn request_preview_restore() -> Result<(), &'static str> {
     } else {
         pinned
     };
+    if !waiting_saved_pair_valid(slot) { return Err("Save a valid practice setup first"); }
     for (id, saved) in [
         (FighterId::Player, *save_state_player(slot)),
         (FighterId::CPU, *save_state_cpu(slot)),
@@ -226,10 +281,11 @@ pub unsafe fn request_preview_restore() -> Result<(), &'static str> {
 }
 
 pub unsafe fn request_macro_restore() -> Result<(), &'static str> {
-    if !crate::common::is_native_training_mode() || read(&MENU).save_state_enable == OnOff::OFF {
-        return Err("Enable save states and save a Training setup first");
+    if !super::practice::enabled() || !super::practice::acquire() || read(&MENU).save_state_enable == OnOff::OFF {
+        return Err("Enable save states and save a practice setup first");
     }
     let slot = get_slot();
+    if !waiting_saved_pair_valid(slot) { return Err("Save a valid practice setup first"); }
     if save_state_player(slot).fighter_kind < 0 || save_state_cpu(slot).fighter_kind < 0 {
         return Err("Save a Training setup first");
     }
@@ -247,10 +303,12 @@ pub unsafe fn request_macro_restore() -> Result<(), &'static str> {
 }
 
 unsafe fn save_state_player(slot: usize) -> &'static mut SavedState {
+    if QUICK_RESET_ACTIVE.load(Ordering::Acquire) { return &mut (*QUICK_RESET_STATES.data_ptr())[0]; }
     &mut (*SAVE_STATE_SLOTS.data_ptr()).player[slot]
 }
 
 unsafe fn save_state_cpu(slot: usize) -> &'static mut SavedState {
+    if QUICK_RESET_ACTIVE.load(Ordering::Acquire) { return &mut (*QUICK_RESET_STATES.data_ptr())[1]; }
     &mut (*SAVE_STATE_SLOTS.data_ptr()).cpu[slot]
 }
 
@@ -259,12 +317,11 @@ pub unsafe fn get_state_pokemon(
 ) -> u32 {
     let selected_slot = get_slot();
     let pokemon_module_accessor = ptrainer::get_pokemon_module_accessor(ptrainer_module_accessor);
-    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-        .expect("Could not get CPU module accessor in get_state_pokemon");
-    let fighter_kind = if !ptr::eq(pokemon_module_accessor, cpu_module_accessor) {
-        save_state_player(selected_slot).fighter_kind
-    } else {
-        save_state_cpu(selected_slot).fighter_kind
+    let Some(pokemon) = pokemon_module_accessor.as_ref() else { return u32::MAX; };
+    let fighter_kind = match super::practice::role(pokemon) {
+        Some(0) => save_state_player(selected_slot).fighter_kind,
+        Some(1) => save_state_cpu(selected_slot).fighter_kind,
+        _ => return u32::MAX,
     };
     (fighter_kind - *FIGHTER_KIND_PZENIGAME) as u32
 }
@@ -273,23 +330,19 @@ pub unsafe fn get_charge_state(
     module_accessor: *mut app::BattleObjectModuleAccessor,
 ) -> ChargeState {
     let selected_slot = get_slot();
-    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-        .expect("Could not get CPU module accessor in get_charge_state");
-    if !ptr::eq(module_accessor, cpu_module_accessor) {
-        save_state_player(selected_slot).charge
-    } else {
-        save_state_cpu(selected_slot).charge
+    match module_accessor.as_ref().and_then(|module| super::practice::role(module)) {
+        Some(0) => save_state_player(selected_slot).charge,
+        Some(1) => save_state_cpu(selected_slot).charge,
+        _ => default_save_state!().charge,
     }
 }
 
 pub unsafe fn end_copy_ability(module_accessor: *mut app::BattleObjectModuleAccessor) {
     let selected_slot = get_slot();
-    let cpu_module_accessor = try_get_module_accessor(FighterId::CPU)
-        .expect("Could not get CPU module accessor in end_copy_ability");
-    let save_state = if !ptr::eq(module_accessor, cpu_module_accessor) {
-        save_state_player(selected_slot)
-    } else {
-        save_state_cpu(selected_slot)
+    let save_state = match module_accessor.as_ref().and_then(|module| super::practice::role(module)) {
+        Some(0) => save_state_player(selected_slot),
+        Some(1) => save_state_cpu(selected_slot),
+        _ => return,
     };
     if save_state.state == WaitForCopyAbility {
         save_state.state = NoAction;
@@ -316,7 +369,7 @@ unsafe fn get_slot() -> usize {
 }
 
 pub unsafe fn is_killing() -> bool {
-    if !crate::common::is_native_training_mode() {
+    if !super::practice::scene_enabled() {
         return false;
     }
     let selected_slot = get_slot();
@@ -327,12 +380,18 @@ pub unsafe fn is_killing() -> bool {
 }
 
 pub unsafe fn is_loading() -> bool {
-    if !crate::common::is_native_training_mode() {
+    if !super::practice::scene_enabled() {
         return false;
     }
     let selected_slot = get_slot();
     save_state_player(selected_slot).state != NoAction
         || save_state_cpu(selected_slot).state != NoAction
+}
+
+/// Keep native Training's historical suppressions; waiting borrows them only
+/// during its owned restore, never during ordinary waiting combat or a match.
+pub unsafe fn effects_enabled() -> bool {
+    crate::common::is_native_training_mode() || (super::practice::enabled() && is_loading())
 }
 
 pub unsafe fn should_mirror() -> f32 {
@@ -352,7 +411,8 @@ pub unsafe fn get_param_int(
     param_type: u64,
     param_hash: u64,
 ) -> Option<i32> {
-    if !crate::common::is_native_training_mode() {
+    if !super::practice::enabled()
+        || (super::lobby::active() && (!is_loading() || super::practice::role(module_accessor).is_none())) {
         return None;
     }
     if param_type == hash40("common") {
@@ -500,19 +560,16 @@ pub unsafe fn on_death(fighter_kind: i32, module_accessor: &mut app::BattleObjec
 }
 
 pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor) {
-    if !crate::common::is_native_training_mode() || read(&MENU).save_state_enable == OnOff::OFF {
-        return;
-    }
-
-    let entry = WorkModule::get_int(module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID);
+    let Some(role) = super::practice::role(module_accessor) else { return; };
+    observe_quick_reset(module_accessor, role);
+    let quick_reset = QUICK_RESET_ACTIVE.load(Ordering::Acquire);
+    if !quick_reset && read(&MENU).save_state_enable == OnOff::OFF { return; }
     // Ordinary Training may contain extra CPUs. They are neither P1 nor the
     // selected practice CPU and must not overwrite P1's saved state.
-    if entry != FighterId::Player as i32 && entry != FighterId::CPU as i32 {
-        return;
-    }
+    if !super::practice::acquire() { return; }
     let selected_slot = get_slot();
     let status = StatusModule::status_kind(module_accessor);
-    let is_cpu = entry == FighterId::CPU as i32;
+    let is_cpu = role == 1;
     let save_state = if is_cpu {
         save_state_cpu(selected_slot)
     } else {
@@ -537,11 +594,11 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
     .contains(&fighter_kind);
 
     // Reset state
-    let autoload_reset = read(&MENU).save_state_autoload == OnOff::ON
+    let autoload_reset = !quick_reset && read(&MENU).save_state_autoload == OnOff::ON
         && save_state.state == NoAction
         && is_dead(module_accessor);
     let mut triggered_reset: bool = false;
-    if !is_operation_cpu(module_accessor) && !fighter_is_nana {
+    if !quick_reset && !is_operation_cpu(module_accessor) && !fighter_is_nana {
         triggered_reset = button_config::combo_passes(button_config::ButtonCombo::LoadState);
     }
     if (autoload_reset || triggered_reset)
@@ -558,6 +615,7 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
                 selected_slot
             };
 
+            if !waiting_saved_pair_valid(slot) { return; }
             save_state_player(slot).state = KillPlayer;
             save_state_cpu(slot).state = KillPlayer;
             crate::logging::diagnostic(format_args!(
@@ -583,7 +641,7 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         }
 
         save_state.state = WaitForAlive;
-        if is_cpu {
+        if is_cpu && !quick_reset {
             crate::training::named_macros::begin_restore();
         }
 
@@ -633,7 +691,7 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
 
         // Adjust fighter y position if they won't grab ledge when they should
         adjust_ledge_pos(&mut pos, save_state.fighter_kind, save_state.situation_kind);
-        if is_cpu {
+        if is_cpu && !quick_reset {
             if let Some((x, y)) = crate::training::named_macros::restored_target(pos.x, pos.y) {
                 pos.x = x;
                 pos.y = y;
@@ -644,8 +702,8 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         PostureModule::set_lr(module_accessor, lr);
         reset::on_reset();
 
-        let placed_in_air = is_cpu && crate::training::named_macros::restore_in_air();
-        if is_cpu && !fighter_is_nana {
+        let placed_in_air = !quick_reset && is_cpu && crate::training::named_macros::restore_in_air();
+        if !quick_reset && is_cpu && !fighter_is_nana {
             crate::training::named_macros::remember_restore_pose(
                 module_accessor,
                 pos.x,
@@ -714,7 +772,7 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         if save_state.state == NoAction {
             // Set damage of the save state
             crate::logging::diagnostic(format_args!("[PracticeSave] position_restored cpu={} active_kind=0x{:x} saved_kind=0x{:x} x={} y={}", is_cpu, fighter_kind, save_state.fighter_kind, pos.x, pos.y));
-            if crate::replay_preview::occupied() {
+            if quick_reset || crate::replay_preview::occupied() {
                 set_damage(module_accessor, save_state.percent);
             } else if !is_cpu {
                 match read(&MENU).save_damage_player {
@@ -815,6 +873,12 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
         // if we're recording on state load, record
         // Named work is queued once and starts after BOTH fighters finish all
         // restoration phases, rather than once per PosMove callback.
+        if quick_reset {
+            if save_state_player(selected_slot).state == NoAction && save_state_cpu(selected_slot).state == NoAction {
+                QUICK_RESET_ACTIVE.store(false, Ordering::Release);
+            }
+            return;
+        }
         if crate::training::named_macros::source_is_named() || crate::replay_preview::occupied() {
             return;
         }
@@ -863,6 +927,12 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
     }
 
     // Save state
+    if quick_reset {
+        if save_state_player(selected_slot).state == NoAction && save_state_cpu(selected_slot).state == NoAction {
+            QUICK_RESET_ACTIVE.store(false, Ordering::Release);
+        }
+        return;
+    }
     if button_config::combo_passes(button_config::ButtonCombo::SaveState)
         && !crate::replay_preview::occupied()
     {
