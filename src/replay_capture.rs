@@ -474,7 +474,7 @@ fn close_editor_revision(was_loading: bool, expected_revision: Option<u64>) -> b
     let (was_browsing, was_open) = {
         let mut browser = BROWSER.lock().unwrap();
         if expected_revision.is_some_and(|revision|
-            !browser.as_ref().is_some_and(|b| b.revision == revision)) { return false; }
+            browser.as_ref().is_none_or(|b| b.revision != revision)) { return false; }
         // Publication and close share BROWSER -> EDITOR order. The loader drops
         // BROWSER before touching named UI, whose visibility path reads BROWSER.
         (browser.take().is_some(), EDITOR.lock().unwrap().take().is_some())

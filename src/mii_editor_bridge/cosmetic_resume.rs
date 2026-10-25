@@ -467,8 +467,8 @@ pub(super) unsafe fn poll_gear(context: usize, state: i32, wanted: GearSelection
 
 pub(super) unsafe fn poll_color(context: usize, wanted: ColorSelection) -> Poll {
     if native::read::<i32>(context, 0x148) != 7 { return Poll::Pending; }
-    if !COLOR.lock().unwrap().as_ref().is_some_and(|job|
-        job.context == context && job.wanted == wanted && job.called) { return Poll::Pending; }
+    if COLOR.lock().unwrap().as_ref().is_none_or(|job|
+        job.context != context || job.wanted != wanted || !job.called) { return Poll::Pending; }
     match capture_color(context, 7) {
         Shot::Found(seen) if seen == wanted => Poll::Ready,
         Shot::Abandoned { detail, .. } => Poll::Failed(detail),
