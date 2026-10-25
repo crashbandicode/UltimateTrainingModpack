@@ -55,7 +55,7 @@ pub(super) unsafe fn generation_for(sequence: usize) -> Option<u64> {
 }
 
 #[skyline::hook(offset = 0x2336c90)]
-unsafe fn initialized(scene: usize) {
+unsafe fn ldn_parent_initialized(scene: usize) {
     original!()(scene);
     let previous = OWNER.lock().unwrap().take();
     if let Some(previous) = previous { retire(previous.generation, "local_wireless_owner_replaced"); }
@@ -66,7 +66,7 @@ unsafe fn initialized(scene: usize) {
 }
 
 #[skyline::hook(offset = 0x2337330)]
-unsafe fn released(scene: usize) {
+unsafe fn ldn_parent_released(scene: usize) {
     let current = context(scene);
     let previous = {
         let mut owner = OWNER.lock().unwrap();
@@ -82,7 +82,7 @@ unsafe fn released(scene: usize) {
 }
 
 #[skyline::hook(offset = 0x23374b0)]
-unsafe fn frame(scene: usize, arg: usize) {
+unsafe fn ldn_parent_frame(scene: usize, arg: usize) {
     original!()(scene, arg);
     let Some(context) = context(scene) else {
         if super::ui_resume::pending() && !UNBOUND_REPORTED.swap(true, Ordering::Relaxed) {
@@ -110,4 +110,6 @@ unsafe fn frame(scene: usize, arg: usize) {
     }
 }
 
-pub(super) fn init() { skyline::install_hooks!(initialized, released, frame); }
+pub(super) fn init() {
+    skyline::install_hooks!(ldn_parent_initialized, ldn_parent_released, ldn_parent_frame);
+}
