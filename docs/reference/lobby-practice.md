@@ -113,12 +113,21 @@ when the embedded Training UI or the supported stock archive changes:
 ## Test record
 
 The current branch's [fourteen-item ledger](../plans/lobby-parity.md#required-behavior)
-separates implementation from observed behavior. Quickplay waiting has observed
-save/load, reset, recording/playback, macro naming, clip preview, hit/grab boxes,
-hidden tech, hazards, direct stage changes, hats, items, Mii swaps and CPU portraits.
-The remaining editor interruption, return-stage and distinct Local Wireless
-checks must finish before branch acceptance. Earlier evidence below remains
-historical; it does not establish those new paths.
+records all fourteen as source-implemented; acceptance is incomplete. Quickplay
+waiting has observed save/load, reset, recording/playback, macro naming, clip preview, hit/grab boxes,
+hidden tech, hazards, direct stage changes and match-return rotation, hats, items,
+Mii swaps and CPU portraits. Run111 (candidate57, `e29a398`) confirmed exact
+Headgear/Outfit cursors after actual Quickplay matches, with cancellation preserving
+original equipment; Voice Type2/High resumed exactly. Random returned with No
+focused, and only a later explicit Plus Save wrote native Mii `13348`.
+
+Color failed on candidate57; source fix `8a05178` awaits candidate58 runtime
+confirmation, including cancellation. Local Wireless position save/load is
+observed in run111; recording/playback checks are ongoing. Native editor entry,
+Test and explicit-cancel return passed earlier, but incoming-match editor return
+is pending. The peer's native-room join failure is setup-only. An equivalent
+before/after resource pair is also pending. Earlier evidence below remains
+historical; it does not establish these remaining paths.
 
 Emulator and local-wireless (LDN) checks passed for P1/CPU swaps, menus, the CPU
 icon, the embedded waiting UI and a two-peer match/return. They do not establish

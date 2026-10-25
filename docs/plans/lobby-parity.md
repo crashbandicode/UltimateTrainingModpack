@@ -2,24 +2,30 @@
 
 Authorized 2026-10-25: implement all fourteen source-audited gaps on a separate branch. Branch `lobby-parity`, based on full HUD48 commit `76b6ff70783038c798d2408d538a61e473f71ecc`. Current Switch HUD48 review remains separate from this campaign.
 
+**All fourteen are source-implemented; branch acceptance is incomplete.** Run111 uses candidate57 (`e29a398`); the Color checkpoint correction in source `8a05178` awaits candidate58 runtime qualification.
+
 ## Required behavior
 
 | ID | Feature | Required new scope | State |
 |---|---|---|---|
-| 1 | Save/load practice states including positions, damage, held items and associated restore settings | Quickplay and Local Wireless waiting | Implemented; Quickplay positions, exact item variant and nonzero damage restore observed, including a fresh process |
-| 2 | Record/play inputs, CPU mash and ledge playback slots | Both waiting modes | Implemented; Quickplay CPU recording/playback observed; trigger and LDN checks pending |
-| 3 | Named macro library/editor and replay-clip editing/preview | Both waiting modes | Quickplay named save, interrupted naming return, active-CPU browser entry and complete 500-frame preview observed. Local Wireless qualification pending |
+| 1 | Save/load practice states including positions, damage, held items and associated restore settings | Quickplay and Local Wireless waiting | Implemented; Quickplay positions, exact item variant and nonzero damage restore observed, including a fresh process. LDN position save/load observed in run111; broader LDN restoration remains pending |
+| 2 | Record/play inputs, CPU mash and ledge playback slots | Both waiting modes | Implemented; Quickplay CPU recording/playback and Always/Jump mash observed. Other triggers and LDN recording/playback pending |
+| 3 | Named macro library/editor and replay-clip editing/preview | Both waiting modes | Implemented; Quickplay named save, interrupted naming return, active-CPU browser entry and complete 500-frame preview observed. Local Wireless qualification pending |
 | 4 | Training-style L+R+A quick reset | Both waiting modes | Implemented; Quickplay reset observed |
 | 5 | Hitbox and grab-box visualization | Both waiting modes | Implemented; Quickplay jab/aerial hitboxes and whiffed grab volumes observed |
 | 6 | Hidden CPU tech animations | Both waiting modes | Implemented; Quickplay charged-hit landing hid the CPU during its tech and restored visibility afterward |
 | 7 | Practice-stage hazards setting | Both waiting modes | Implemented; Quickplay WarioWare microgames ran with On and remained absent after reloading with Off |
-| 8 | Immediate stage change and per-entry stage rotation | Quickplay (LDN already implemented) | Direct change and Battlefield/Final Destination rotation on editor exit and actual match return observed |
+| 8 | Immediate stage change and per-entry stage rotation | Quickplay (LDN already implemented) | Implemented; direct change and Battlefield/Final Destination rotation on editor exit and actual match return observed |
 | 9 | Full managed Kirby hat selection | Quickplay | Implemented; Quickplay managed Mario/Link hats observed |
 | 10 | Full character-item selection | Quickplay | Implemented; Quickplay absent-source Stitch-Face grant and save/load observed |
-| 11 | Saved-Mii configuration selection and Player/CPU swaps | Quickplay | Saved Brawler/Swordfighter swaps observed; selected Brawler 2111 performs Flashing Mach Punch while the real-match Ready card remains Mario |
+| 11 | Saved-Mii configuration selection and Player/CPU swaps | Quickplay | Implemented; saved Brawler/Swordfighter swaps observed; selected Brawler 2111 performs Flashing Mach Punch while the real-match Ready card remains Mario |
 | 12 | Matching custom Mii practice HUD portraits | Quickplay | Implemented; Quickplay CPU portrait observed with unchanged actual CSS Ready card |
-| 13 | Native Mii cosmetics and exact interruption/resume | Quickplay; supersedes former Training-only restriction | An interrupted Headgear preview exposed premature restore and implicit equipment selection. Corrected source waits for the settled page and preserves confirmed equipment separately. Native recheck and other cosmetic handlers pending |
-| 14 | Native Mii Add New/Test with return to practice | Local Wireless waiting | Native editor entry, Test and explicit-cancel return observed. Match interruption remains pending |
+| 13 | Native Mii cosmetics and exact interruption/resume | Quickplay; supersedes former Training-only restriction | Implemented; run111 exact Headgear, Outfit, Voice and Random-confirmation returns observed. Color failed on candidate57; source fix awaits candidate58 runtime |
+| 14 | Native Mii Add New/Test with return to practice | Local Wireless waiting | Implemented; native editor entry, Test and explicit-cancel return observed. Incoming-match interruption/return remains pending |
+
+Run111 used actual Quickplay contact, results, root Yes then peer No. Headgear restored the Floral Hat cursor with None equipped; Outfit restored the Cybernetic Suit cursor with Standard Outfit equipped. Explicit B cancellation preserved those original items. Voice restored Type2/High with Pitch focused; B retained Type2/High, matching native Voice behavior. Random restored the exact confirmation with No focused; choosing No preserved the draft, and only the subsequent explicit Plus Save wrote native Mii `13348`.
+
+Color is still an acceptance failure: Pink7 preview replaced Blue5 equipment and restoration timed out on candidate57. Source `8a05178` normalizes only the checkpoint copy; exact cursor/equipment restoration and cancellation still need runtime confirmation. LDN recording/playback checks are ongoing. Peer native-room join has a setup failure, not a feature failure; incoming-match editor return and an equivalent before/after resource pair remain pending. The private `RUNTIME-ACCEPTANCE.md`, `runtime111/` evidence and `editor/COLOR111.md` in the ledger below retain the detailed observations.
 
 Real-match fighter selection, matchmaking, results and replay-save behavior must remain native. The Player Ready card continues to identify the fighter selected for the real match. Practice changes affect the local practice fighters. A match beginning takes precedence over every editor, recording, save-state operation and load; pending work must retire with its scene and never dereference departed native objects. Resume unsaved editor state in the same lobby without implicitly saving. Explicit cancellation still cancels. Ordinary Training retains its existing behavior. Stage rotation remains exclusive to lobby practice; Training supports direct changes only.
 
