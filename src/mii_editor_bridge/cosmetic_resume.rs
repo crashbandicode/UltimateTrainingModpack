@@ -147,9 +147,10 @@ unsafe fn pointer(context: usize, holder: usize) -> Option<usize> {
 }
 
 fn abandon_or_wait<T>(context: usize, state: i32, detail: u64) -> Shot<T> {
-    // State 11 is not a submenu the interrupt path can retire. Keep waiting
-    // rather than store a different screen and then leave 11 running.
-    if state == 11 || attempts(context, state) <= ATTEMPTS {
+    // State 11 is released by the preview-wait pop before this capture runs.
+    // A page that is still unread after the same bound as the other leaves
+    // falls back instead of holding matchmaking open.
+    if attempts(context, state) <= ATTEMPTS {
         Shot::Wait
     } else {
         Shot::Abandoned { state, detail }
@@ -221,9 +222,6 @@ pub(super) unsafe fn capture_voice(context: usize, state: i32) -> Shot<VoiceSele
     match read_voice(component) {
         Ok(selection) => { clear(); Shot::Found(selection) }
         Err(Error::Binding) => abandon_or_wait(context, state, 3),
-        // State 11 cannot be retired here. A voice-identity miss while that
-        // preview is current has to wait until the leaf is state 9.
-        Err(_) if state == 11 => Shot::Wait,
         Err(error) => Shot::Abandoned { state, detail: 0x100 + error.code() as u64 },
     }
 }

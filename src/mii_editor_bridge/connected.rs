@@ -46,6 +46,22 @@ pub(super) unsafe fn before_edit(scene: usize, frame: usize, context: usize) -> 
     };
     if completed { return true; }
     if !abort { return false; }
+    // State 11 is the shared preview waiter. Pop its one success store before
+    // capture so this frame's dispatcher enters the page underneath. Voice
+    // entry reveals state 9 and Test entry reveals state 10. Capture and leaf
+    // completion follow on that page.
+    if let Some(revealed) = contract::release_preview_wait(context) {
+        if let Some(s) = STATE.lock().unwrap().as_mut() {
+            let underneath = native::read::<i32>(context, 0xf8 + revealed as usize * 4);
+            s.event("interrupted_preview_wait_released", [
+                native::read::<i32>(context, 0x148) as u64,
+                revealed as u64,
+                underneath as u64,
+                0,
+            ]);
+        }
+        return false;
+    }
     if !super::resume_adapter::before_edit(context) { return false; }
     let base = BASE.load(Ordering::Acquire);
     if let Some(submenu) = contract::Submenu::bind(scene, frame, context,

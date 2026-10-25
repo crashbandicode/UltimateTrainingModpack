@@ -226,6 +226,34 @@ impl Submenu {
     }
 }
 
+/// `0x180cb80` pops one editor stack level only after its preview status is
+/// ready. Level 0 takes the handler's `b.lt` skip and is not popped. The top
+/// slot must still be state 11, the same identity the other interrupt paths use.
+pub(super) fn revealed_preview_level(state: i32, level: i32, top: i32) -> Option<i32> {
+    if state == 11 && (1..19).contains(&level) && top == 11 {
+        Some(level - 1)
+    } else {
+        None
+    }
+}
+
+/// Called only while a match interrupt is leaving the editor. `0x180cb80`
+/// pops one level after its preview status is at least 4, and returns without
+/// popping when `[[base+0x52b94f8]+0]+0x20` is null. Departure can take that
+/// early return, so write the success store directly: `context+0x144 -= 1`.
+/// Dispatcher `0x180ce00` then enters the revealed page. No commit flag and
+/// no `context+0x168` write.
+pub(super) unsafe fn release_preview_wait(context: usize) -> Option<i32> {
+    if !aligned(context) { return None; }
+    let state: i32 = read(context, 0x148);
+    let level: i32 = read(context, 0x144);
+    if !(0..19).contains(&level) { return None; }
+    let top: i32 = read(context, 0xf8 + level as usize * 4);
+    let revealed = revealed_preview_level(state, level, top)?;
+    write(context, 0x144, revealed);
+    Some(revealed)
+}
+
 /// Returns one action milestone; repeat calls only wait for native state changes.
 pub(super) unsafe fn interrupt_editor(
     base: usize, context: usize, before_cancel: impl FnOnce(),
@@ -262,4 +290,24 @@ pub(super) unsafe fn interrupt_editor(
         return Some("interrupted_editor_cancel_requested");
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::revealed_preview_level;
+
+    #[test]
+    fn preview_wait_pops_one_level_only_while_state_11_is_current() {
+        assert_eq!(revealed_preview_level(11, 2, 11), Some(1));
+        assert_eq!(revealed_preview_level(11, 1, 11), Some(0));
+        assert_eq!(revealed_preview_level(11, 18, 11), Some(17));
+        // The handler's `b.lt` leaves a zero level in place.
+        assert_eq!(revealed_preview_level(11, 0, 11), None);
+        assert_eq!(revealed_preview_level(11, 19, 11), None);
+        // Voice and Test themselves are not this pop.
+        assert_eq!(revealed_preview_level(9, 2, 9), None);
+        assert_eq!(revealed_preview_level(10, 2, 10), None);
+        // A stale top slot is not the waiter, even if the state word says 11.
+        assert_eq!(revealed_preview_level(11, 2, 9), None);
+    }
 }
