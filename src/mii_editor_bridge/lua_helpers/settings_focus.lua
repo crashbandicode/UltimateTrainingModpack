@@ -1,4 +1,4 @@
-local settings, row, area = ...
+local settings, row, area, confirming = ...
 if settings:is_selected_com_frame_actor() then
     settings:unselect_com_frame_actor()
 end
@@ -12,4 +12,9 @@ elseif area == 3 then
 else
     settings.selector1:select_button(area - 1)
     settings.selector1:set_focus(true)
+end
+-- confirming == 1 is the unsaved Random prompt, not a Random highlight.
+-- This is update_random's open. It does not randomize and it does not answer.
+if confirming == 1 then
+    AppPopupManager.open_database("ID_POPUP_MMIIF_EDIT_RANDOM")
 end

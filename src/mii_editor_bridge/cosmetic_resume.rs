@@ -318,8 +318,13 @@ pub(super) unsafe fn poll_color(context: usize, wanted: ColorSelection) -> Poll 
 }
 
 pub(super) unsafe fn poll_voice(context: usize, wanted: VoiceSelection) -> Poll {
-    let failed = VOICE.lock().unwrap().as_ref().and_then(|job| job.failed);
+    let (failed, wrote) = VOICE.lock().unwrap().as_ref()
+        .map(|job| (job.failed, job.wrote)).unwrap_or((None, false));
     if let Some(detail) = failed { return Poll::Failed(detail); }
+    // voice_focus reconciles pitch button 1 before wrote is set. Matching
+    // cursor, type, and pitch is not enough: an equal None restore used to
+    // acknowledge while that button was selectable.
+    if !wrote { return Poll::Pending; }
     if native::read::<i32>(context, 0x148) != 9 { return Poll::Pending; }
     match capture_voice(context, 9) {
         Shot::Found(seen) if seen == wanted => Poll::Ready,
@@ -378,5 +383,33 @@ mod tests {
     fn random_is_not_a_child_state() {
         assert_eq!(leaf(3, None), Leaf::Settings);
         assert_ne!(leaf(3, None), Leaf::Headgear);
+    }
+
+    /// Listing `set_voice_type`: a requested None pair writes pitch selectable
+    /// false, then an old None pair writes it true. Equal None therefore ends
+    /// selectable. The helper's last write is the opposite of that finished pair.
+    fn setter_leaves_pitch_selectable(old_none: bool, requested_none: bool) -> bool {
+        let mut selectable = true;
+        if requested_none { selectable = false; }
+        if old_none { selectable = true; }
+        selectable
+    }
+
+    #[test]
+    fn voice_none_pitch_stays_disabled_when_the_old_pair_was_none() {
+        assert!(setter_leaves_pitch_selectable(true, true), "equal None re-enables pitch");
+        assert!(!setter_leaves_pitch_selectable(false, true));
+        assert!(setter_leaves_pitch_selectable(true, false));
+        assert!(setter_leaves_pitch_selectable(false, false), "neither branch writes");
+        let source = include_str!("lua_helpers/voice_focus.lua");
+        let type_at = source.find("page:set_voice_type(").expect("type transition");
+        let pitch_at = source.find("page:set_voice_pitch(").expect("pitch labels");
+        let selectable_at = source.find("page.selector:set_selectable(1,").expect("pitch id 1");
+        assert!(type_at < pitch_at && pitch_at < selectable_at);
+        assert!(!source.contains("page.voice_type ="));
+        assert!(!source.contains("page.voice_pitch ="));
+        assert!(source.contains("none ~= true"));
+        assert!(!source.contains("set_selectable(1, true)"));
+        assert!(!source.contains("set_selectable(1, false)"));
     }
 }

@@ -78,7 +78,7 @@ unsafe fn store(screen: ui_resume::Screen, focus: i32) -> bool {
                     }
                     if let ui_resume::Screen::Settings(snapshot) = screen {
                         s.event("ui_settings_checkpoint_values", [snapshot.row as u64,
-                            snapshot.area as u64, 0, 0]);
+                            snapshot.area as u64, u64::from(snapshot.confirming), 0]);
                     }
                     if let ui_resume::Screen::Headgear(snapshot) | ui_resume::Screen::Outfit(snapshot) = screen {
                         s.event("ui_gear_checkpoint_values", [snapshot.cursor as u64,
@@ -340,7 +340,8 @@ pub(super) unsafe fn after_edit(context: usize) {
     let restored = match screen {
         ui_resume::Screen::Settings(wanted) => match settings_resume::restore_result(context) {
             Some(Ok(Some(seen))) if seen == wanted && current == 3 => {
-                note("ui_settings_restore_values", [seen.row as u64, seen.area as u64, 0, 0]);
+                note("ui_settings_restore_values", [seen.row as u64, seen.area as u64,
+                    u64::from(seen.confirming), 0]);
                 true
             }
             Some(Err(error)) => { settle(false, 0x2000 + error.code() as u64); return; }

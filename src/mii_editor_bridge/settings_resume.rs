@@ -9,15 +9,24 @@ pub(super) struct Snapshot {
     pub row: i32,
     // 0: settings list; 1: Random; 2: Test; 3: native Save footer.
     pub area: i32,
+    // The unfinished ID_POPUP_MMIIF_EDIT_RANDOM prompt. Area 1 alone is the
+    // Random highlight, which is not that confirmation.
+    pub confirming: bool,
 }
 
 impl Snapshot {
-    pub(super) const INITIAL: Self = Self { row: 0, area: 0 };
+    pub(super) const INITIAL: Self = Self { row: 0, area: 0, confirming: false };
 
-    fn parse(row: Value, area: Value) -> Result<Self, Error> {
+    fn parse(row: Value, area: Value, confirming: Value) -> Result<Self, Error> {
         let row = row.int().filter(|row| (0..=5).contains(row)).ok_or(Error::Value)?;
         let area = area.int().filter(|area| (0..=3).contains(area)).ok_or(Error::Value)?;
-        Ok(Self { row, area })
+        let confirming = match confirming.int() {
+            Some(0) => false,
+            Some(1) => true,
+            _ => return Err(Error::Value),
+        };
+        if confirming && area != 1 { return Err(Error::Value); }
+        Ok(Self { row, area, confirming })
     }
 }
 
@@ -69,10 +78,11 @@ pub(super) fn restore_result(context: usize) -> Option<Result<Option<Snapshot>, 
 }
 
 unsafe fn observe(vm: &mut Vm, settings: Value) -> Result<Option<Snapshot>, Error> {
-    let [done, row, area] = vm.call::<3>(include_bytes!("lua_helpers/settings_capture.luac"), &[settings])?;
+    let [done, row, area, confirming] = vm.call::<4>(
+        include_bytes!("lua_helpers/settings_capture.luac"), &[settings])?;
     match done.int() {
         Some(1) => Ok(None),
-        Some(0) => Snapshot::parse(row, area).map(Some),
+        Some(0) => Snapshot::parse(row, area, confirming).map(Some),
         _ => Err(Error::Value),
     }
 }
@@ -89,8 +99,18 @@ impl Job {
             }
             Operation::Restore { wanted, applied: false } => {
                 if seen.is_none() { return Err(Error::Value); }
-                vm.call::<0>(include_bytes!("lua_helpers/settings_focus.luac"),
-                    &[settings, Value::integer(wanted.row), Value::integer(wanted.area)])?;
+                if seen == Some(wanted) {
+                    self.operation = Operation::Restore { wanted, applied: true };
+                    return Ok(seen);
+                }
+                // A busy manager may still be the previous prompt. Opening
+                // again would stack ID_POPUP_MMIIF_EDIT_RANDOM. A highlight
+                // is not busy, so that is the one open.
+                let open = i32::from(wanted.confirming && seen.is_some_and(|seen| !seen.confirming));
+                vm.call::<0>(include_bytes!("lua_helpers/settings_focus.luac"), &[
+                    settings, Value::integer(wanted.row), Value::integer(wanted.area),
+                    Value::integer(open),
+                ])?;
                 self.operation = Operation::Restore { wanted, applied: true };
                 Ok(None)
             }
@@ -238,10 +258,27 @@ mod tests {
         assert!(!suppress_native_cosmetics(Origin::Quickplay));
         assert!(!suppress_native_cosmetics(Origin::Training));
         assert!(suppress_native_cosmetics(Origin::LocalWireless));
-        let random = Snapshot::parse(Value::integer(2), Value::integer(1)).unwrap();
-        assert_eq!(random, Snapshot { row: 2, area: 1 });
-        let voice_row = Snapshot::parse(Value::integer(5), Value::integer(0)).unwrap();
+        let random = Snapshot::parse(Value::integer(2), Value::integer(1), Value::integer(0)).unwrap();
+        assert_eq!(random, Snapshot { row: 2, area: 1, confirming: false });
+        let voice_row = Snapshot::parse(Value::integer(5), Value::integer(0), Value::integer(0)).unwrap();
         assert_eq!(voice_row.row, 5);
+    }
+
+    #[test]
+    fn random_confirmation_is_not_a_highlight() {
+        let highlight = Snapshot::parse(Value::integer(2), Value::integer(1), Value::integer(0)).unwrap();
+        let pending = Snapshot::parse(Value::integer(2), Value::integer(1), Value::integer(1)).unwrap();
+        assert_eq!(highlight, Snapshot { row: 2, area: 1, confirming: false });
+        assert_eq!(pending, Snapshot { row: 2, area: 1, confirming: true });
+        assert_ne!(highlight, pending);
+        assert!(Snapshot::parse(Value::integer(2), Value::integer(0), Value::integer(1)).is_err());
+        assert!(Snapshot::parse(Value::integer(2), Value::integer(1), Value::integer(2)).is_err());
+        let focus = include_str!("lua_helpers/settings_focus.lua");
+        let capture = include_str!("lua_helpers/settings_capture.lua");
+        assert!(focus.contains("open_database(\"ID_POPUP_MMIIF_EDIT_RANDOM\")"));
+        assert!(!focus.contains("set_random"));
+        assert!(!capture.contains("get_result"));
+        assert!(!capture.contains("set_random"));
     }
 
     #[test]
