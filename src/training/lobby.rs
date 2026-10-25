@@ -116,7 +116,7 @@ pub fn update() {
             | (u64::from(mode.melee) << 32)
             | (u64::from(mode.initialized) << 40);
         if LAST_MODE.swap(key, Ordering::Relaxed) != key {
-            crate::hazard_manager::depart();
+            crate::hazard_manager::scene_changed(mode);
             // A native Training departure need not change lobby::active(). Drop
             // preview values and pending injection at the actual scene boundary.
             if WAS_ACTIVE.load(Ordering::Acquire) { super::named_macros::suspend_waiting(); }

@@ -105,7 +105,8 @@ pub(super) fn voice(cursor: i32, voice_type: i32, voice_pitch: i32) -> Option<Vo
 pub(super) const GEAR_COMPONENT_WRITES: [usize; 3] = [0x148, 0x150, 0x164];
 pub(super) const COLOR_COMPONENT_WRITES: [usize; 1] = [0xdc];
 pub(super) const CONTEXT_CURSOR: usize = 0x1c8;
-pub(super) const COMMIT_OFFSETS: [usize; 5] = [0xb8, 0xe8, 0x100, 0x140, 0x168];
+#[cfg(test)]
+const COMMIT_OFFSETS: [usize; 5] = [0xb8, 0xe8, 0x100, 0x140, 0x168];
 
 pub(super) enum Shot<T> {
     Wait,
@@ -174,9 +175,9 @@ pub(super) unsafe fn capture_gear(context: usize, state: i32) -> Shot<GearSelect
         return Shot::Wait;
     }
     match gear(
-        native::read(component, 0x164),
-        native::read(component, 0x148),
-        native::read(component, 0x150),
+        native::read(component, GEAR_COMPONENT_WRITES[2]),
+        native::read(component, GEAR_COMPONENT_WRITES[0]),
+        native::read(component, GEAR_COMPONENT_WRITES[1]),
     ) {
         Some(selection) => { clear(); Shot::Found(selection) }
         None => abandon_or_wait(context, state, 4),
@@ -193,7 +194,7 @@ pub(super) unsafe fn capture_color(context: usize, state: i32) -> Shot<ColorSele
     if native::read::<u32>(component, 0xb8) != 0 || native::read::<u8>(component, 0xe8) != 0 {
         return Shot::Wait;
     }
-    match color(native::read(component, 0xdc), native::read(component, 0xe0)) {
+    match color(native::read(component, COLOR_COMPONENT_WRITES[0]), native::read(component, 0xe0)) {
         Some(selection) => { clear(); Shot::Found(selection) }
         None => abandon_or_wait(context, state, 4),
     }
@@ -247,9 +248,9 @@ unsafe fn apply_gear(context: usize, holder: usize, wanted: GearSelection) {
     if native::read::<u32>(context, 0x14c) < 1
         || native::read::<u32>(component, 0xe8) != 0
         || native::read::<u8>(component, 0x168) != 0 { return; }
-    native::write(component, 0x148, wanted.live);
-    native::write(component, 0x150, wanted.paired);
-    native::write(component, 0x164, wanted.cursor);
+    native::write(component, GEAR_COMPONENT_WRITES[0], wanted.live);
+    native::write(component, GEAR_COMPONENT_WRITES[1], wanted.paired);
+    native::write(component, GEAR_COMPONENT_WRITES[2], wanted.cursor);
     native::write(context, CONTEXT_CURSOR, wanted.cursor);
 }
 
@@ -258,7 +259,7 @@ unsafe fn apply_color(context: usize, wanted: ColorSelection) {
     if native::read::<u32>(context, 0x14c) < 1
         || native::read::<u32>(component, 0xb8) != 0
         || native::read::<u8>(component, 0xe8) != 0 { return; }
-    native::write(component, 0xdc, wanted.cursor);
+    native::write(component, COLOR_COMPONENT_WRITES[0], wanted.cursor);
 }
 
 unsafe fn prepare_voice(context: usize, wanted: VoiceSelection) {
@@ -367,8 +368,8 @@ mod tests {
 
     #[test]
     fn restore_does_not_write_commit_fields() {
-        let gear_writes = GEAR_COMPONENT_WRITES.into_iter().chain([CONTEXT_CURSOR]);
-        let color_writes = COLOR_COMPONENT_WRITES.into_iter();
+        let gear_writes = GEAR_COMPONENT_WRITES.iter().copied().chain([CONTEXT_CURSOR]);
+        let color_writes = COLOR_COMPONENT_WRITES.iter().copied();
         assert!(COMMIT_OFFSETS.iter().all(|offset| !gear_writes.clone().any(|write| write == *offset)));
         assert!(COMMIT_OFFSETS.iter().all(|offset| !color_writes.clone().any(|write| write == *offset)));
     }

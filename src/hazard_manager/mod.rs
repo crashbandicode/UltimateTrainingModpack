@@ -45,6 +45,13 @@ pub fn depart() {
     }
 }
 
+/// The stage loader may have already published the current scene's receipt
+/// before the first fighter/UI observation. Retire only the previous scene's
+/// loan here; an explicit practice-disable still uses unconditional `depart`.
+pub fn scene_changed(mode: crate::common::game_mode::Mode) {
+    depart_unless_scene(waiting_scene(mode));
+}
+
 /// Stage-load release: retire only a receipt recorded for a different scene than the
 /// one now loading. The same waiting scene reloading its stage keeps its receipt and
 /// re-records below. Nothing else about practice is touched from the stage loader.

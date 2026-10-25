@@ -191,7 +191,8 @@ unsafe extern "C" fn fighter_vtable_on_frame(fighter: &mut smash::app::Fighter) 
     // One native entry-lease refresh per game frame, on the P1 body's own callback.
     // Entry destruction and scene changes still retire immediately through
     // `practice::entry_departed` / `practice::scene_departed`.
-    if fighter.battle_object.entry_id == 0 {
+    if fighter.battle_object.entry_id == 0
+        && fighter.battle_object.kind != *FIGHTER_KIND_NANA as u32 {
         practice::refresh();
     }
     tech::restore_visibility(&mut *fighter.battle_object.module_accessor);
