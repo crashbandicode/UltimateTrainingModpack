@@ -93,8 +93,8 @@ pub(crate) unsafe fn map(entry: usize, owner: usize) -> Result<Map, &'static str
             && rd::<u32>(internal, 0xa0) == 4,
         "CPU current four-owner map differs",
     )?;
-    if layout==super::mii_backend::Layout::Ldn {
-        check(super::native_source::exact_ldn_waiting_layout(entries[5] as *const u8,5),"LDN row layout changed")?;
+    if layout.waiting() {
+        check(super::native_source::exact_waiting_layout(entries[5] as *const u8,5),"waiting row layout changed")?;
     }
     Ok(Map {
         layout,

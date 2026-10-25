@@ -126,7 +126,8 @@ mii-managed-source-coexist-alpha = ["mii-ordinary-cpu-alpha", "managed-sources"]
 # Separate guarded helper2/3 Mii resource transaction; never enabled by coexistence A.
 mii-managed-helper-alpha = ["mii-managed-source-coexist-alpha", "training_mod_consts/mii-managed-helper-alpha"]
 # Default-off helper-rendered custom Mii HUD portrait. Not part of enhancements-alpha.
-# Writes only in Training (0x20/0x04040000) and local waiting (0x0d/0x02010000).
+# Writes only in Training (0x20/0x04040000), local waiting (0x0d/0x02010000) and
+# Quickplay waiting (0x0d/0x070101xx); matches and arenas store nothing.
 mii-hud-portrait-alpha = ["mii-managed-helper-alpha"]
 # Default-off read-only one-shot Mii G/selector capture on the exact LDN waiting map 0/4/5/6
 # (Training 0/1/2/3 as reader control). No allocation, native write or gate change.

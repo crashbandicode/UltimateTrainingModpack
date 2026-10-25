@@ -210,7 +210,7 @@ unsafe fn ldn_baseline(current: &Snapshot) -> bool {
     // Use the existing exact count4 admission. It remains unchanged and is never
     // called as a count5 post-create admission rule.
     if current.quantity.is_some() || current.count != 4
-        || !native_source::exact_ldn_waiting_layout(current.primary[5] as *const u8, 5)
+        || !native_source::exact_waiting_layout(current.primary[5] as *const u8, 5)
         || [1usize, 2, 3, 7].iter().any(|i| current.resources[*i] != 0 || current.aliases[*i] != 0)
     { return false; }
     let Some(fields) = current.ldn else { return false; };

@@ -265,8 +265,8 @@ unsafe fn current_roots(layout: Layout, entry: usize, owner: u32) -> Result<Root
             }
         }
         Layout::LdnWaiting => {
-            if !native_source::exact_ldn_waiting_layout(primary[5] as *const u8, 5)
-                || !native_source::exact_ldn_waiting_layout(primary[6] as *const u8, 6)
+            if !native_source::exact_waiting_layout(primary[5] as *const u8, 5)
+                || !native_source::exact_waiting_layout(primary[6] as *const u8, 6)
             {
                 return Err((7, "exact 0/4/5/6 waiting layout unavailable", primary[5], primary[6]));
             }

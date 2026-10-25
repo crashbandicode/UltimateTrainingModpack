@@ -70,14 +70,21 @@ impl<T: Copy> WaitingSession<T> {
     }
 
     /// Returns the shared continuation decision for other value-only practice state.
+    ///
+    /// A match excursion keeps the waiting mode word and changes only the melee byte:
+    /// local wireless uses `0x01` (13.0.5 runtime trace); Quickplay keeps its `0x0701xxxx`
+    /// word and uses `0x0e` (`cpu_pilot` LanOnline1v1 tuple `0x0e/0x07010101`). Other
+    /// intermediate tuples are unobserved and clear the choices rather than guess.
     pub fn scene_changed(&mut self, initialized: bool, melee: u8, mode: u32) -> bool {
+        let online = mode & 0x7fff0000 == 0x07010000;
+        let excursion = |melee: u8| matches!(melee, 0x01 | 0x0d) || (online && melee == 0x0e);
         let same_lobby = initialized
-            && matches!(melee, 0x01 | 0x0d)
-            && (mode == 0x02010000 || mode & 0x7fff0000 == 0x07010000)
+            && excursion(melee)
+            && (mode == 0x02010000 || online)
             && self
                 .scene
                 .is_some_and(|(old_initialized, old_melee, old_mode)| {
-                    old_initialized && old_mode == mode && matches!(old_melee, 0x01 | 0x0d)
+                    old_initialized && old_mode == mode && excursion(old_melee)
                 });
         for choice in &mut self.choices {
             if same_lobby {
@@ -205,6 +212,36 @@ mod tests {
             session.scene_changed(true, 0x01, 0x02010000);
             assert_eq!(session.restore_target(0), Some(20));
         }
+    }
+
+    #[test]
+    fn quickplay_match_excursion_preserves_choices_only_within_its_mode_word() {
+        let mut session = WaitingSession::empty();
+        session.scene_changed(true, 0x0d, 0x07010101);
+        session.observe(0, 10);
+        session.observe(1, 20);
+        session.commit(0, 30);
+        session.commit(1, 40);
+        session.player_departed(); // Destruction precedes the mode change, as in LDN.
+        assert!(session.scene_changed(true, 0x0e, 0x07010101)); // online match melee
+        assert!(session.scene_changed(true, 0x0d, 0x07010101));
+        assert!(!session.observe(0, 10));
+        assert_eq!(session.restore_target(0), Some(30));
+        assert_eq!(session.restore_target(1), Some(40));
+        // The online match melee is not a local-wireless excursion.
+        let mut local = WaitingSession::empty();
+        local.scene_changed(true, 0x0d, 0x02010000);
+        local.commit(0, 30);
+        assert!(!local.scene_changed(true, 0x0e, 0x02010000));
+        local.scene_changed(true, 0x0d, 0x02010000);
+        assert_eq!(local.restore_target(0), None);
+        // A different online mode word is another lobby.
+        let mut moved = WaitingSession::empty();
+        moved.scene_changed(true, 0x0d, 0x07010101);
+        moved.commit(1, 40);
+        assert!(!moved.scene_changed(true, 0x0e, 0x07010102));
+        moved.scene_changed(true, 0x0d, 0x07010102);
+        assert_eq!(moved.restore_target(1), None);
     }
 
     #[test]

@@ -214,11 +214,11 @@ unsafe fn map(entry: usize) -> Result<Map,&'static str> {
         && rd::<[usize;8]>(internal,0x60)==[0;8],"current primary owner map")?;
     check(rd::<u32>(internal,0xa0) as usize==entries.iter().filter(|p| **p!=0).count(),
         "current map count")?;
-    if cfg!(feature="mii-managed-source-coexist-alpha") || layout==super::super::mii_backend::Layout::Ldn {
+    if cfg!(feature="mii-managed-source-coexist-alpha") || layout.waiting() {
         check(layout.shape(&entries),"Mii backend owner shape differs")?;
     }
-    if layout==super::super::mii_backend::Layout::Ldn {
-        check(super::super::native_source::exact_ldn_waiting_layout(entries[5] as *const u8,5),"LDN row layout changed")?;
+    if layout.waiting() {
+        check(super::super::native_source::exact_waiting_layout(entries[5] as *const u8,5),"waiting row layout changed")?;
     }
     Ok(Map{layout,symbol,manager,internal,entries})
 }
@@ -293,7 +293,7 @@ unsafe fn current_locked(base:usize, m:Map, locked:Binding,
                 current_record:role_owner::current_record_claim(kind,index).then(||rd(current_at,0))});
         }
     }
-    check(if m.layout==super::super::mii_backend::Layout::Ldn {role_owner::claims_in(m.layout,&owners,&kinds).is_some()}
+    check(if m.layout.waiting() {role_owner::claims_in(m.layout,&owners,&kinds).is_some()}
         else {training_mod_consts::mii::ordinary_player::unique_player(&owners,&kinds)},
         "owner/selector/index alias or inactive owner conflict")?;
     let owner=owners[0].ok_or("Player0 absent")?;

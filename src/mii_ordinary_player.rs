@@ -141,7 +141,7 @@ pub(super) fn owns(entry:usize)->bool {
 }
 pub(super) fn request_restore(value:WaitingValue)->bool {
     let mut s=STATE.lock().unwrap();
-    if mii_backend::current()!=Some(mii_backend::Layout::Ldn) || !enabled() {return false;}
+    if !mii_backend::current().is_some_and(|l|l.waiting()) || !enabled() {return false;}
     // Mixed rosters are owned by intercept even when the remembered fighter is ordinary.
     // Restore the exact remembered value rather than resolving a new menu choice.
     let mixed=setting(&MENU).player_roster.fighters().iter()

@@ -953,7 +953,7 @@ pub(super) mod managed {
     #[cfg(any(feature = "source-ldn-capacity-empty-probe", feature = "managed-ldn-third-source-alpha"))]
     unsafe fn ldn_creation_shape(scene: Snapshot) -> bool {
         if !cfg!(feature = "managed-ldn-third-source-alpha") || scene.quantity.is_some()
-            || !native_source::exact_ldn_waiting_layout(scene.primary[5] as *const u8, 5)
+            || !native_source::exact_waiting_layout(scene.primary[5] as *const u8, 5)
             || [1usize, 2, 3, 7].iter().any(|i| scene.resources[*i] != 0 || scene.aliases[*i] != 0)
         { return false; }
         let Some(fields) = scene.ldn else { return false; };

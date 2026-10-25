@@ -133,7 +133,7 @@ pub(crate) enum PortraitIntent {
 fn remember_owned(role:Role,generation:u64,kind:u32,forms:Forms,
     configuration:Option<training_mod_consts::mii::lifetime::Configuration>,cursor:Option<usize>,original:bool) {
     let mut memory=WAITING_MEMORY.lock().unwrap();
-    if mii_backend::current()!=Some(mii_backend::Layout::Ldn)
+    if !mii_backend::current().is_some_and(|l|l.waiting())
         || mii_saved_alpha::current_generation(role as u32)!=generation {return;}
     if let Some(fighter)=TrioFighter::from_kind(kind) {
         memory.commit(role as usize,
@@ -165,7 +165,7 @@ fn observe_mii_origin(role:Role,generation:u64,kind:u32,forms:Forms,
     configuration:Option<training_mod_consts::mii::lifetime::Configuration>) {
     let (Some(configuration),Some(fighter))=(configuration,TrioFighter::from_kind(kind)) else{return;};
     let mut memory=WAITING_MEMORY.lock().unwrap();
-    if mii_backend::current()!=Some(mii_backend::Layout::Ldn)
+    if !mii_backend::current().is_some_and(|l|l.waiting())
         || mii_saved_alpha::current_generation(role as u32)!=generation {return;}
     // observe preserves a same-lobby remembered choice; a fresh room clears both roles.
     let fresh = memory.observe(role as usize,WaitingValue {fighter,forms,cursor:None,
@@ -981,7 +981,7 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
                     // Exact native origin capture supplies a saved Mii default. A kind-only
                     // observation must not suppress its configuration on a later return.
                     #[cfg(feature="mii-saved-alpha")]
-                    let exact_origin_pending=mii_backend::current()==Some(mii_backend::Layout::Ldn)
+                    let exact_origin_pending=mii_backend::current().is_some_and(|l|l.waiting())
                         && (0x48..=0x4a).contains(&kind)
                         && ((role==Role::Player && cfg!(feature="mii-ordinary-player-alpha"))
                             || (role==Role::Cpu && cfg!(feature="mii-ordinary-cpu-alpha")));
@@ -1510,8 +1510,9 @@ unsafe fn refresh_waiting_icon(listener: *const u8, owner: u32, kind: u32, base:
     );
 }
 
-/// CPU4's local waiting-card icon, read fresh. Online waiting returns None so the
-/// portrait path has no pane to write. No texture assignment and no heap use.
+/// CPU4's waiting-card icon pane, read fresh through the generation-checked waiting UI
+/// handle for both the local and the online waiting controller. No texture assignment
+/// and no heap use.
 #[cfg(feature="mii-hud-portrait-alpha")]
 pub(super) unsafe fn waiting_icon_pane(base: usize, owner: u32) -> Option<*const u8> {
     if owner != 4 {
@@ -1571,16 +1572,41 @@ unsafe fn waiting_icon_source(base: usize) -> Option<(*const u8, *const u8)> {
 
 #[cfg(feature="mii-hud-portrait-alpha")]
 unsafe fn waiting_card_pane(listener: *const u8, base: usize) -> Option<*const u8> {
+    waiting_partner_icon(listener, 4, base, false).map(|(icon, _)| icon)
+}
+
+/// Resolve CPU `owner`'s partner icon pane and the waiting UI root that owns its
+/// texture cache, through the game's generation-checked waiting UI handle (136aef8).
+/// The local (`view+0xd3a == 0`) and online waiting controllers differ only in their
+/// offsets; presentation ID -> visible partner index is resolved exactly as the native
+/// damage setters do (13cecb0 / 13d0f50), never assuming CPU4 is pane zero. `log`
+/// traces rejections for the swap path; the per-tick portrait path stays silent.
+/// Reads only; no heap use; no address survives this call.
+unsafe fn waiting_partner_icon(
+    listener: *const u8, owner: u32, base: usize, log: bool,
+) -> Option<(*const u8, *const u8)> {
+    if owner != 4 {
+        return None;
+    }
     let hud = read::<*const u8>(listener, 0x10);
     let inner = read::<*const u8>(hud, 0x20);
     if !aligned(inner) || read::<usize>(inner, 0) != base + 0x5062f60 {
+        if log {
+            trace!("[CharacterRoster] waiting HUD rejected: inner=0x{:x}", inner as usize);
+        }
         return None;
     }
     let records = read::<*const u8>(inner, 0x18);
     if records as usize != base + 0x52c5730 {
+        if log {
+            trace!("[CharacterRoster] waiting HUD rejected: records=0x{:x}", records as usize);
+        }
         return None;
     }
-    let slot = read::<i32>(records, 4 * 0x260 + 0xc);
+    let slot = read::<i32>(records, owner as usize * 0x260 + 0xc);
+    if log {
+        trace!("[CharacterRoster] waiting HUD owner={} presentation_slot={}", owner, slot);
+    }
     if !(0..8).contains(&slot) {
         return None;
     }
@@ -1595,132 +1621,48 @@ unsafe fn waiting_card_pane(listener: *const u8, base: usize) -> Option<*const u
         return None;
     }
     let view = pointer_chain(context, &[0])?;
-    if read::<u8>(view, 0xd3a) != 0 {
-        return None;
-    }
-    let controller = pointer_chain(view, &[0x420])?;
+    let online = read::<u8>(view, 0xd3a) != 0;
+    let controller = pointer_chain(view, &[if online { 0xa50 } else { 0x420 }])?;
     let control_state = pointer_chain(controller, &[0])?;
     if read::<u8>(control_state, 0x14) == 0 {
         return None;
     }
     let mut indices = [i32::MIN; 3];
-    for (i, value) in indices.iter_mut().enumerate() {
-        *value = read::<i32>(controller, 0x150 + i * 4);
-    }
-    let entries = read::<*const u8>(controller, 0x148);
+    let entries = if online {
+        let collection = pointer_chain(controller, &[0x2f0])?;
+        if read::<u8>(collection, 0) == 0 {
+            return None;
+        }
+        let begin = read::<*const u8>(collection, 0x18);
+        let end = read::<usize>(collection, 0x20);
+        let length = end.wrapping_sub(begin as usize);
+        if !aligned(begin) || length > 12 || !length.is_multiple_of(4) {
+            return None;
+        }
+        for (i, value) in indices.iter_mut().enumerate().take(length / 4) {
+            *value = read::<i32>(begin, i * 4);
+        }
+        read::<*const u8>(collection, 8)
+    } else {
+        for (i, value) in indices.iter_mut().enumerate() {
+            *value = read::<i32>(controller, 0x150 + i * 4);
+        }
+        read::<*const u8>(controller, 0x148)
+    };
     if !aligned(entries) {
         return None;
     }
     let index = indices.iter().position(|&i| {
         (0..8).contains(&i) && read::<i32>(entries, i as usize * 0x1d8 + 0x50) == slot
     })?;
-    let ui = pointer_chain(controller, &[0x130, 0x80])?;
-    let partners = pointer_chain(ui, &[0x220])?;
-    pointer_chain(partners, &[0x98 + index * 0x58])
+    let ui = pointer_chain(controller, &[if online { 8 } else { 0x130 }, 0x80])?;
+    let partners = pointer_chain(ui, &[if online { 0x20 } else { 0x220 }])?;
+    let icon = pointer_chain(partners, &[0x98 + index * 0x58])?;
+    Some((icon, ui))
 }
 
 unsafe fn waiting_icon(listener: *const u8, owner: u32, kind: u32, base: usize) -> bool {
-    if owner != 4 {
-        return false;
-    }
-    let hud = read::<*const u8>(listener, 0x10);
-    let inner = read::<*const u8>(hud, 0x20);
-    if !aligned(inner) || read::<usize>(inner, 0) != base + 0x5062f60 {
-        trace!(
-            "[CharacterRoster] waiting HUD rejected: inner=0x{:x}",
-            inner as usize
-        );
-        return false;
-    }
-    let records = read::<*const u8>(inner, 0x18);
-    if records as usize != base + 0x52c5730 {
-        trace!(
-            "[CharacterRoster] waiting HUD rejected: records=0x{:x}",
-            records as usize
-        );
-        return false;
-    }
-    let slot = read::<i32>(records, owner as usize * 0x260 + 0xc);
-    trace!(
-        "[CharacterRoster] waiting HUD owner={} presentation_slot={}",
-        owner,
-        slot
-    );
-    if !(0..8).contains(&slot) {
-        return false;
-    }
-    let Some(root) = pointer_chain(base as *const u8, &[0x52c3420, 8, 0]) else {
-        return false;
-    };
-    let context = read::<*const u8>(root, 0xb98);
-    if !aligned(context) {
-        return false;
-    }
-    // Match the game's generation-checked waiting UI handle (136aef8).
-    let handle = [
-        base + 0x5063bc0,
-        context as usize,
-        read::<u32>(root, 0xba0) as usize,
-    ];
-    let valid: unsafe extern "C" fn(*const usize) -> bool = std::mem::transmute(base + 0x138b6c0);
-    if !valid(handle.as_ptr()) {
-        return false;
-    }
-    let Some(view) = pointer_chain(context, &[0]) else {
-        return false;
-    };
-    let online = read::<u8>(view, 0xd3a) != 0;
-    let Some(controller) = pointer_chain(view, &[if online { 0xa50 } else { 0x420 }]) else {
-        return false;
-    };
-    let Some(control_state) = pointer_chain(controller, &[0]) else {
-        return false;
-    };
-    if read::<u8>(control_state, 0x14) == 0 {
-        return false;
-    }
-    // Resolve presentation ID -> visible partner index exactly as the native
-    // damage setters (13cecb0 / 13d0f50); never assume CPU4 is pane zero.
-    let (entries, indices) = if online {
-        let Some(collection) = pointer_chain(controller, &[0x2f0]) else {
-            return false;
-        };
-        if read::<u8>(collection, 0) == 0 {
-            return false;
-        }
-        let begin = read::<*const i32>(collection, 0x18);
-        let end = read::<usize>(collection, 0x20);
-        let length = end.wrapping_sub(begin as usize);
-        if !aligned(begin.cast()) || length > 12 || !length.is_multiple_of(4) {
-            return false;
-        }
-        (
-            read::<*const u8>(collection, 8),
-            std::slice::from_raw_parts(begin, length / 4).to_vec(),
-        )
-    } else {
-        (
-            read::<*const u8>(controller, 0x148),
-            (0..3)
-                .map(|i| read::<i32>(controller, 0x150 + i * 4))
-                .collect(),
-        )
-    };
-    if !aligned(entries) {
-        return false;
-    }
-    let Some(index) = indices.iter().position(|&i| {
-        (0..8).contains(&i) && read::<i32>(entries, i as usize * 0x1d8 + 0x50) == slot
-    }) else {
-        return false;
-    };
-    let Some(ui) = pointer_chain(controller, &[if online { 8 } else { 0x130 }, 0x80]) else {
-        return false;
-    };
-    let Some(partners) = pointer_chain(ui, &[if online { 0x20 } else { 0x220 }]) else {
-        return false;
-    };
-    let Some(icon) = pointer_chain(partners, &[0x98 + index * 0x58]) else {
+    let Some((icon, ui)) = waiting_partner_icon(listener, owner, base, true) else {
         return false;
     };
     let Some(cache) = pointer_chain(ui, &[0, 0x78]) else {

@@ -181,9 +181,11 @@ struct Mirrors { index: u16, outfit: u16, hat: u16, colour: u16, rebuild: u8, sp
 enum PipelinePhase { Live, Departed, Resetting }
 
 /// Identities only, never cached borrows. Native Training destroys its source on
-/// exit. LDN reuses it across a match, so a pipeline we started must be returned
-/// to the unused image before native match setup. Existing pipelines are never
-/// marked here. The exact waiting P1 entry is the departure authority.
+/// exit. Local-wireless waiting reuses it across a match (observed); Quickplay
+/// waiting carries the same retirement duty until observed otherwise, so a
+/// pipeline we started is returned to the unused image before native match setup.
+/// A source that native code replaced instead is detected and forgotten. Existing
+/// pipelines are never marked here. The exact waiting P1 entry is the departure authority.
 #[derive(Clone, Copy)]
 struct Bootstrap {
     source: usize, batch: usize, thread: usize, player_entry: usize,
@@ -275,7 +277,8 @@ fn disarm() {
     ARMED_ROW_SUB.store(0, Ordering::Release);
 }
 
-/// Training and local waiting only. Online and every other mode store nothing.
+/// Training and the qualified waiting rooms only (`policy::may_write_scene`);
+/// matches, arenas and every other mode store nothing.
 fn scene_writable() -> bool {
     match crate::common::game_mode::current() {
         Some(mode) => policy::may_write_scene(mode.melee, mode.mode),
@@ -329,7 +332,7 @@ pub(super) unsafe fn request(entry: *const u8, owner: u32, generation: u64, kind
         let mut s = STATE.lock().unwrap();
         if s.bootstrap.is_some_and(|p| p.phase != PipelinePhase::Live) { return; }
         if !in_scope {
-            refuse_once(&mut s, o, REFUSE_SCOPE, "portrait scope is native Training or the local-wireless waiting room; other scenes are unsupported");
+            refuse_once(&mut s, o, REFUSE_SCOPE, "portrait scope is native Training or a qualified waiting room (local wireless, Quickplay); other scenes are unsupported");
             return;
         }
         if s.halted {
@@ -383,7 +386,7 @@ pub(super) unsafe fn service(entry: *mut u8, owner: u32) {
 pub(super) unsafe fn on_destroy(entry: *const u8, owner: u32) {
     if !ACTIVE.load(Ordering::Acquire) { return; }
     let departure = owner == 0 && STATE.lock().unwrap().bootstrap
-        .is_some_and(|p| p.layout == Layout::Ldn && p.player_entry == entry as usize);
+        .is_some_and(|p| p.layout.waiting() && p.player_entry == entry as usize);
     if departure { request_pipeline_retirement(); }
     let mut released = None;
     {
@@ -443,7 +446,7 @@ pub(super) fn scene_changed() {
     s.refused = [0; policy::VISIBLE_OWNERS];
     s.halted = false;
     s.flipped = [None; policy::VISIBLE_OWNERS];
-    if s.bootstrap.is_none_or(|p| p.layout != Layout::Ldn) {
+    if s.bootstrap.is_none_or(|p| !p.layout.waiting()) {
         s.bootstrap = None;
         s.waiting_crop = None;
     }
@@ -483,7 +486,7 @@ unsafe fn job_tick(base: usize, owner: usize, entry: usize) {
     }
     match (job.stage, job.intent) {
         (Stage::Requested, Intent::Original { original_kind }) => {
-            if job.layout == Layout::Ldn || policy::class_sub(original_kind).is_none() {
+            if job.layout.waiting() || policy::class_sub(original_kind).is_none() {
                 // No construction bust to return to: the waiting card and an ordinary original go
                 // back to native ownership; the product's own refresh paints them.
                 release_presentation(base, job.layout, job.physical, owner, "original restored");
@@ -681,7 +684,7 @@ fn request_pipeline_retirement() {
     {
         let mut s = STATE.lock().unwrap();
         let Some(p) = s.bootstrap.as_mut() else { return; };
-        if p.layout != Layout::Ldn || p.phase != PipelinePhase::Live { return; }
+        if !p.layout.waiting() || p.phase != PipelinePhase::Live { return; }
         p.phase = PipelinePhase::Departed;
         s.own.depart();
         for (o, lease) in leases.iter_mut().enumerate() {
@@ -1196,7 +1199,7 @@ unsafe fn presentation_ready(base: usize, job: &Job) -> Result<(), &'static str>
             }
             Ok(())
         }
-        Layout::Ldn => {
+        Layout::Ldn | Layout::Quickplay => {
             if !pipeline_present(base) {
                 return Err(NO_PIPELINE);
             }
@@ -1219,7 +1222,7 @@ unsafe fn log_presentation_words(base: usize, job: &Job) {
                 log_slot_words(base, job.logical as usize, slot, slot_ptr);
             }
         }
-        Layout::Ldn => {
+        Layout::Ldn | Layout::Quickplay => {
             let root = base as *const u8;
             let at = |chain: &[usize]| pointer_chain(root, chain).map_or(0, |p| p as usize);
             trace!("[MiiPortrait] owner={} waiting pipeline words source=0x{:x} sequence=0x{:x} batch=0x{:x} table=0x{:x} card_pane=0x{:x}",
@@ -1245,7 +1248,7 @@ unsafe fn pane_state(base: usize, job: &Job) -> Result<(u32, bool), &'static str
             };
             Ok((index, true))
         }
-        Layout::Ldn => super::waiting_icon_pane(base, job.physical).map(|_| (0, true)).ok_or("waiting card pane unavailable"),
+        Layout::Ldn | Layout::Quickplay => super::waiting_icon_pane(base, job.physical).map(|_| (0, true)).ok_or("waiting card pane unavailable"),
     }
 }
 
@@ -1294,7 +1297,7 @@ unsafe fn bind_target(base: usize, job: &Job, index: u32, descriptor: usize) -> 
             }
             Ok(slot)
         }
-        Layout::Ldn => {
+        Layout::Ldn | Layout::Quickplay => {
             let (pane, coordinates) = waiting_uv(base, job.physical)?;
             let current = read::<[f32; 8]>(coordinates, 0);
             let saved = STATE.lock().unwrap().waiting_crop;
@@ -1398,7 +1401,7 @@ unsafe fn release_presentation(base: usize, layout: Layout, physical: u32, logic
         (Layout::Training, Some(f)) => {
             trace!("[MiiPortrait] owner={} slot {} stays in Mii mode (was +0x1a8={} +0x1a9={} +0x1ac=0x{:x}); native event 0x1d presents the non-Mii key; {}", physical, f.slot, f.mode, f.bound_flag, f.index, reason);
         }
-        (Layout::Ldn, _) if was_bound => {
+        (Layout::Ldn | Layout::Quickplay, _) if was_bound => {
             trace!("[MiiPortrait] owner={} waiting card returned to the kind icon; {}", physical, reason);
         }
         _ => {}
@@ -1418,7 +1421,7 @@ pub(super) unsafe fn before_refresh(entry: *const u8, owner: u32, kind: u32) {
     if base == 0 {
         return;
     }
-    if layout == Layout::Ldn && owner == 4 {
+    if layout.waiting() && owner == 4 {
         restore_waiting_uv(base, owner);
     }
     if (0x48..=0x4a).contains(&kind) { return; }

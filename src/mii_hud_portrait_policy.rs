@@ -776,9 +776,12 @@ pub fn part_offset(index: i32) -> Option<usize> {
     (0..8).contains(&index).then(|| index as usize * 0xd90 + 0x330)
 }
 
-/// Native portrait stores are admitted only in qualified practice scenes.
+/// Native portrait stores are admitted only in qualified practice scenes: Training,
+/// local-wireless waiting and Quickplay waiting (`0x070101xx`, the family built by the
+/// shared PracticeScene setup). Matches, arenas and every other mode store nothing.
 pub fn may_write_scene(melee: u8, mode: u32) -> bool {
     matches!((melee, mode), (0x20, 0x04040000) | (0x0d, 0x02010000))
+        || (melee == 0x0d && training_mod_consts::mii::backend::Layout::quickplay_waiting_mode(mode))
 }
 
 #[cfg(test)]
@@ -821,7 +824,11 @@ mod native_admission_tests {
     fn native_stores_reject_match_and_unqualified_scene_modes() {
         assert!(may_write_scene(0x20, 0x04040000));
         assert!(may_write_scene(0x0d, 0x02010000));
-        for (melee, mode) in [(0x0d,0x07010000),(0x0d,0x07010001),(1,0x01010000),(0x20,0x02010000)] {
+        for mode in [0x07010100, 0x07010101, 0x07010102] {
+            assert!(may_write_scene(0x0d, mode));
+        }
+        for (melee, mode) in [(0x0d,0x07010000),(0x0d,0x07010001),(0x0d,0x07010300),(0x0d,0x07010400),
+            (0x0e,0x07010101),(0x01,0x02010000),(1,0x01010000),(0x20,0x02010000),(0x20,0x07010101)] {
             assert!(!may_write_scene(melee, mode));
         }
     }

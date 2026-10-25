@@ -200,10 +200,11 @@ pub struct Lease {
     pub kind: u32,
 }
 
-/// Two qualified backends share one book. Training keeps parked CPUs 2/3 beside
-/// visible 0/1. Exact local-wireless waiting keeps witnessed entries 5/6 beside
-/// visible 0/4. Online and every other slot stay out. Callback dispatch is the
-/// union, so a departing owned actor is still serviced after its scene ends.
+/// Three qualified backends share one book. Training keeps parked CPUs 2/3 beside
+/// visible 0/1. The waiting backends (exact local wireless and Quickplay, one shared
+/// PracticeScene shape) keep witnessed entries 5/6 beside visible 0/4. Arenas and
+/// every other slot stay out. Callback dispatch is the union, so a departing owned
+/// actor is still serviced after its scene ends.
 const CALLBACK_SLOTS: [u32; 4] = [2, 3, 5, 6];
 
 use training_mod_consts::mii::backend::Layout as Backend;
@@ -214,16 +215,19 @@ fn callback_slot(slot: u32) -> bool {
 
 fn candidates(backend: Backend) -> [u32; 3] {
     let [first, second] = backend.helpers();
-    [
-        first,
-        second,
-        if cfg!(feature = "managed-third-source-alpha")
-            && (backend == Backend::Training || cfg!(feature = "managed-ldn-third-source-alpha")) {
-            7
-        } else {
-            8
-        },
-    ]
+    #[cfg(feature = "managed-third-source-alpha")]
+    let third = if third_source_backend(backend) { 7 } else { 8 };
+    #[cfg(not(feature = "managed-third-source-alpha"))]
+    let third = 8;
+    [first, second, third]
+}
+
+/// Demand-created entry7 is qualified for Training, and for local wireless only
+/// behind its own alpha. Quickplay waiting has no third source.
+#[cfg(feature = "managed-third-source-alpha")]
+fn third_source_backend(backend: Backend) -> bool {
+    backend == Backend::Training
+        || (backend == Backend::Ldn && cfg!(feature = "managed-ldn-third-source-alpha"))
 }
 
 #[cfg(feature = "managed-third-source-alpha")]
@@ -241,36 +245,41 @@ unsafe fn usable(entry: *const u8, slot: u32, kind: u32, backend: Backend) -> bo
     #[cfg(feature = "managed-third-source-alpha")]
     if slot == 7 {
         let current = reservation(&STATE.lock().unwrap());
-        return (backend == Backend::Training || cfg!(feature = "managed-ldn-third-source-alpha"))
+        return third_source_backend(backend)
             && current.is_some_and(|value| capacity::ready(value, entry, kind));
     }
     native_source::ready(entry, slot, kind).is_some()
-        && (backend != Backend::Ldn || ldn_layout(entry, slot))
+        && (!backend.waiting() || waiting_layout(entry, slot, backend))
 }
 
-/// A count5 scene is admitted only through our exact current epoch/reservation.
-/// An isolated diagnostic claimant never becomes a managed helper backend.
-unsafe fn ldn_layout(entry: *const u8, slot: u32) -> bool {
-    if native_source::exact_ldn_waiting_layout(entry, slot) { return true; }
+/// The witnessed waiting shape (manager 0/4/5/6, CPU selection rows) that local
+/// wireless and Quickplay share. A count5 scene is admitted only through our exact
+/// current epoch/reservation; an isolated diagnostic claimant never becomes a
+/// managed helper backend.
+unsafe fn waiting_layout(entry: *const u8, slot: u32, backend: Backend) -> bool {
+    if native_source::exact_waiting_layout(entry, slot) { return true; }
     #[cfg(feature = "managed-ldn-third-source-alpha")]
-    {
+    if backend == Backend::Ldn {
         let owner = reservation(&STATE.lock().unwrap());
         if owner.is_some_and(|owner| capacity::owned_ldn_helper(owner, entry, slot)) {
             return true;
         }
     }
+    #[cfg(not(feature = "managed-ldn-third-source-alpha"))]
+    let _ = backend;
     false
 }
 
-/// Initialized melee 0x0d and mode exactly 0x02010000, with lobby practice
-/// already active. This is not every waiting-scene family.
-fn ldn_waiting() -> bool {
-    matches!(crate::common::game_mode::current(), Some(mode)
-        if mode.initialized && mode.melee == 0x0d && mode.mode == 0x02010000)
-        && super::lobby::active()
+/// Initialized melee 0x0d with lobby practice already active, in one of the two
+/// waiting families the shared PracticeScene setup builds: local wireless
+/// (`0x02010000`) or Quickplay (`0x070101xx`). Arenas and every other family stay out.
+fn waiting_backend() -> Option<Backend> {
+    let mode = crate::common::game_mode::current()?;
+    Backend::scene(mode.initialized, mode.melee, mode.mode, super::lobby::active())
+        .filter(|backend| backend.waiting())
 }
 
-/// Scene qualification only. The LDN manager and selection table are checked
+/// Scene qualification only. The waiting manager and selection table are checked
 /// later, on the target's own loader callback, and only when a request needs
 /// a new install.
 unsafe fn qualified_backend() -> Result<Backend, &'static str> {
@@ -284,11 +293,7 @@ unsafe fn qualified_backend() -> Result<Backend, &'static str> {
             Err("Character resources currently need one visible CPU")
         };
     }
-    if ldn_waiting() {
-        Ok(Backend::Ldn)
-    } else {
-        Err("Character resource loading is not available in this scene yet")
-    }
+    waiting_backend().ok_or("Character resource loading is not available in this scene yet")
 }
 
 /// Returns None while the native loader works. A queue entry does not pin an old
@@ -1266,31 +1271,31 @@ unsafe fn visible_ready(backend: Backend) -> bool {
     let [left, right] = backend.visible();
     let Some(first) = native_source::entry(left) else { return false; };
     let Some(second) = native_source::entry(right) else { return false; };
-    if backend == Backend::Ldn && first == second { return false; }
+    if backend.waiting() && first == second { return false; }
     ready_forms(first, left).is_some() && ready_forms(second, right).is_some()
 }
 
 /// Training's first install still requires outer 0, guard 0, this entry, and
 /// visible 0/1. Its later installs require parked_ready of the managed kind.
-/// An LDN first install also requires loader 14 and parked_ready of descriptor
-/// +0x18. Every new LDN install requires distinct ready 0/4 and the witnessed
+/// A waiting first install also requires loader 14 and parked_ready of descriptor
+/// +0x18. Every new waiting install requires distinct ready 0/4 and the witnessed
 /// manager shape before any selection-table read.
 unsafe fn native_admission(
     entry: *const u8, slot: u32, backend: Backend, managed: Option<u32>,
 ) -> bool {
     if let Some(kind) = managed {
         if !native_source::parked_ready(entry, slot, kind) { return false; }
-        if backend == Backend::Ldn && !visible_ready(backend) { return false; }
+        if backend.waiting() && !visible_ready(backend) { return false; }
     } else {
         if read::<u8>(entry, 0x5920) != 0 || read::<u8>(entry, 0x5935) != 0 { return false; }
-        if backend == Backend::Ldn && read::<u8>(entry, 0x591c) != 14 { return false; }
+        if backend.waiting() && read::<u8>(entry, 0x591c) != 14 { return false; }
         if native_source::entry(slot) != Some(entry) { return false; }
         if !visible_ready(backend) { return false; }
-        if backend == Backend::Ldn
+        if backend.waiting()
             && !native_source::parked_ready(entry, slot, read::<u32>(entry, 0x18))
         { return false; }
     }
-    backend != Backend::Ldn || ldn_layout(entry, slot)
+    !backend.waiting() || waiting_layout(entry, slot, backend)
 }
 
 #[cfg(feature = "managed-third-source-alpha")]
@@ -1343,7 +1348,7 @@ unsafe fn create_capacity(ctx: &ServiceEntryContext, entry: *const u8, slot: u32
             .map_or((1, 0), |(_, _, ticks, seen)| (ticks.saturating_add(1), seen));
         let seen = seen | u8::from(slot == helpers[0]) | (u8::from(slot == helpers[1]) << 1);
         state.capacity.stable = Some((wanted, before, ticks, seen));
-        if ticks < 30 || (backend == Backend::Ldn && seen != 3) {
+        if ticks < 30 || (backend.waiting() && seen != 3) {
             return;
         }
     }

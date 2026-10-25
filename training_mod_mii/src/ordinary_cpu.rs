@@ -262,8 +262,8 @@ pub fn publication_indices_for(owner:usize,before:u16,target_index:u16,e:u16,fe:
     publication_indices_in(crate::backend::Layout::Training,owner,before,target_index,e,fe,d)
 }
 pub fn publication_indices_in(layout:crate::backend::Layout,owner:usize,before:u16,target_index:u16,e:u16,fe:u16,d:u16)->bool {
-    layout.selector(owner) && (layout==crate::backend::Layout::Ldn || before==0 || before==owner as u16)
-        && (layout==crate::backend::Layout::Ldn || target_index==0 || target_index==owner as u16)
+    layout.selector(owner) && (layout.waiting() || before==0 || before==owner as u16)
+        && (layout.waiting() || target_index==0 || target_index==owner as u16)
         && e==before && d==before && fe==target_index
 }
 

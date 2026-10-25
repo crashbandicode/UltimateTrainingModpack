@@ -38,12 +38,15 @@ pub unsafe fn training_cpu_quantity() -> Option<u32> {
     Some(read(menu, 0xb40))
 }
 
-/// Exact local-wireless waiting shape for a new 5/6 admission. Refuse every
-/// other layout. Reads only. The selection table is consulted only after the
-/// manager shape matches, because those records can stay stale when native
-/// setup does not rebuild them. Selection record +0 is an opaque word, not a
-/// fighter kind, and is not read here.
-pub unsafe fn exact_ldn_waiting_layout(current: *const u8, slot: u32) -> bool {
+/// Exact waiting shape for a new 5/6 admission: manager count 4, primaries 0/4/5/6,
+/// no backups, CPU rows 4/5/6 flagged present. Local wireless witnessed it at
+/// runtime; Quickplay waiting is built by the same PracticeScene setup (13.0.5
+/// `0x1790020`, reached from both waiting controllers without a mode branch), so
+/// the same live check admits or refuses it. Refuse every other layout. Reads only.
+/// The selection table is consulted only after the manager shape matches, because
+/// those records can stay stale when native setup does not rebuild them. Selection
+/// record +0 is an opaque word, not a fighter kind, and is not read here.
+pub unsafe fn exact_waiting_layout(current: *const u8, slot: u32) -> bool {
     if !matches!(slot, 5 | 6) || !aligned(current) || read::<u32>(current, 0xe0) != slot {
         return false;
     }

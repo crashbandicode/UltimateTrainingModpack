@@ -183,7 +183,7 @@ unsafe fn roots(ctx: &ServiceEntryContext, entry: *const u8, owner: u32) -> Resu
         owner as usize,
         entry as usize,
     ))?;
-    if !native_source::exact_ldn_waiting_layout(entry, owner) {
+    if !native_source::exact_waiting_layout(entry, owner) {
         return Err((
             4,
             "exact 0/4/5/6 waiting layout unavailable",

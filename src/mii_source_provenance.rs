@@ -110,8 +110,11 @@ impl super::Registry {
     /// Source STATE is held by the caller; registry is the leaf lock.
     pub(crate) fn source(&mut self, epoch: SceneEpoch, slot: usize, helper: Helper) {
         if self.helpers.ordinal(slot).is_none() && self.helpers.slots==[Helper::Unmanaged;2] {
-            if let Some(layout)=[training_mod_consts::mii::backend::Layout::Training,training_mod_consts::mii::backend::Layout::Ldn]
-                .iter().copied().find(|l|l.helper(slot).is_some()) {self.helpers.layout=layout;}
+            use training_mod_consts::mii::backend::Layout;
+            // Both waiting families share helpers 5/6; only the current scene names the family.
+            let current=super::super::super::mii_backend::current().filter(|l|l.helper(slot).is_some());
+            if let Some(layout)=current.or_else(||[Layout::Training,Layout::Ldn,Layout::Quickplay]
+                .into_iter().find(|l|l.helper(slot).is_some())) {self.helpers.layout=layout;}
         }
         self.helpers.epoch = Some(epoch);
         if let Some(ordinal)=self.helpers.ordinal(slot) {

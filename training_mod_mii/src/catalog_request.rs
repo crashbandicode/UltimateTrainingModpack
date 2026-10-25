@@ -20,9 +20,13 @@ pub struct Live {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
-    /// Training or LDN. The caller may arm fighter capture after this result.
+    /// Training or a qualified waiting backend (local wireless, Quickplay). The caller
+    /// may arm fighter capture after this result.
     Menu { opening: u64, owners: [u64; 2] },
-    /// Quickplay. The caller mounts the editor catalog and does not arm a fighter role.
+    /// A waiting room without a qualified fighter backend. The caller mounts the
+    /// editor-only catalog and does not arm a fighter role. One opening mounts one
+    /// catalog: a `Menu` demand for the same opening supersedes this kind, because the
+    /// fighter menu already offers Add New.
     Editor { opening: u64 },
     /// Lifetime read before any menu open.
     Auto(Token),
@@ -86,6 +90,9 @@ pub struct Requests {
     closed_opening: Option<u64>,
     /// Remains pending through delivery, until capture is actually armed.
     menu_unarmed: Option<u64>,
+    /// The opening whose fighter menu owns the catalog mount; editor-only demands for it
+    /// are dropped. Cleared by that opening's close or by retirement.
+    menu_opening: Option<u64>,
 }
 
 impl Default for Requests {
@@ -102,6 +109,7 @@ impl Requests {
             serial: 0,
             closed_opening: None,
             menu_unarmed: None,
+            menu_opening: None,
         }
     }
 
@@ -131,6 +139,21 @@ impl Requests {
         }
         if let Kind::Menu { opening, .. } = kind {
             self.menu_unarmed = Some(opening);
+            self.menu_opening = Some(opening);
+            // An editor-only read already in flight for this opening must not mount.
+            if let Phase::Flying(flight) = &mut self.phase {
+                if flight.kind == (Kind::Editor { opening }) {
+                    flight.usable = false;
+                }
+            }
+        }
+        if let Kind::Editor { opening } = kind {
+            if self.menu_opening == Some(opening) {
+                return Effect {
+                    dropped: Some(kind),
+                    ..Effect::quiet(Step::Wait)
+                };
+            }
         }
         let mut dropped = None;
         let step = match self.phase {
@@ -258,6 +281,9 @@ impl Requests {
         if restart_auto {
             self.menu_unarmed = None;
         }
+        if self.menu_opening == Some(opening) {
+            self.menu_opening = None;
+        }
         self.closed_opening = Some(opening);
         if self.next.and_then(opening_of) == Some(opening) {
             self.next = None;
@@ -279,6 +305,7 @@ impl Requests {
     pub fn retire(&mut self) {
         self.next = None;
         self.menu_unarmed = None;
+        self.menu_opening = None;
         if let Phase::Waiting(_) = self.phase {
             self.phase = Phase::Idle;
         }
@@ -438,6 +465,51 @@ mod tests {
             effect.verdict,
             Verdict::Menu { .. } | Verdict::Auto(_)
         ));
+    }
+
+    #[test]
+    fn fighter_menu_demand_supersedes_the_editor_catalog_for_one_opening() {
+        // Quickplay order: the fighter menu asks first, the editor bridge second.
+        let mut requests = Requests::new();
+        submit(requests.request(menu(6)));
+        let refused = requests.request(Kind::Editor { opening: 6 });
+        assert!(matches!(refused.step, Step::Wait));
+        assert_eq!(refused.dropped, Some(Kind::Editor { opening: 6 }));
+        let effect = requests.complete(requests.serial(), live(6, true));
+        assert_eq!(effect.verdict, Verdict::Menu { opening: 6, owners: [2, 4] });
+        assert!(matches!(effect.step, Step::Wait)); // no second read was queued
+        assert!(!requests.pending());
+        let again = requests.request(Kind::Editor { opening: 6 });
+        assert_eq!(again.dropped, Some(Kind::Editor { opening: 6 }));
+        assert!(!requests.pending());
+        // Another opening is not owned by this fighter menu.
+        requests.close_menu(6);
+        assert_eq!(submit(requests.request(Kind::Editor { opening: 7 })), Kind::Editor { opening: 7 });
+        // Retirement releases the ownership; the flying read is still consumed once.
+        let mut retired = Requests::new();
+        submit(retired.request(menu(8)));
+        retired.retire();
+        assert_eq!(retired.request(Kind::Editor { opening: 8 }).dropped, None);
+
+        // Reverse order: an editor read already flying for the opening may not mount.
+        let mut reversed = Requests::new();
+        submit(reversed.request(Kind::Editor { opening: 9 }));
+        let serial = reversed.serial();
+        assert!(matches!(reversed.request(menu(9)).step, Step::Wait));
+        let effect = reversed.complete(serial, live(9, true));
+        assert_eq!(effect.verdict, Verdict::Discard);
+        assert_eq!(effect.finished, Some(Kind::Editor { opening: 9 }));
+        assert_eq!(submit(Effect::quiet(effect.step)), menu(9));
+        let effect = reversed.complete(reversed.serial(), live(9, true));
+        assert_eq!(effect.verdict, Verdict::Menu { opening: 9, owners: [2, 4] });
+
+        // A waiting editor read is replaced by the fighter menu demand.
+        let mut waiting = Requests::new();
+        submit(waiting.request(Kind::Editor { opening: 10 }));
+        waiting.rejected_full();
+        let replaced = waiting.request(menu(10));
+        assert_eq!(replaced.dropped, Some(Kind::Editor { opening: 10 }));
+        assert_eq!(submit(waiting.retry(live(10, true))), menu(10));
     }
 
     #[test]

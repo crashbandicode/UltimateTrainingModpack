@@ -244,7 +244,7 @@ pub(super) unsafe fn capture_origin(entry:usize,epoch:u64,kind:u32,catalog:&Cata
         drop(g);
         let c=match saved {
             Some(c)=>c,
-            None if fresh.layout==super::super::mii_backend::Layout::Ldn=>{
+            None if fresh.layout.waiting()=>{
                 // Native waiting CPUs may use a built-in Mii absent from the saved catalog.
                 // Copy its actual values; do not synthesize a preset or write a saved file.
                 // Native getters run outside G. The common second snapshot below must still
@@ -262,7 +262,7 @@ pub(super) unsafe fn capture_origin(entry:usize,epoch:u64,kind:u32,catalog:&Cata
             None=>return Err(helpers::CaptureError::Refused("no exact original saved CPU configuration")),
         };
         Some(c)
-    } else {check(before.layout==super::super::mii_backend::Layout::Ldn || before.index==0,"ordinary CPU origin index changed")?;None};
+    } else {check(before.layout.waiting() || before.index==0,"ordinary CPU origin index changed")?;None};
     let rows=c.map(|c|super::super::mii_ordinary_player::native::target_rows(c)).transpose()?;
     let m=map(entry)?;let b=pool(entry,epoch)?;
     let helpers=helper_snapshot()?;

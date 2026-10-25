@@ -208,7 +208,7 @@ pub(super) fn owns(entry:usize)->bool {
 }
 pub(super) fn request_restore(value:WaitingValue)->bool {
     let mut s=STATE.lock().unwrap();
-    if mii_backend::current()!=Some(mii_backend::Layout::Ldn) || !enabled() {return false;}
+    if !mii_backend::current().is_some_and(|l|l.waiting()) || !enabled() {return false;}
     // A mixed CPU roster is intercepted even when neither current nor remembered body is Mii.
     let mixed=setting(&MENU).cpu_roster.fighters().iter()
         .any(|f|MiiClass::from_kind(f.kind()).is_some());
@@ -451,7 +451,7 @@ unsafe fn begin(entry:*mut u8)->bool {
                 }
                 descriptor[0x28..0x2c].copy_from_slice(&forms.actor_count.to_le_bytes());
                 descriptor[0x43]=0;
-                let index=if origin.layout==mii_backend::Layout::Ldn {origin.index}else{0};
+                let index=if origin.layout.waiting() {origin.index}else{0};
                 descriptor[0x46..0x48].copy_from_slice(&index.to_le_bytes());
                 if kind==origin.original_kind && descriptor==origin.descriptor {Target::ORIGINAL}
                 else {Target::fighter(kind)}

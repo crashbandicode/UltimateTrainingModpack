@@ -17,7 +17,7 @@ pub fn claims(owners: &[Option<Owner>; 8], kinds: &[Option<u32>; 8]) -> Option<[
 }
 pub fn claims_in(layout:crate::backend::Layout,owners:&[Option<Owner>;8],kinds:&[Option<u32>;8])->Option<[Option<u16>;8]> {
     if !layout.shape(&owners.map(|o|o.map_or(0,|o|o.entry))) {return None;}
-    claims_with(layout==crate::backend::Layout::Ldn,owners,kinds)
+    claims_with(layout.waiting(),owners,kinds)
 }
 fn claims_with(native_indices:bool,owners:&[Option<Owner>;8],kinds:&[Option<u32>;8])->Option<[Option<u16>;8]> {
     let mut claims = [None; 8];
