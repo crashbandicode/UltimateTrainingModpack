@@ -137,11 +137,11 @@ works as usual.
 - Leaving without saving discards the draft and creates nothing.
 
 In an online (Quickplay) waiting room with Lobby Practice on, the class pages
-offer only Add New. Name, Special Moves, Settings and Test stay available;
-Headgear, Outfit, Color, Voice and Random are greyed and work in Training only.
-If a match starts while you are editing, your unsaved changes are kept and the
-same editor screen opens again when you return to waiting practice. Only the
-editor's Save keeps a new Mii.
+offer only Add New. Name, Special Moves, Settings, Test, Headgear, Outfit,
+Color, Voice and Random stay available. If a match starts while you are
+editing, the unfinished screen, value, and cursor are kept and that editor
+screen opens again when you return to waiting practice. Explicit Cancel still
+discards the edit. Only the editor's Save keeps a new Mii.
 
 ### Opponent Miis from your matches
 

@@ -25,8 +25,10 @@ native Mii editor and Test screen.
   disabled. **B + D-pad Up** is permanent. Plus opens normal pause unless
   explicitly configured as a modpack shortcut.
 - Native Mii editing and managed Mii hats are enabled again. In Quickplay's
-  owned editor, cosmetics are disabled; Name, Specials, Settings and Test retain
-  interruption support. Ordinary Training keeps the cosmetic options.
+  owned editor, Headgear, Outfit, Color, Voice and Random stay available and
+  keep their unfinished screen, value, and cursor across a match. Name,
+  Specials, Settings and Test keep their existing interruption support.
+  Ordinary Training keeps the cosmetic options. Explicit Cancel does not save.
 - Shared native-field checks protect selected cleanup and Mii chains. They do
   not cover every unsafe access or prove that a non-null pointer is alive.
 - Cleanup guards are independent of optional tracing. The broad/focused trace

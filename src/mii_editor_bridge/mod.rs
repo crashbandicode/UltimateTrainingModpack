@@ -11,6 +11,8 @@ mod name_keyboard;
 mod lua_vm;
 mod specials_resume;
 mod settings_resume;
+mod cosmetic_resume;
+mod editor_origin;
 mod return_gate;
 mod lifecycle;
 mod ui_resume;
@@ -116,10 +118,14 @@ pub(crate) fn write_trace(trace: &Trace) {
 pub(crate) fn request(request: training_mod_tui::mii_menu::EditorRequest) {
     let result = (|| -> Result<(), &'static str> {
         if !ENABLED.load(Ordering::Acquire) { return Err("Editor adapter is unavailable"); }
-        let origin = if unsafe { crate::common::is_native_training_mode() } { Origin::Training }
-            else if quickplay_available() {
-                Origin::Quickplay
-            } else { return Err("Enter Training or Quickplay waiting practice to edit a Mii"); };
+        let origin = match editor_origin::admit(
+            unsafe { crate::common::is_native_training_mode() },
+            crate::training::lobby::active(),
+            unsafe { native::read::<u32>(BASE.load(Ordering::Acquire), native::MODE) },
+        )? {
+            editor_origin::Admission::Training => Origin::Training,
+            editor_origin::Admission::Quickplay => Origin::Quickplay,
+        };
         if !request.catalog.is_complete() { return Err("Mii catalog is incomplete"); }
         let seed = match request.seed {
             training_mod_tui::mii_menu::EditorSeed::Saved(seed) => Draft::Ready(value::from_seed(&seed)?),
@@ -507,8 +513,10 @@ unsafe fn edit_initialized(ctx: &mut InlineCtx) {
 unsafe fn edit_frame(scene: usize, args: usize) -> usize {
     if EDIT_OWNED.load(Ordering::Acquire) && scene == EDIT_LEAF_SCENE.load(Ordering::Acquire) {
         let context: usize = native::read(scene, 0x58);
-        if context != 0 && context == EDIT_CONTEXT.load(Ordering::Acquire)
-            && connected::before_edit(scene, args, context) { return 0; }
+        if context != 0 && context == EDIT_CONTEXT.load(Ordering::Acquire) {
+            resume_adapter::prepare_restore(context);
+            if connected::before_edit(scene, args, context) { return 0; }
+        }
     }
     let result = original!()(scene, args);
     if !EDIT_OWNED.load(Ordering::Acquire) { return result; }

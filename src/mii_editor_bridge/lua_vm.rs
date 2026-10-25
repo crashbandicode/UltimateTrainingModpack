@@ -178,6 +178,21 @@ impl Vm {
         Ok(settings)
     }
 
+    /// Voice chunk from the 13.0.5 listing `private-ui-5c0411b58dad0582`:
+    /// main is 5 upvalues / 41 instructions, initialize is 17 / 255, and both
+    /// close over the same page table (selector, selected_id, voice_type, voice_pitch).
+    pub(super) unsafe fn voice_page(&mut self) -> Result<Value, Error> {
+        let [main, initialize] = self.call::<2>(include_bytes!("lua_helpers/closures.luac"), &[])?;
+        Self::check_closure(main, 5, 41)?;
+        Self::check_closure(initialize, 17, 255)?;
+        let page = Self::upvalue(main, 0)?;
+        let initialized = Self::upvalue(initialize, 0)?;
+        if page.tag != 0x45 || initialized.tag != 0x45 || page.bits != initialized.bits {
+            return Err(Error::Identity);
+        }
+        Ok(page)
+    }
+
     unsafe fn check_closure(value: Value, upvalues: i32, instructions: i32) -> Result<(), Error> {
         if value.tag != 0x46 || !aligned(value.bits as usize) { return Err(Error::Identity); }
         let proto: usize = read(value.bits as usize, 0x18);

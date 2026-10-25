@@ -1,5 +1,5 @@
 //! Bridges value checkpoints to the owned native editor's current callbacks.
-use super::{connected_native as contract, current_thread, lifecycle, name_keyboard, native,
+use super::{connected_native as contract, cosmetic_resume, current_thread, lifecycle, name_keyboard, native,
     settings_resume, specials_resume, ui_resume, Origin, Phase, BASE, EDIT_CONTEXT, EDIT_OWNED, STATE, ACTIVE};
 use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex};
 
@@ -45,6 +45,7 @@ unsafe fn store(screen: ui_resume::Screen, focus: i32) -> bool {
     });
     *RECONSTRUCTION.lock().unwrap() = None;
     settings_resume::clear();
+    cosmetic_resume::clear();
     let mut state = STATE.lock().unwrap();
     if let Some(s) = state.as_mut() {
         // Capture failure must not trap an incoming match. It is a qualification
@@ -75,6 +76,18 @@ unsafe fn store(screen: ui_resume::Screen, focus: i32) -> bool {
                         s.event("ui_settings_checkpoint_values", [snapshot.row as u64,
                             snapshot.area as u64, 0, 0]);
                     }
+                    if let ui_resume::Screen::Headgear(snapshot) | ui_resume::Screen::Outfit(snapshot) = screen {
+                        s.event("ui_gear_checkpoint_values", [snapshot.cursor as u64,
+                            snapshot.live, snapshot.paired, 0]);
+                    }
+                    if let ui_resume::Screen::Color(snapshot) = screen {
+                        s.event("ui_color_checkpoint_values", [snapshot.cursor as u64,
+                            snapshot.paired as u64, 0, 0]);
+                    }
+                    if let ui_resume::Screen::Voice(snapshot) = screen {
+                        s.event("ui_voice_checkpoint_values", [snapshot.cursor as u64,
+                            snapshot.voice_type as u64, snapshot.voice_pitch as u64, 0]);
+                    }
                 }
             }
             Err(reason) => {
@@ -103,8 +116,9 @@ pub(super) unsafe fn before_edit(context: usize) -> bool {
         focus as i32
     } else { 0 };
     let current: i32 = native::read(context, 0x148);
-    let screen = match current {
-        3 => match settings_resume::capture(context) {
+    let previous = cosmetic_resume::previous_state(context);
+    let screen = match cosmetic_resume::leaf(current, previous) {
+        cosmetic_resume::Leaf::Settings => match settings_resume::capture(context) {
             None => return false,
             Some(Ok(Some(snapshot))) => ui_resume::Screen::Settings(snapshot),
             // Let a completed selection/Cancel/Save propagate before capturing.
@@ -114,7 +128,7 @@ pub(super) unsafe fn before_edit(context: usize) -> bool {
                 ui_resume::Screen::Settings(settings_resume::Snapshot::INITIAL)
             }
         },
-        4 => match name_keyboard::suspend(context) {
+        cosmetic_resume::Leaf::Name => match name_keyboard::suspend(context) {
             Ok(text) => ui_resume::Screen::Name(text),
             Err("keyboard_not_owned") if native::read::<u32>(context, 0x14c) == 0 => return false,
             Err(reason) => {
@@ -124,7 +138,36 @@ pub(super) unsafe fn before_edit(context: usize) -> bool {
                 ui_resume::Screen::Settings(settings_resume::Snapshot::INITIAL)
             }
         },
-        8 => {
+        cosmetic_resume::Leaf::Headgear | cosmetic_resume::Leaf::Outfit => {
+            match cosmetic_resume::capture_gear(context, current) {
+                cosmetic_resume::Shot::Wait => return false,
+                cosmetic_resume::Shot::Found(snapshot) => match cosmetic_resume::leaf(current, previous) {
+                    cosmetic_resume::Leaf::Headgear => ui_resume::Screen::Headgear(snapshot),
+                    _ => ui_resume::Screen::Outfit(snapshot),
+                },
+                cosmetic_resume::Shot::Abandoned { detail, .. } => {
+                    note("ui_gear_capture_abandoned", [current as u64, detail, 0, 0]);
+                    ui_resume::Screen::Settings(settings_resume::Snapshot::INITIAL)
+                }
+            }
+        }
+        cosmetic_resume::Leaf::Color => match cosmetic_resume::capture_color(context, current) {
+            cosmetic_resume::Shot::Wait => return false,
+            cosmetic_resume::Shot::Found(snapshot) => ui_resume::Screen::Color(snapshot),
+            cosmetic_resume::Shot::Abandoned { detail, .. } => {
+                note("ui_color_capture_abandoned", [current as u64, detail, 0, 0]);
+                ui_resume::Screen::Settings(settings_resume::Snapshot::INITIAL)
+            }
+        },
+        cosmetic_resume::Leaf::Voice => match cosmetic_resume::capture_voice(context, current) {
+            cosmetic_resume::Shot::Wait => return false,
+            cosmetic_resume::Shot::Found(snapshot) => ui_resume::Screen::Voice(snapshot),
+            cosmetic_resume::Shot::Abandoned { detail, .. } => {
+                note("ui_voice_capture_abandoned", [current as u64, detail, 0, 0]);
+                ui_resume::Screen::Settings(settings_resume::Snapshot::INITIAL)
+            }
+        },
+        cosmetic_resume::Leaf::Specials => {
             let result = {
                 let mut capture = CAPTURE.lock().unwrap();
                 if capture.as_ref().is_none_or(|capture| capture.context != context) {
@@ -157,8 +200,8 @@ pub(super) unsafe fn before_edit(context: usize) -> bool {
                 }
             }
         }
-        10 | 11 => ui_resume::Screen::Test,
-        _ => {
+        cosmetic_resume::Leaf::Test => ui_resume::Screen::Test,
+        cosmetic_resume::Leaf::Other(_) => {
             note("ui_screen_capture_unqualified", [current as u64, 0, 0, 0]);
             ui_resume::Screen::Settings(settings_resume::Snapshot::INITIAL)
         }
@@ -233,7 +276,20 @@ fn settle(restored: bool, detail: u64) {
     };
     *RECONSTRUCTION.lock().unwrap() = None;
     settings_resume::clear();
+    cosmetic_resume::clear();
     if restored { ui_resume::restored(ticket); } else { ui_resume::restore_failed(ticket); }
+}
+
+/// Write an unfinished cosmetic page's cursor before this frame's native handler.
+pub(super) unsafe fn prepare_restore(context: usize) {
+    let screen = {
+        let state = STATE.lock().unwrap();
+        let Some(s) = state.as_ref().filter(|s| s.phase == Phase::Editing && !s.interrupted
+            && s.restore_entered && s.restore_ticket.is_some() && s.thread == current_thread())
+            else { return; };
+        s.restore_screen.clone()
+    };
+    if let Some(screen) = screen { cosmetic_resume::prepare(context, &screen); }
 }
 
 /// Called after the owned native edit frame. Re-entry uses the one frame in
@@ -287,6 +343,21 @@ pub(super) unsafe fn after_edit(context: usize) {
             Some(_) => { settle(false, 0x2000 + super::lua_vm::Error::Value.code() as u64); return; }
             None => false,
         },
+        ui_resume::Screen::Headgear(wanted) => match cosmetic_resume::poll_gear(context, 5, wanted) {
+            cosmetic_resume::Poll::Ready => true,
+            cosmetic_resume::Poll::Failed(detail) => { settle(false, 0x3000 + detail); return; }
+            cosmetic_resume::Poll::Pending => false,
+        },
+        ui_resume::Screen::Outfit(wanted) => match cosmetic_resume::poll_gear(context, 6, wanted) {
+            cosmetic_resume::Poll::Ready => true,
+            cosmetic_resume::Poll::Failed(detail) => { settle(false, 0x3000 + detail); return; }
+            cosmetic_resume::Poll::Pending => false,
+        },
+        ui_resume::Screen::Color(wanted) => match cosmetic_resume::poll_color(context, wanted) {
+            cosmetic_resume::Poll::Ready => true,
+            cosmetic_resume::Poll::Failed(detail) => { settle(false, 0x3000 + detail); return; }
+            cosmetic_resume::Poll::Pending => false,
+        },
         ui_resume::Screen::Name(_) => current == 4 && name_keyboard::restored(context),
         ui_resume::Screen::Specials(_) => {
             let result = RECONSTRUCTION.lock().unwrap().as_mut()
@@ -297,6 +368,11 @@ pub(super) unsafe fn after_edit(context: usize) {
                 None => false,
             }
         }
+        ui_resume::Screen::Voice(wanted) => match cosmetic_resume::poll_voice(context, wanted) {
+            cosmetic_resume::Poll::Ready => true,
+            cosmetic_resume::Poll::Failed(detail) => { settle(false, 0x3000 + detail); return; }
+            cosmetic_resume::Poll::Pending => false,
+        },
         ui_resume::Screen::Test => current == 10
             && native::read::<u32>(context, 0x14c) > 0
             && contract::test_running(BASE.load(Ordering::Acquire)),
@@ -311,6 +387,7 @@ pub(super) unsafe fn before_release(context: usize) {
     *CAPTURE.lock().unwrap() = None;
     *RECONSTRUCTION.lock().unwrap() = None;
     settings_resume::release();
+    cosmetic_resume::clear();
     settle(false, 3);
 }
 

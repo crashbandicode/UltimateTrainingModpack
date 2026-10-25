@@ -98,10 +98,15 @@ impl Job {
     }
 }
 
-/// Training-only cosmetics for the owned Quickplay editor: Headgear, Outfit,
-/// Color, Voice and Random stay native in ordinary Training and in the unowned
-/// editor. Native `initialize` rebuilds both selectors on every Settings entry
-/// (component age 0), so the helper runs once per entry, never per frame.
+/// Retained disabler. Training and Quickplay both keep the native cosmetic rows;
+/// this helper is not installed for either origin. Native `initialize` rebuilds
+/// both selectors on every Settings entry (component age 0), so a future caller
+/// still runs once per entry, never per frame.
+pub(super) fn suppress_native_cosmetics(origin: Origin) -> bool {
+    match origin {
+        Origin::Training | Origin::Quickplay => false,
+    }
+}
 struct Policy { context: usize, component: usize, last_age: u32, attempts: u16, settled: bool }
 
 static POLICY: Mutex<Option<Policy>> = Mutex::new(None);
@@ -163,8 +168,8 @@ unsafe fn apply_policy(context: usize, component: usize) {
     if let Some((name, values)) = event {
         if let Some(session) = STATE.lock().unwrap().as_mut() { session.event(name, values); }
         if name == "waiting_cosmetics_policy_failed" {
-            // Fail open: the native editor keeps its own rows; the interruption
-            // adapter still treats cosmetic pages as unqualified Settings.
+            // Fail open: the native rows stay as they are. Quickplay resume reads
+            // the child page itself, so a helper failure must not invent a cursor.
             crate::logging::diagnostic(format_args!("[MiiEditor] waiting cosmetics policy failed: {result:?}"));
         }
     }
@@ -177,16 +182,18 @@ unsafe fn settings_frame(component: usize) {
     // session lock, and an owned Training editor only compares its origin.
     let pending = JOB.lock().unwrap().as_ref().is_some_and(|job|
         job.context == context && job.result.is_none());
-    let (owned, waiting) = if EDIT_OWNED.load(Ordering::Acquire) && context != 0 {
+    let origin = if EDIT_OWNED.load(Ordering::Acquire) && context != 0 {
         STATE.lock().unwrap().as_ref()
             .filter(|session| session.phase == Phase::Editing && session.thread == current_thread())
-            .map_or((false, false), |session| (true, session.origin == Origin::Quickplay))
-    } else { (false, false) };
-    let bound = owned && (pending || waiting) && {
+            .map(|session| session.origin)
+    } else { None };
+    let owned = origin.is_some();
+    let suppress = origin.is_some_and(suppress_native_cosmetics);
+    let bound = owned && (pending || suppress) && {
         let holder: usize = native::read(context, 0x178);
         native::aligned(holder) && native::read::<usize>(holder, 0x80) == component
     };
-    if bound && waiting { apply_policy(context, component); }
+    if bound && suppress { apply_policy(context, component); }
     // Age 0 starts the coroutine; wait until its default selection has run.
     if bound && pending && native::read::<u32>(component, 0xe4) > 1 {
         let mut job = JOB.lock().unwrap().take().unwrap();
@@ -223,6 +230,16 @@ mod tests {
             Some(("waiting_cosmetics_disabled", [1, 1, 1, 0])));
         assert!(!Policy::due(&mut slot, 1, 2, 2));
         assert!(Policy::due(&mut slot, 1, 3, 5), "another component is a new entry");
+    }
+
+    #[test]
+    fn quickplay_keeps_native_cosmetic_rows() {
+        assert!(!suppress_native_cosmetics(Origin::Quickplay));
+        assert!(!suppress_native_cosmetics(Origin::Training));
+        let random = Snapshot::parse(Value::integer(2), Value::integer(1)).unwrap();
+        assert_eq!(random, Snapshot { row: 2, area: 1 });
+        let voice_row = Snapshot::parse(Value::integer(5), Value::integer(0)).unwrap();
+        assert_eq!(voice_row.row, 5);
     }
 
     #[test]

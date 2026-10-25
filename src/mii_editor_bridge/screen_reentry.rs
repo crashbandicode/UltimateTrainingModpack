@@ -22,11 +22,16 @@ pub(super) unsafe fn enter(context: usize, screen: Screen) -> Entry {
             if !super::name_keyboard::prepare_resume(context, text) { return Entry::Refused; }
             4
         }
+        Screen::Headgear(_) => 5,
+        Screen::Outfit(_) => 6,
+        Screen::Color(_) => 7,
         Screen::Specials(_) => 8,
+        // Voice entry pushes its page and then the same preview state Test uses.
+        Screen::Voice(_) => 9,
         Screen::Test => 10,
     };
     native::write(context, 0xf8 + (level as usize + 1) * 4, target);
-    let end = if target == 10 {
+    let end = if target == 9 || target == 10 {
         native::write(context, 0xf8 + (level as usize + 2) * 4, 11i32);
         level + 2
     } else { level + 1 };

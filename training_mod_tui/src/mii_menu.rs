@@ -349,7 +349,7 @@ impl CatalogMenu {
         let defects = self.snapshot.defects().count();
         let status = match defects {
             count if count != 0 => format!("{count} saved Mii configuration(s) could not be read. Selection is unavailable."),
-            _ if self.editor_only => "Create and test a Mii. Cosmetics are available in Training only. An incoming match keeps your unfinished changes. B: Back".into(),
+            _ if self.editor_only => "Create and test a Mii, including Headgear, Outfit, Color, Voice, and Random. An incoming match keeps that unfinished page. B: Back".into(),
             _ if self.snapshot.findings.iter().any(|finding| matches!(finding, Finding::PresetSource { .. })) =>
                 "Imported presets unavailable. Native saved Miis remain selectable. B: Back".into(),
             _ if self.role == Some(Role::Player) && self.context.original == PlayerOrigin::Unresolved =>

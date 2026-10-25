@@ -1,7 +1,6 @@
--- Bridge-owned Quickplay (waiting-room) Settings table only. Native initialize
--- disables rows with these same selector calls in its read-only branch; this
--- keeps Name, Special Moves, Test, Save and Cancel native while Headgear,
--- Outfit, Color, Voice and Random stay Training-only in the first alpha.
+-- Retained selector disabler. Training and Quickplay do not install it.
+-- Name, Special Moves, Test, Save and Cancel stay native either way. Headgear,
+-- Outfit, Color, Voice and Random keep the game's own rows in both modes.
 local settings = ...
 local selector0, selector1 = settings.selector0, settings.selector1
 if selector0 == nil or selector1 == nil then

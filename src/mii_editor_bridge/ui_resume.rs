@@ -1,6 +1,7 @@
 //! One unfinished interaction in one outer Quickplay lifetime. Checkpoints
 //! contain owned values only; native UI adapters rebuild objects after return.
-use super::{draft::Draft, inline_keyboard::Text, return_gate::ReturnGate, settings_resume, specials_resume, value, STATE};
+use super::{cosmetic_resume, draft::Draft, inline_keyboard::Text, return_gate::ReturnGate,
+    settings_resume, specials_resume, value, STATE};
 use std::sync::{Arc, Mutex};
 use training_mod_consts::mii::inventory::Snapshot as Catalog;
 use training_mod_tui::resume::{ResumeReadiness, ResumeSlot, ResumeTicket};
@@ -9,7 +10,11 @@ use training_mod_tui::resume::{ResumeReadiness, ResumeSlot, ResumeTicket};
 pub(super) enum Screen {
     Settings(settings_resume::Snapshot),
     Name(Text),
+    Headgear(cosmetic_resume::GearSelection),
+    Outfit(cosmetic_resume::GearSelection),
+    Color(cosmetic_resume::ColorSelection),
     Specials(specials_resume::Snapshot),
+    Voice(cosmetic_resume::VoiceSelection),
     Test,
 }
 

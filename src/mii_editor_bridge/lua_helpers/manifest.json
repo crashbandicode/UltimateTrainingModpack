@@ -53,9 +53,21 @@
     },
     {
       "name": "settings_policy.lua",
-      "source_sha256": "1e1403d3a402bc9931d72b3c984a6302e936aae95e34db774a8bb9474477e92c",
+      "source_sha256": "37cb1413a2edc9d6015b32a16c24ee61c3b707e67adcaf7e407c33c04b5f7b19",
       "bytes": 1223,
       "bytecode_sha256": "122dbe55b0b2eb3dcca4e5c2796f88e3f194aceea593793531ff32b9fc7db72b"
+    },
+    {
+      "name": "voice_capture.lua",
+      "source_sha256": "514eb19b92ea58e523fb8aa9c7883970e5fed1c415745d99f2b2c3cf0e49e138",
+      "bytes": 176,
+      "bytecode_sha256": "db9ed78708cc978e0935f703d4f309e9212686e7b937ee2951a0cfea5656b854"
+    },
+    {
+      "name": "voice_focus.lua",
+      "source_sha256": "93d86413ae8eb8814dc37563cbc409859c3582f0244ba6f289d10a7497602ceb",
+      "bytes": 262,
+      "bytecode_sha256": "5ddb79f07343d2b161416315aea60f847f061f2dcb42ac754a03a7047758e86a"
     }
   ]
 }
