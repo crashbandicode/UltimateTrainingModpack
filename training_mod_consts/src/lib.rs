@@ -999,7 +999,7 @@ pub unsafe fn create_app<'a>() -> App<'a> {
     misc_tab_submenus.push(OnOff::to_submenu(
         "Lobby Practice",
         "lobby_practice",
-        "Enable waiting-room practice controls; re-enter practice after enabling.\nSave states and recording require Training mode.",
+        "Enable waiting-room practice controls; re-enter practice after enabling.\nSave states and recording apply only to your local practice fighters.",
         ToggleSingle,
         false,
     ));

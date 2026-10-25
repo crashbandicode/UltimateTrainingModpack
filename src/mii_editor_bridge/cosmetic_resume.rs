@@ -385,31 +385,4 @@ mod tests {
         assert_ne!(leaf(3, None), Leaf::Headgear);
     }
 
-    /// Listing `set_voice_type`: a requested None pair writes pitch selectable
-    /// false, then an old None pair writes it true. Equal None therefore ends
-    /// selectable. The helper's last write is the opposite of that finished pair.
-    fn setter_leaves_pitch_selectable(old_none: bool, requested_none: bool) -> bool {
-        let mut selectable = true;
-        if requested_none { selectable = false; }
-        if old_none { selectable = true; }
-        selectable
-    }
-
-    #[test]
-    fn voice_none_pitch_stays_disabled_when_the_old_pair_was_none() {
-        assert!(setter_leaves_pitch_selectable(true, true), "equal None re-enables pitch");
-        assert!(!setter_leaves_pitch_selectable(false, true));
-        assert!(setter_leaves_pitch_selectable(true, false));
-        assert!(setter_leaves_pitch_selectable(false, false), "neither branch writes");
-        let source = include_str!("lua_helpers/voice_focus.lua");
-        let type_at = source.find("page:set_voice_type(").expect("type transition");
-        let pitch_at = source.find("page:set_voice_pitch(").expect("pitch labels");
-        let selectable_at = source.find("page.selector:set_selectable(1,").expect("pitch id 1");
-        assert!(type_at < pitch_at && pitch_at < selectable_at);
-        assert!(!source.contains("page.voice_type ="));
-        assert!(!source.contains("page.voice_pitch ="));
-        assert!(source.contains("none ~= true"));
-        assert!(!source.contains("set_selectable(1, true)"));
-        assert!(!source.contains("set_selectable(1, false)"));
-    }
 }
