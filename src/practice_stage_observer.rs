@@ -125,7 +125,7 @@ unsafe fn stage_update(ctx: &mut InlineCtx) {
     };
     let in_scope = mode.initialized
         && (crate::common::is_native_training_mode()
-            || (mode.mode == 0x02010000 && mode.melee == 0x0d));
+            || crate::lobby_stage_probe::qualified_waiting(mode.mode, mode.melee));
     if !in_scope {
         #[cfg(feature = "practice-stage-request-alpha")]
         crate::practice_stage_request::depart();
@@ -193,7 +193,8 @@ unsafe fn stage_update(ctx: &mut InlineCtx) {
 }
 
 // Called from the existing preload hook, so two hooks never compete at one site.
-// Include local-wireless non-practice preloads: their slot ownership is the question.
+// Include both waiting families' non-practice preloads in passive diagnostics:
+// their slot ownership matters, but this observer never changes them.
 pub unsafe fn observe_resource_request(ctx: &InlineCtx) {
     if !VERIFIED.load(Ordering::Acquire) {
         return;
@@ -201,7 +202,8 @@ pub unsafe fn observe_resource_request(ctx: &InlineCtx) {
     let Some(mode) = crate::common::game_mode::current() else {
         return;
     };
-    if !mode.initialized || !(mode.mode == 0x02010000 || crate::common::is_native_training_mode()) {
+    if !mode.initialized || !(crate::lobby_stage_cycle::family(mode.mode).is_some()
+        || crate::common::is_native_training_mode()) {
         return;
     }
     let owner = ctx.registers[0].x() as usize;

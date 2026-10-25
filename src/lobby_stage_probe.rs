@@ -1,16 +1,31 @@
-//! Development-only native entry probe. No per-frame mutation or saved pointer.
+//! Native waiting-stage entry selection. No per-frame mutation or saved pointer.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use skyline::hooks::{getRegionAddress, InlineCtx, Region};
 use training_mod_consts::{OnOff, MENU};
 use training_mod_sync::read;
 
-use crate::lobby_stage_cycle::StageCycle;
+use crate::lobby_stage_cycle::{self, StageCycle, WaitingStageFamily};
 
-static CYCLE: Mutex<StageCycle> = Mutex::new(StageCycle::new());
+// Each native waiting family owns its preload until its own scene consumes it.
+// An abandoned Quickplay search cannot lend its prepared descriptor to LDN.
+static CYCLES: Mutex<[StageCycle; 2]> = Mutex::new([StageCycle::new(), StageCycle::new()]);
+static QUICKPLAY_VERIFIED: AtomicBool = AtomicBool::new(false);
 static RESOURCE_LINES: AtomicUsize = AtomicUsize::new(0);
+
+fn cycle_index(mode: u32) -> Option<usize> {
+    match lobby_stage_cycle::family(mode)? {
+        WaitingStageFamily::LocalWireless => Some(0),
+        WaitingStageFamily::Quickplay if QUICKPLAY_VERIFIED.load(Ordering::Acquire) => Some(1),
+        WaitingStageFamily::Quickplay => None,
+    }
+}
+
+pub(super) fn qualified_waiting(mode: u32, melee: u8) -> bool {
+    lobby_stage_cycle::waiting(mode, melee) && cycle_index(mode).is_some()
+}
 
 #[skyline::hook(offset = 0x25f7860, inline)]
 unsafe fn resource_request(ctx: &mut InlineCtx) {
@@ -19,17 +34,17 @@ unsafe fn resource_request(ctx: &mut InlineCtx) {
     let Some(mode) = crate::common::game_mode::current() else {
         return;
     };
-    if mode.mode != 0x02010000 {
-        return;
-    }
+    let Some(index) = cycle_index(mode.mode) else { return; };
     let config = ctx.registers[1].x() as *const u8;
     if config.is_null() || config as usize & 7 != 0 {
         return;
     }
     let base = getRegionAddress(Region::Text) as usize;
     let caller = (ctx.registers[30].x() as usize).wrapping_sub(base);
-    let kind = std::ptr::read(config as *const u32);
-    let hash = std::ptr::read(config.add(8) as *const u64);
+    // The native caller owns this synchronous stack descriptor throughout the
+    // callback. Alignment was checked above; the fingerprint proves its layout.
+    let kind = crate::native_fields::read_unchecked::<u32>(config as usize, 0);
+    let hash = crate::native_fields::read_unchecked::<u64>(config as usize, 8);
     if RESOURCE_LINES.fetch_add(1, Ordering::Relaxed) < 32 {
         crate::logging::diagnostic(format_args!(
             "[LobbyStageProbe] resource caller=0x{:x} index={} kind={} hash=0x{:x} mode={:?}",
@@ -40,16 +55,17 @@ unsafe fn resource_request(ctx: &mut InlineCtx) {
             mode
         ));
     }
-    // Proven local-wireless CSS preload only. The native stack configuration is
+    // Proven waiting-entry preload only. The native stack configuration is
     // consumed synchronously by this request; no pointer survives the callback.
-    if caller == 0x2335cf0
+    if lobby_stage_cycle::entry_preload(mode.mode, caller)
         && ctx.registers[2].w() == 2
         && kind == 311
         && hash == 0x165a48f367
         && read(&MENU).lobby_practice == OnOff::ON
     {
         let stages = read(&MENU).lobby_stages.stages();
-        let mut cycle = CYCLE.lock().unwrap();
+        let mut cycles = CYCLES.lock().unwrap();
+        let cycle = &mut cycles[index];
         #[cfg(feature = "practice-stage-request-alpha")]
         let selected = {
             let prefs = crate::common::menu::stage_preferences();
@@ -63,9 +79,9 @@ unsafe fn resource_request(ctx: &mut InlineCtx) {
             return;
         };
         let record = (base + 0x454a7e8 + stage as usize * 72) as *const u8;
-        let native_hash = std::ptr::read(record.add(24) as *const u64) & 0xffffffffff;
-        std::ptr::write(config as *mut u32, stage);
-        std::ptr::write(config.add(8) as *mut u64, native_hash);
+        let native_hash = crate::native_fields::read_unchecked::<u64>(record as usize, 24) & 0xffffffffff;
+        crate::native_fields::write_unchecked(config as usize, 0, stage);
+        crate::native_fields::write_unchecked(config as usize, 8, native_hash);
         crate::logging::diagnostic(format_args!(
             "[LobbyStageProbe] preload selected={stage} hash=0x{native_hash:x}"
         ));
@@ -87,14 +103,14 @@ pub unsafe fn observe_loaded() {
 // Leave the native setter, resource loading and all other arguments intact.
 #[skyline::hook(offset = 0x1790e18, inline)]
 unsafe fn stage_entry(ctx: &mut InlineCtx) {
-    // Only the local-wireless resource preload above can prepare an entry.
+    // Only the same family's resource preload above can prepare an entry.
     // Keep an already preloaded selection even if preferences change meanwhile.
-    if !matches!(crate::common::game_mode::current(), Some(mode)
-        if mode.initialized && mode.mode == 0x02010000 && mode.melee == 0x0d)
-    {
+    let Some(mode) = crate::common::game_mode::current() else { return; };
+    if !mode.initialized || !qualified_waiting(mode.mode, mode.melee) {
         return;
     }
-    let Some(stage) = CYCLE.lock().unwrap().enter() else {
+    let Some(index) = cycle_index(mode.mode) else { return; };
+    let Some(stage) = CYCLES.lock().unwrap()[index].enter() else {
         return;
     };
     let previous = ctx.registers[1].w();
@@ -117,7 +133,40 @@ pub fn init() {
             && std::slice::from_raw_parts((base + 0x25f7860) as *const u32, 5)
                 == [0xd10103ff, 0xa90157f6, 0xa9024ff4, 0xa9037bfd, 0x9100c3fd]
     };
-    crate::logging::diagnostic(format_args!("[LobbyStageProbe] verified={verified}"));
+    // Quickplay's CSS/return drivers construct stage311/hash165a48f367 in slot2,
+    // then enter the same PracticeScene setup as LDN. Verify the callers as well
+    // as the shared callee so normal match preloads cannot acquire this gate.
+    let quickplay_checks: &[(usize, &[u32])] = &[
+        (0x236841c, &[
+            0xb9415269, 0x7100113f, 0x54000461, 0x528026e9, 0xb90063e9,
+            0xd0017e09, 0xf944e920, 0xd29e6cea, 0xf2ab490a, 0x3901c3e8,
+            0xd2dfe008, 0xf2c002ca, 0xf2fb3fe8, 0x910183e1, 0x321f03e2,
+        ]),
+        (0x23684a8, &[0xf803429f, 0x940a3ced, 0xa9547bfd]),
+        (0x2369174, &[
+            0xb94152a9, 0x7100113f, 0x54000461, 0x528026e9, 0xb9005be9,
+            0xb0017e09, 0xf944e920, 0xd29e6cea, 0xf2ab490a, 0x3901a3e8,
+            0xd2dfe008, 0xf2c002ca, 0xf2fb3fe8, 0x910163e1, 0x321f03e2,
+        ]),
+        (0x2369200, &[0xf808c3ff, 0x940a3997, 0x910803ff]),
+        (0x236c9c0, &[
+            0xd0017de9, 0xf944e920, 0x528026ea, 0xb9001bea, 0xd29e6cea, 0xf2ab490a,
+            0x3900a3e8, 0xd2dfe008, 0xf2c002ca, 0xf2fb3fe8, 0x910063e1, 0x321f03e2,
+        ]),
+        (0x236ca40, &[0xf804c3ff, 0x940a2b87, 0xf940d7e0]),
+        (0x237cc4c, &[
+            0xb9421aa9, 0x7100193f, 0x54000461, 0x528026e9, 0xb90033e9,
+            0xd0017d69, 0xf944e920, 0xd29e6cea, 0xf2ab490a, 0x390103e8,
+            0xd2dfe008, 0xf2c002ca, 0xf2fb3fe8, 0x9100c3e1, 0x321f03e2,
+        ]),
+        (0x237ccd8, &[0xf80643ff, 0x9409eae1, 0x910943ff]),
+        (0x237ebd4, &[0x97d032bf, 0x97d04512]),
+    ];
+    let quickplay_verified = verified && quickplay_checks.iter().all(|(offset, words)| unsafe {
+        std::slice::from_raw_parts((base + offset) as *const u32, words.len()) == *words
+    });
+    QUICKPLAY_VERIFIED.store(quickplay_verified, Ordering::Release);
+    crate::logging::diagnostic(format_args!("[LobbyStageProbe] verified={verified} quickplay={quickplay_verified}"));
     if verified {
         skyline::install_hooks!(stage_entry, resource_request);
     }

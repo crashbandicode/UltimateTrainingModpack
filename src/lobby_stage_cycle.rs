@@ -1,5 +1,36 @@
 //! Entry-time stage choice. Native preload and scene setup consume one selection.
 
+/// The two qualified waiting families. This is scene admission, not permission
+/// to overwrite a native resource slot; the live stage policy checks ownership.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum WaitingStageFamily {
+    LocalWireless,
+    Quickplay,
+}
+
+pub(super) fn family(mode: u32) -> Option<WaitingStageFamily> {
+    if mode == 0x02010000 {
+        Some(WaitingStageFamily::LocalWireless)
+    } else if mode & 0x7fffff00 == 0x07010100 {
+        Some(WaitingStageFamily::Quickplay)
+    } else {
+        None
+    }
+}
+
+pub(super) fn waiting(mode: u32, melee: u8) -> bool {
+    melee == 0x0d && family(mode).is_some()
+}
+
+/// Return addresses from fingerprinted native slot-2 PracticeScene preloads
+/// (including Quickplay's CSS and return drivers). Match/Morph requests must not
+/// reserve or advance the entry rotation.
+pub(super) fn entry_preload(mode: u32, caller: usize) -> bool {
+    matches!((family(mode), caller),
+        (Some(WaitingStageFamily::LocalWireless), 0x2335cf0)
+            | (Some(WaitingStageFamily::Quickplay), 0x23684b0 | 0x2369208 | 0x236ca48 | 0x237cce0))
+}
+
 #[derive(Default)]
 pub struct StageCycle {
     last: Option<u32>,
@@ -45,6 +76,28 @@ impl StageCycle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn qualified_preload_callers_do_not_admit_match_or_morph_requests() {
+        assert!(entry_preload(0x02010000, 0x2335cf0));
+        assert!(entry_preload(0x07010100, 0x237cce0));
+        assert!(entry_preload(0x87010101, 0x237cce0));
+        for caller in [0x23684b0, 0x2369208, 0x236ca48] {
+            assert!(entry_preload(0x07010101, caller));
+            assert!(!entry_preload(0x02010000, caller));
+        }
+        assert!(!entry_preload(0x07010100, 0x2335cf0));
+        assert!(!entry_preload(0x02010000, 0x237cce0));
+        for caller in [0x26074f4, 0x14f57c4, 0x23684ac, 0] {
+            assert!(!entry_preload(0x07010100, caller));
+        }
+        // Same outer Quickplay family can own actual gameplay. Melee decides
+        // whether the live stage controller is local waiting practice.
+        assert!(waiting(0x07010100, 0x0d));
+        assert!(!waiting(0x07010100, 1));
+        assert!(!waiting(0x07010200, 0x0d));
+        assert!(!waiting(0x04040000, 0x0d));
+    }
 
     #[test]
     fn preload_retries_and_repeated_setup_do_not_skip_entries() {

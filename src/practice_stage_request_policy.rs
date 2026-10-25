@@ -131,7 +131,7 @@ pub(super) fn acknowledge(v: View, c: Commit, a: ActivationRead) -> Result<Optio
     // ownership. Check all immutable authority above before deferring again.
     if v.disabled!=0 || v.stop_mask!=0 || a.readiness_stop_mask!=0
         || v.ui_busy || v.roster_busy
-        || (v.scene.mode==0x02010000 && !v.waiting_ready)
+        || (crate::lobby_stage_cycle::waiting(v.scene.mode, v.scene.melee) && !v.waiting_ready)
         || a.native_ready==0 || a.ready_bits!=3 {
         return Ok(None);
     }
@@ -155,7 +155,7 @@ pub(super) fn complete(v: View, c: Commit) -> bool {
 
 pub(super) fn admit(v: View, settled: Option<Commit>) -> Result<usize, &'static str> {
     check((v.scene.mode == 0x04040000 && v.scene.melee == 0x20)
-        || (v.scene.mode == 0x02010000 && v.scene.melee == 0x0d && v.waiting_ready), "not owned practice scene")?;
+        || (crate::lobby_stage_cycle::waiting(v.scene.mode, v.scene.melee) && v.waiting_ready), "not owned practice scene")?;
     check(v.disabled == 0 && v.stop_mask == 0 && !v.ui_busy && !v.roster_busy, "practice suspended")?;
     check(v.state == 0 && v.task_state == 0 && v.task_fiber == 0, "native transition or task busy")?;
     check(v.item_ready, "native item gate closed")?;
@@ -213,6 +213,42 @@ mod tests {
         let mut training = v; training.scene.mode=0x04040000; training.scene.melee=0x20;
         training.active=0; training.slots=[48,0,0]; training.resources.swap(0,2);
         assert_eq!(admit(training,None),Ok(1));
+    }
+    #[test]
+    fn quickplay_waiting_keeps_match_cache_and_scene_ownership_barriers() {
+        let mut v = waiting();
+        v.scene.mode = 0x07010100;
+        let (c, descriptor) = plan(v, None, 0, 0x123456789a).unwrap();
+        assert_eq!((c.incoming, c.outgoing), (0, 2));
+        assert_eq!(&descriptor[16..], &v.descriptor[16..]);
+        for cache_state in [0, 1] {
+            let mut match_loading = v;
+            match_loading.resources[3] = Some(Resource {
+                address: 88, state: cache_state, kind: 44, hash: 99,
+            });
+            assert_eq!(admit(match_loading, None), Err("pending match cache occupied"));
+        }
+        let (mut loaded, ready) = loaded(v, c);
+        loaded.waiting_ready = false;
+        assert_eq!(acknowledge(loaded, c, ready), Ok(None));
+        loaded.waiting_ready = true;
+        assert!(acknowledge(loaded, c, ready).unwrap().is_some());
+        // Match start revokes the original scene even if allocation addresses
+        // have not changed yet. A return with a new epoch cannot revive it.
+        loaded.scene.melee = 1;
+        assert_eq!(acknowledge(loaded, c, ready), Err("activation owner changed"));
+        let mut other = v;
+        other.scene.melee = 1;
+        assert_eq!(admit(other, None), Err("not owned practice scene"));
+        other = v;
+        other.scene.mode = 0x07010200;
+        assert_eq!(admit(other, None), Err("not owned practice scene"));
+        other = v;
+        other.waiting_ready = false;
+        assert_eq!(admit(other, None), Err("not owned practice scene"));
+        other = v;
+        other.scene.epoch += 1;
+        assert!(!current_request(c.scene, other.scene, 48, 48));
     }
     #[test]
     fn real_pending_match_cache_blocks_both_loading_and_ready() {
