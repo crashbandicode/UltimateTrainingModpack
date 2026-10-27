@@ -1,6 +1,6 @@
 //! Owned catalog UI. No native pointers, file access, save edits or reload calls.
 //! A caller must mount a fresh catalog/context after opening the ordinary App.
-use training_mod_mii::inventory::{Finding, MiiClass, Snapshot};
+use training_mod_mii::inventory::{Canonical, Finding, MiiClass, Snapshot};
 use training_mod_mii::selection::{self, Action, Active, DropdownRow, PlayerOrigin, Preferences, Role};
 
 use crate::{macro_panel, StatefulTable, SubMenu, SubMenuType, NX_SUBMENU_COLUMNS, NX_SUBMENU_ROWS};
@@ -94,6 +94,10 @@ pub struct Context {
     pub epoch: u64,
     pub original: PlayerOrigin,
     pub active: Active,
+    /// Captured CPU saved original for numbered-cycle exposure.
+    /// None is unresolved. It is never inferred from the player origin,
+    /// the live class, or the current dropdown.
+    pub cpu_original: Option<Canonical>,
 }
 
 /// Exposure for one menu opening, separate from the adapters' protected originals.
@@ -145,6 +149,8 @@ impl MenuCapture {
 
     /// Unified adapters supply both immutable origin and current live identity after a
     /// fresh menu recapture. Some(None) is a qualified CPU currently on an ordinary fighter.
+    /// `cpu_original` is preserved as supplied. Live CPU identity and the player origin
+    /// do not replace or invent it.
     pub fn take_owned_context(&mut self, mut context:Context,
         player:Option<(PlayerOrigin,selection::PlayerLive)>,
         cpu:Option<Option<(MiiClass,training_mod_mii::inventory::Canonical)>>)->Option<Context> {
@@ -175,7 +181,7 @@ pub struct PendingSelection {
 #[cfg(feature = "mii-editor-alpha")]
 #[derive(Clone)]
 pub enum EditorSeed {
-    Saved(training_mod_mii::inventory::MiiConfig),
+    Saved(Box<training_mod_mii::inventory::MiiConfig>),
     /// Intent only: the scene adapter must obtain actual native default values.
     NativeDefault(MiiClass),
 }
@@ -227,7 +233,8 @@ impl CatalogMenu {
     #[cfg(feature = "mii-editor-alpha")]
     pub fn editor_only(snapshot: Snapshot, epoch: u64, preferences: &Preferences) -> Option<Self> {
         let context = Context { epoch, original: PlayerOrigin::Unresolved,
-            active: Active { player: selection::PlayerLive::NotMii, cpu: None } };
+            active: Active { player: selection::PlayerLive::NotMii, cpu: None },
+            cpu_original: None };
         Self::new(snapshot, context, preferences).map(|mut menu| {
             menu.editor_only = true;
             menu.cursor = 2;
@@ -257,11 +264,54 @@ impl CatalogMenu {
 
     #[cfg(feature="mii-ordinary-cpu-alpha")]
     pub fn qualify_ordinary_cpu_cycle(&mut self, qualified:bool) {self.ordinary_cpu=qualified;}
+    /// Class admission for a manual same-class choice. A saved CPU original with no
+    /// other configuration of its class remains selectable here.
     #[cfg(feature="mii-ordinary-cpu-alpha")]
     pub fn alpha_cpu_cycle(&self,kind:u32)->bool {
         self.ordinary_cpu && training_mod_mii::ordinary_cpu::supported_kind(kind)
             && MiiClass::from_kind(kind).is_some_and(|class|
                 selection::eligible(&self.snapshot,Role::Cpu,class,self.context.original).next().is_some())
+    }
+    /// Numbered-cycle choice for one class. If the resolved row is the captured CPU
+    /// original (slot 0), choose the first different configuration, or none.
+    /// A missing `cpu_original` does not borrow the player origin or invent a row.
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    pub fn cpu_numbered_choice(&self, kind: u32, preferences: &Preferences) -> Option<selection::Choice> {
+        if !self.alpha_cpu_cycle(kind) {
+            return None;
+        }
+        let class = MiiClass::from_kind(kind)?;
+        let neutral = PlayerOrigin::NotMii;
+        let resolved = selection::resolve(&self.snapshot, preferences, Role::Cpu, class, neutral)?;
+        if let Some(origin) = self.context.cpu_original.filter(|origin| origin.class == class) {
+            if resolved.canonical == origin {
+                return selection::eligible(&self.snapshot, Role::Cpu, class, neutral)
+                    .find(|cfg| cfg.canonical != origin)
+                    .map(|cfg| selection::Choice {
+                        canonical: cfg.canonical,
+                        slot_id: cfg.slot_id,
+                        source: selection::Source::FirstEligible(
+                            selection::Fallback::PreferenceIsOrigin,
+                        ),
+                    });
+            }
+        }
+        Some(resolved)
+    }
+    /// Grey badge 0 only for the captured CPU configuration when the numbered cycle
+    /// has no other configuration of its class.
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    pub fn cpu_unnumbered_original(&self, kind: u32, preferences: &Preferences) -> bool {
+        if !self.ordinary_cpu {
+            return false;
+        }
+        let Some(origin) = self.context.cpu_original.filter(|origin| origin.class as u32 == kind) else {
+            return false;
+        };
+        let present = selection::eligible(
+            &self.snapshot, Role::Cpu, origin.class, PlayerOrigin::NotMii,
+        ).any(|cfg| cfg.canonical == origin);
+        present && self.cpu_numbered_choice(kind, preferences).is_none()
     }
     #[cfg(feature="mii-managed-helper-alpha")]
     pub fn alpha_helper_hat(&self,kind:u32)->bool {
@@ -295,7 +345,8 @@ impl CatalogMenu {
         let seed = self.snapshot.of_class(self.class)
             .find(|config| Some(config.canonical) == preferred)
             .or_else(|| self.snapshot.of_class(self.class).next()).cloned()
-            .map(EditorSeed::Saved).unwrap_or(EditorSeed::NativeDefault(self.class));
+            .map(|seed| EditorSeed::Saved(Box::new(seed)))
+            .unwrap_or(EditorSeed::NativeDefault(self.class));
         Some(EditorRequest { seed, catalog: std::sync::Arc::new(self.snapshot.clone()) })
     }
 

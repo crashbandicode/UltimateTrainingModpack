@@ -26,14 +26,16 @@ lobby dialog is open. Press the shortcut again when practice is idle.
 ## Slot 0: your original pick
 
 Player 1's numbered cycle (1, 2, 3 …) is followed by **slot 0**, the fighter you
-picked on character select, and then starts again at 1. Slot 0 reloads your pick
-exactly as chosen: its starting form, its Solo Popo setting and, for a Mii, the
-same Mii.
+picked on character select, and then starts again at 1. The CPU uses the same
+shape for the fighter it actually started as: its numbered choices, then its own
+grey slot 0, then slot 1 again. Slot 0 reloads that role's pick exactly as
+chosen: its starting form, its Solo Popo setting and, for a Mii, the same Mii.
 
-The CPU has no slot 0; it cycles only through its own list, and a CPU outside
-that list starts at its first choice. Pyra/Mythra and Pokémon Trainer take one
-slot each and start in the form you chose. Down+B still changes form; the next
-swap moves to the next slot rather than to another form.
+A fresh session has no slot 0 until that character-select fighter is captured.
+A missing identity is not Mii Swordfighter, or any other default. Pyra/Mythra
+and Pokémon Trainer take one slot each and start in the form you chose. Down+B
+still changes form; the next swap moves to the next slot rather than to another
+form.
 
 ## Ice Climbers and the three Solo Popo settings
 
@@ -48,8 +50,9 @@ Solo Popo plays Popo without Nana. Three separate settings cover each situation:
 Because slot 0 and a numbered slot have separate settings, one Player cycle can
 hold both versions, such as original Solo Popo at slot 0 and the pair in a
 numbered slot. The original portrait is grey (not addable) only when both Player
-settings ask for the same version. Changes apply when you close the menu. See the
-[Solo Popo guide](solo-popo.md).
+settings ask for the same version. The CPU has one Solo Popo setting, so an
+Ice Climbers CPU original stays slot 0. Changes apply when you close the menu.
+See the [Solo Popo guide](solo-popo.md).
 
 ## Kirby hats and character items: a borrowed fighter
 
@@ -118,8 +121,10 @@ The modpack reads the Mii Fighters in Smash's own Mii list and never edits or
 renames them. Each role chooses its own Mii per class, and a cycle loads that Mii
 when it reaches the class portrait (steps are in the [Mii guide](mii-fighters.md)).
 
-- Player 1's original character-select Mii stays at slot 0 and is greyed in the
-  Player list.
+- Each role's original character-select Mii stays at that role's slot 0 and is
+  greyed in its own list. The other role does not show 0 for that class unless
+  it is also that role's original. A different saved configuration of the class
+  can still be a numbered choice.
 - Changing the choice for the class on screen reloads it when you close the
   menu; other choices apply on the next cycle.
 - The saved-Mii list loads automatically the first time it is needed, so the

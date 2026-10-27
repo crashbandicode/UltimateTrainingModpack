@@ -1,5 +1,6 @@
 //! Clip selection. Native input consumption, not rendering, advances the preview.
 use training_mod_macros::{FrameWindow, MacroRecording, ReplayFrame, ReplaySession, ReplayTrack, MAX_NAME_CHARS};
+use crate::macro_panel::Pad;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Handle { Playhead, In, Out }
@@ -146,6 +147,31 @@ impl CloseInputGuard {
     }
 }
 
+/// The press that opens the editor belongs to the opener. Native mapping can run
+/// several times before the next pad refresh, re-presenting that same edge and
+/// held level, so a fresh Confirm needs a release this guard actually observed.
+/// Only an unheld sample without a press clears it. That sample never confirms:
+/// the next press must arrive separately, with a held level and no release edge.
+#[derive(Default)]
+pub struct OpenInputGuard { waiting_for_release: bool }
+
+impl OpenInputGuard {
+    pub const fn new() -> Self { Self { waiting_for_release: false } }
+
+    pub fn arm(&mut self) { self.waiting_for_release = true; }
+
+    pub fn pending(&self) -> bool { self.waiting_for_release }
+
+    /// Poll once per P1 mapping. Returns whether a Confirm edge may pass.
+    pub fn allows_confirm(&mut self, held: bool, released: bool, pressed: bool) -> bool {
+        if self.waiting_for_release {
+            if !held && !pressed { self.waiting_for_release = false; }
+            return false;
+        }
+        held && pressed && !released
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ClipView {
     pub total: u32,
@@ -175,6 +201,7 @@ pub struct ClipEditor {
     clean_statuses: Vec<i32>,
     source_name: String,
     previous_name: String,
+    open_guard: OpenInputGuard,
 }
 
 fn prepare(mut session: ReplaySession) -> Option<ReplaySession> {
@@ -187,9 +214,32 @@ impl ClipEditor {
     pub fn new(session: ReplaySession, clean_statuses: Vec<i32>) -> Result<Self, String> {
         let session = prepare(session).ok_or("Play a saved replay in Vault first")?;
         let window = session.tracks[0].window()?;
+        let mut open_guard = OpenInputGuard::new();
+        open_guard.arm();
         Ok(Self { session, previous: None, previous_selected: false, track: 0, window,
             handle: Handle::Playhead, playing: false, clean_statuses,
-            source_name: "Latest Vault capture".into(), previous_name: "Previous Vault capture".into() })
+            source_name: "Latest Vault capture".into(), previous_name: "Previous Vault capture".into(),
+            open_guard })
+    }
+
+    /// Physical A edge gate for the native adapter; see `OpenInputGuard`.
+    pub fn allows_confirm(&mut self, held: bool, released: bool, pressed: bool) -> bool {
+        self.open_guard.allows_confirm(held, released, pressed)
+    }
+
+    /// True while the opening press has not been seen released.
+    pub fn confirm_release_pending(&self) -> bool { self.open_guard.pending() }
+
+    /// Normalized UI events carry no physical release sample. They must not clear
+    /// the opening fence or bypass it when the editor is not in the foreground.
+    pub fn action_for_pad(&self, pad: Pad) -> Option<ClipAction> {
+        Some(match pad {
+            Pad::Confirm if self.confirm_release_pending() => return None,
+            Pad::Confirm => ClipAction::Confirm, Pad::Back => ClipAction::Cancel,
+            Pad::Left => ClipAction::Nudge(-1), Pad::Right => ClipAction::Nudge(1),
+            Pad::Up => ClipAction::PreviousFighter, Pad::Down => ClipAction::NextFighter,
+            Pad::Extra => ClipAction::TogglePlay,
+        })
     }
 
     pub fn with_name(mut self, name: String) -> Self {
@@ -366,6 +416,117 @@ mod tests {
         assert!(!guard.poll(true, true));
         guard.arm(15);
         assert!(guard.poll(true, true));
+    }
+    /// One native P1 mapping sample of physical A: (held level, release edge, press edge).
+    /// Returns what the editor would do with the Confirm slot of that sample.
+    fn poll_a(e: &mut ClipEditor, held: bool, released: bool, pressed: bool) -> Option<ClipEffect> {
+        e.allows_confirm(held, released, pressed).then(|| e.on_action(ClipAction::Confirm))
+    }
+    fn exported(effect: Option<ClipEffect>) -> Option<Vec<u32>> {
+        match effect {
+            Some(ClipEffect::Export(recording)) => Some(recording.frames.iter().map(|f| f.buttons).collect()),
+            _ => None,
+        }
+    }
+    #[test]
+    fn opening_press_repeated_polls_and_held_level_never_export_until_release_is_observed() {
+        let mut e = editor();
+        assert!(e.confirm_release_pending());
+        // FIM re-presents the opening edge and held level before the next pad refresh.
+        for _ in 0..8 { assert!(poll_a(&mut e, true, false, true).is_none()); }
+        for _ in 0..30 { assert!(poll_a(&mut e, true, false, false).is_none()); }
+        assert!(e.confirm_release_pending());
+        // A same-poll edge without an observed release is still the opener's press.
+        assert!(poll_a(&mut e, true, false, true).is_none());
+        assert!(exported(poll_a(&mut e, false, false, false)).is_none());
+        assert!(!e.confirm_release_pending());
+        assert_eq!(exported(poll_a(&mut e, true, false, true)).unwrap(), (0..10).collect::<Vec<_>>());
+    }
+    #[test]
+    fn a_release_edge_cannot_override_the_still_held_opening_press() {
+        let mut e = editor();
+        assert!(poll_a(&mut e, true, true, false).is_none());
+        assert!(e.confirm_release_pending());
+        assert!(poll_a(&mut e, true, true, true).is_none());
+        assert!(poll_a(&mut e, true, false, true).is_none());
+        assert!(poll_a(&mut e, false, true, false).is_none());
+        assert!(exported(poll_a(&mut e, true, false, true)).is_some());
+    }
+    #[test]
+    fn release_and_stale_press_samples_cannot_export_without_a_separate_fresh_press() {
+        let mut e = editor();
+        assert!(poll_a(&mut e, false, true, true).is_none());
+        assert!(poll_a(&mut e, false, false, true).is_none());
+        assert!(e.confirm_release_pending());
+        assert!(poll_a(&mut e, false, true, false).is_none());
+        assert!(!e.confirm_release_pending());
+        assert!(poll_a(&mut e, false, false, true).is_none());
+        assert!(poll_a(&mut e, true, true, true).is_none());
+        assert_eq!(exported(poll_a(&mut e, true, false, true)).unwrap(), (0..10).collect::<Vec<_>>());
+    }
+    #[test]
+    fn moving_the_editor_through_reload_retains_opening_press_ownership() {
+        let mut visible = Some(editor());
+        assert!(poll_a(visible.as_mut().unwrap(), true, false, true).is_none());
+        let mut parked = visible.take().unwrap();
+        parked.pause();
+        assert!(parked.confirm_release_pending());
+        visible = Some(parked);
+        let restored = visible.as_mut().unwrap();
+        assert!(poll_a(restored, true, false, true).is_none());
+        assert!(poll_a(restored, false, false, false).is_none());
+        assert!(exported(poll_a(restored, true, false, true)).is_some());
+    }
+    #[test]
+    fn normalized_pad_cannot_bypass_or_clear_opening_press_ownership() {
+        let mut e = editor();
+        for _ in 0..8 { assert!(e.action_for_pad(Pad::Confirm).is_none()); }
+        assert!(e.confirm_release_pending());
+        let preview = e.action_for_pad(Pad::Extra).unwrap();
+        assert!(matches!(e.on_action(preview), ClipEffect::Preview(_)));
+        let cancel = e.action_for_pad(Pad::Back).unwrap();
+        assert!(matches!(e.on_action(cancel), ClipEffect::Close));
+        assert!(e.confirm_release_pending());
+        assert!(poll_a(&mut e, false, false, false).is_none());
+        let confirm = e.action_for_pad(Pad::Confirm).unwrap();
+        assert_eq!(exported(Some(e.on_action(confirm))).unwrap(), (0..10).collect::<Vec<_>>());
+    }
+    #[test]
+    fn delayed_open_and_immediate_open_follow_the_same_observed_release_rule() {
+        // Delayed: the opener was already released before the first editor poll.
+        let mut delayed = editor();
+        assert!(exported(poll_a(&mut delayed, false, false, false)).is_none());
+        assert!(exported(poll_a(&mut delayed, true, false, true)).is_some());
+        // Immediate: the first poll still carries the opening edge.
+        let mut immediate = editor();
+        assert!(poll_a(&mut immediate, true, false, true).is_none());
+        assert!(poll_a(&mut immediate, false, false, false).is_none());
+        assert!(exported(poll_a(&mut immediate, true, false, true)).is_some());
+    }
+    #[test]
+    fn close_then_reopen_creates_a_new_owner_that_waits_for_its_own_release() {
+        let mut first = editor();
+        assert!(poll_a(&mut first, false, false, false).is_none());
+        assert!(!first.confirm_release_pending());
+        assert!(matches!(first.on_action(ClipAction::Cancel), ClipEffect::Close));
+        drop(first); // The native close drops the editor; reopen builds a fresh one.
+        let mut reopened = editor();
+        assert!(reopened.confirm_release_pending());
+        assert!(poll_a(&mut reopened, true, false, true).is_none());
+        assert!(poll_a(&mut reopened, false, false, false).is_none());
+        assert!(exported(poll_a(&mut reopened, true, false, true)).is_some());
+    }
+    #[test]
+    fn pending_gate_leaves_cancel_preview_and_other_editing_unchanged() {
+        let mut e = editor();
+        assert!(!e.allows_confirm(true, false, true));
+        // These editor actions remain available; native B/X dispatch is separate.
+        assert!(matches!(e.on_action(ClipAction::TogglePlay), ClipEffect::Preview(_)));
+        assert!(matches!(e.on_action(ClipAction::TogglePlay), ClipEffect::StopPreview));
+        e.on_action(ClipAction::SelectIn); e.on_action(ClipAction::Nudge(2));
+        assert_eq!(e.view().start, 2);
+        assert!(matches!(e.on_action(ClipAction::Cancel), ClipEffect::Close));
+        assert!(e.confirm_release_pending());
     }
     fn editor() -> ClipEditor {
         let frames = (0..10).map(|i| ReplayFrame { input: InputFrame { buttons: i, ..InputFrame::default() },

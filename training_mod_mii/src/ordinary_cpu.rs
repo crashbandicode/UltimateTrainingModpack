@@ -1,11 +1,99 @@
 //! Ordinary CPU1's native selector assignment. Not a free-slot allocator.
-use crate::{lifetime::Configuration, ordinary_player::Owner};
+use crate::{lifetime::{Binding, Configuration}, ordinary_player::Owner};
 
 pub const OWNER: usize = 1;
 pub const DESTINATION: u16 = 1;
 
 /// Exact native CPU descriptor receipts qualify all three classes. Runtime adapter acceptance is separate.
 pub fn supported_kind(kind: u32) -> bool { matches!(kind, 0x48..=0x4a) }
+
+/// A changed hat requires native fresh-owner loading, qualified only for Training.
+/// Compare against the current CPU, including when returning to its captured origin.
+pub fn cpu_hat_route(layout:crate::backend::Layout,before:u16,target:u16)->Result<bool,&'static str> {
+    if before==target {return Ok(false);}
+    if layout!=crate::backend::Layout::Training {return Err("CPU unchanged hat required");}
+    if target==u16::MAX {return Err("CPU invalid headgear row");}
+    Ok(true)
+}
+
+/// A changed headgear row cannot reuse the retained O's kind*42+3 resource key.
+/// This is branch selection only; SameClass still validates all of its old proofs.
+pub fn retained_same_class_candidate(before:Configuration,after:Configuration)->bool {
+    before.canonical().class==after.canonical().class && before.tokens().hat==after.tokens().hat
+}
+
+/// Copied phase facts, not native write authority. The shared publisher additionally
+/// holds G and proves the executing ticket, protected union, task and source registry.
+#[derive(Clone, Copy)]
+pub struct HatPublication<'a> {
+    pub layout:crate::backend::Layout,
+    pub owner:u32,
+    pub source:bool,
+    pub opt_in:bool,
+    pub initialized:bool,
+    pub fingerprints:bool,
+    pub before:u16,
+    pub target:u16,
+    pub descriptor:&'a [u8;0x70],
+    pub payload:Option<Configuration>,
+}
+impl HatPublication<'_> {
+    pub fn validate(&self)->Result<(),&'static str> {
+        // Preserve the equal-hat contract for every existing publisher.
+        if self.before==self.target && !self.opt_in {return Ok(());}
+        if !self.opt_in || self.owner!=OWNER as u32 || self.source
+            || !cpu_hat_route(self.layout,self.before,self.target)?
+            || self.initialized || !self.fingerprints {
+            return Err("unqualified CPU headgear publication");
+        }
+        if u16::from_le_bytes(self.descriptor[0x4a..0x4c].try_into().unwrap())!=self.target {
+            return Err("CPU headgear descriptor/scalar mismatch");
+        }
+        if let Some(c)=self.payload {
+            if c.tokens().hat!=self.target
+                || u32::from_le_bytes(self.descriptor[0x18..0x1c].try_into().unwrap())!=c.canonical().class as u32
+                || u16::from_le_bytes(self.descriptor[0x46..0x48].try_into().unwrap())!=DESTINATION {
+                return Err("CPU headgear payload mismatch");
+            }
+        } else if u16::from_le_bytes(self.descriptor[0x46..0x48].try_into().unwrap())!=0 {
+            return Err("CPU headgear retained origin index mismatch");
+        }
+        // None restores the retained index0 record: the CPU adapter supplies
+        // origin scalars and an origin-based descriptor, not a fabricated payload.
+        Ok(())
+    }
+}
+
+// Native FE+37 mirrors the AI rank setter, whose supported domain is 0..=100.
+// This byte is live native state; the captured origin remains immutable.
+const NATIVE_RANK: usize = 0x37;
+
+pub fn native_rank(descriptor:&[u8;0x70])->Result<u8,&'static str> {
+    let rank=descriptor[NATIVE_RANK];
+    if rank>100 {return Err("CPU native rank outside supported range");}
+    Ok(rank)
+}
+
+/// Construct an owned descriptor value carrying the qualified current rank.
+/// This grants no native access, recapture permission or transaction authority.
+pub fn with_native_rank(mut original:[u8;0x70],current:&[u8;0x70])->Result<[u8;0x70],&'static str> {
+    native_rank(&original)?;
+    original[NATIVE_RANK]=native_rank(current)?;
+    Ok(original)
+}
+
+/// Menu recapture's descriptor-only policy. The native adapter must still run
+/// every non-descriptor ownership check and recheck state/provenance at commit.
+/// Transactions continue comparing their frozen descriptors byte-for-byte.
+pub fn recapture_rank(layout:crate::backend::Layout,expected:Binding,current:Binding,
+    expected_descriptor:&[u8;0x70],current_descriptor:&[u8;0x70])->Result<[u8;0x70],&'static str> {
+    if expected!=current || current.epoch==0 || current.owner!=layout.visible()[1] {
+        return Err("CPU rank recapture owner/lifetime changed");
+    }
+    let descriptor=with_native_rank(*expected_descriptor,current_descriptor)?;
+    if descriptor!=*current_descriptor {return Err("CPU rank recapture changed non-rank descriptor bytes");}
+    Ok(descriptor)
+}
 
 /// Frozen native target; an ordinary numbered fighter is not the immutable origin.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -296,6 +384,157 @@ pub fn outgoing_object_matches_for(
             u32::from(descriptor[0x41])]
         && index == before.index
         && tokens == before_tokens.map(u32::from)
+}
+
+#[cfg(test)]
+mod native_rank_tests {
+    use super::*;
+    use crate::backend::Layout;
+
+    // Synthetic values only. The oracle is the native rank domain and exact
+    // preservation of every other descriptor byte, not a copied game descriptor.
+    fn original(layout:Layout)->(Binding,[u8;0x70]) {
+        let owner=layout.visible()[1];
+        let binding=Binding {epoch:7,owner,entry:0x1000,row:0x2000,holder:0x3000,
+            manager:0x4000,vector_begin:0x5000,vector_end:0x5000+32*0x68,record_index:owner as u16};
+        let mut descriptor=[0;0x70];
+        descriptor[4..8].copy_from_slice(&owner.to_le_bytes());
+        descriptor[0x14..0x18].copy_from_slice(&1u32.to_le_bytes());
+        descriptor[0x18..0x1c].copy_from_slice(&9u32.to_le_bytes());
+        descriptor[0x1c..0x24].fill(0xff);
+        descriptor[0x28..0x2c].copy_from_slice(&1u32.to_le_bytes());
+        descriptor[0x34]=1;descriptor[0x35]=1;descriptor[0x41]=1;
+        let index=if layout.waiting() {26u16}else{0};
+        descriptor[0x46..0x48].copy_from_slice(&index.to_le_bytes());
+        (binding,descriptor)
+    }
+
+    #[test]
+    fn rank_recapture_accepts_trigger_variant_boundaries_and_noop() {
+        for layout in [Layout::Training,Layout::Ldn,Layout::Quickplay] {
+            let (binding,origin)=original(layout);
+            for (before,after) in [(0,50),(50,77),(77,100),(100,0),(0,0)] {
+                let mut expected=origin;expected[0x37]=before;
+                let mut current=expected;current[0x37]=after;
+                assert_eq!(recapture_rank(layout,binding,binding,&expected,&current),Ok(current));
+                assert_eq!(native_rank(&current),Ok(after));
+                assert_eq!(expected[0x37],before);
+                assert_eq!(origin[0x37],0);
+            }
+        }
+    }
+
+    #[test]
+    fn rank_recapture_rejects_each_non_rank_byte_including_adjacent_role_fields() {
+        let (binding,expected)=original(Layout::Ldn);
+        let mut current=expected;current[0x37]=50;
+        assert_eq!(recapture_rank(Layout::Ldn,binding,binding,&expected,&current),Ok(current));
+        for offset in (0..0x70).filter(|offset|*offset!=0x37) {
+            let mut changed=current;changed[offset]^=1;
+            assert!(recapture_rank(Layout::Ldn,binding,binding,&expected,&changed).is_err(),
+                "unexpected descriptor change at {offset:#x}");
+        }
+    }
+
+    #[test]
+    fn unsupported_rank_is_rejected_on_either_side_even_without_drift() {
+        let (binding,valid)=original(Layout::Training);
+        for rank in [101,255] {
+            let mut invalid=valid;invalid[0x37]=rank;
+            assert!(native_rank(&invalid).is_err());
+            assert!(with_native_rank(valid,&invalid).is_err());
+            assert!(with_native_rank(invalid,&valid).is_err());
+            for (expected,current) in [(valid,invalid),(invalid,valid),(invalid,invalid)] {
+                assert!(recapture_rank(Layout::Training,binding,binding,&expected,&current).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn rank_recapture_rejects_changed_binding_and_non_cpu_or_retired_lifetimes() {
+        let (binding,expected)=original(Layout::Ldn);
+        let mut current=expected;current[0x37]=77;
+        for changed in [
+            Binding {epoch:binding.epoch+1,..binding},
+            Binding {owner:5,..binding},
+            Binding {entry:binding.entry+8,..binding},
+            Binding {row:binding.row+8,..binding},
+            Binding {holder:binding.holder+8,..binding},
+            Binding {manager:binding.manager+8,..binding},
+            Binding {vector_begin:binding.vector_begin+0x68,..binding},
+            Binding {vector_end:binding.vector_end+0x68,..binding},
+            Binding {record_index:binding.record_index+1,..binding},
+        ] {
+            assert!(recapture_rank(Layout::Ldn,binding,changed,&expected,&current).is_err());
+        }
+        for invalid in [Binding {epoch:0,..binding},Binding {owner:0,..binding},Binding {owner:5,..binding}] {
+            assert!(recapture_rank(Layout::Ldn,invalid,invalid,&expected,&current).is_err());
+        }
+        assert!(recapture_rank(Layout::Training,binding,binding,&expected,&current).is_err());
+    }
+
+    #[test]
+    fn saved_original_and_saved_reuse_retain_live_rank_without_mutating_origin() {
+        use crate::{inventory::MiiClass,lifetime::Tokens,native_values::RowIds};
+        let saved=Configuration::from_observed(MiiClass::Swordfighter,
+            Tokens {outfit:0,hat:0,colour:4,voice:37,specials:[1,0,0,0]},[0;88],
+            RowIds {outfit:0x1300001bfef7a5f7,hat:0x5a00000fa9efa5ea}).unwrap();
+        for layout in [Layout::Training,Layout::Ldn,Layout::Quickplay] {
+            for original_kind in [9u32,0x48] {
+                let (binding,mut origin)=original(layout);
+                origin[0x18..0x1c].copy_from_slice(&original_kind.to_le_bytes());
+                let frozen_origin=origin;
+                let mut observed=origin;observed[0x37]=50;
+                let expected=recapture_rank(layout,binding,binding,&origin,&observed).unwrap();
+                let live_origin=with_native_rank(origin,&expected).unwrap();
+                let first=staged_descriptor_in(layout,binding.owner as usize,live_origin,Some(saved)).unwrap();
+                assert_eq!(first[0x37],50);
+                assert_eq!(u32::from_le_bytes(first[0x18..0x1c].try_into().unwrap()),0x49);
+                assert_eq!(u16::from_le_bytes(first[0x46..0x48].try_into().unwrap()),binding.record_index);
+                assert_eq!(&first[0x34..0x37],&origin[0x34..0x37]);
+                assert_eq!(&first[0x38..0x43],&origin[0x38..0x43]);
+
+                // After exact completion, native changes rank while this saved Mii is live.
+                let mut changed=first;changed[0x37]=77;
+                let expected=recapture_rank(layout,binding,binding,&first,&changed).unwrap();
+                let live_origin=with_native_rank(origin,&expected).unwrap();
+                let returned=staged_descriptor_in(layout,binding.owner as usize,live_origin,None).unwrap();
+                let mut wanted=origin;wanted[0x37]=77;
+                assert_eq!(returned,wanted); // Original identity/index/role, current native rank.
+                assert_ne!(returned,origin);
+                let reused=staged_descriptor_in(layout,binding.owner as usize,
+                    with_native_rank(origin,&returned).unwrap(),Some(saved)).unwrap();
+                let mut wanted=first;wanted[0x37]=77;
+                assert_eq!(reused,wanted);
+                assert_eq!(origin,frozen_origin);
+            }
+        }
+    }
+
+    #[test]
+    fn rank_aware_generic_original_classification_stays_exact_for_other_bytes() {
+        for layout in [Layout::Training,Layout::Ldn,Layout::Quickplay] {
+            let (_,origin)=original(layout);
+            let index=u16::from_le_bytes(origin[0x46..0x48].try_into().unwrap());
+            let mut current=origin;current[0x37]=77;
+            let classify=|descriptor:[u8;0x70]| {
+                let live_origin=with_native_rank(origin,&descriptor)?;
+                generic_ordinary_commit_in(layout,index,GenericOrdinaryFacts {
+                    reservation_held:false,origin_is_saved:false,live_is_saved:false,transaction_busy:false,
+                    kind:9,origin_kind:9,published_kind:9,index,
+                    descriptor_equals_origin:descriptor==live_origin,roster_cursor:Some(2),
+                })
+            };
+            assert_eq!(classify(current),Ok(Destination {target:Target::ORIGINAL,cursor:None}));
+            for offset in [0x34,0x35,0x36,0x38,0x43] {
+                let mut changed=current;changed[offset]^=1;
+                assert_eq!(classify(changed),Ok(Destination {target:Target::fighter(9),cursor:Some(2)}));
+            }
+            current[0x37]=101;
+            assert!(classify(current).is_err());
+            assert_eq!(origin[0x37],0);
+        }
+    }
 }
 
 #[cfg(test)]

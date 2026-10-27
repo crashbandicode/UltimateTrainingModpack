@@ -24,6 +24,8 @@ training_mod_tui = { path = "../training_mod_tui" }
 [features]
 # Exposed only when the root native P1 driver is built.
 p1-cpu-control = []
+# Exposed only when the root Training entry rotation adapter is built.
+training-stage-rotation = []
 mii-managed-helper-alpha = ["mii-saved-alpha", "training_mod_tui/mii-managed-helper-alpha"]
 mii-saved-alpha = ["training_mod_tui/mii-saved-alpha"]
 default = ["smash"]

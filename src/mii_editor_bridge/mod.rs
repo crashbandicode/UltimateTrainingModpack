@@ -20,6 +20,7 @@ mod ui_resume;
 mod resume_adapter;
 mod screen_reentry;
 use training_mod_consts::mii::editor_row as value;
+use training_mod_consts::mii::ldn_handshake as handshake;
 mod fingerprints;
 
 use serde::Serialize;
@@ -83,6 +84,9 @@ struct Session {
     explicit_save_finished: bool,
     saved_native: Option<(u32, inventory::Canonical)>,
     writer_state: Option<[u64; 4]>,
+    // Local Wireless only: one committed round-handshake edge per session,
+    // observed from fresh service reads. Quickplay never touches it.
+    ldn_handshake: handshake::Handshake,
     trace: Trace,
 }
 
@@ -165,7 +169,8 @@ fn begin_session(
         phase: Phase::Requested, owner: 0, editor: 0, thread: 0,
         mode: 0, wait_frames: 0, request_deadline: Instant::now() + Duration::from_secs(10), observation_bits: 0,
         inputs: [0; 3], input_baseline: None, seed, catalog,
-        explicit_save_finished: false, saved_native: None, writer_state: None, trace };
+        explicit_save_finished: false, saved_native: None, writer_state: None,
+        ldn_handshake: handshake::Handshake::new(), trace };
     session.event(if restore.is_some() { "automatic_resume_requested" } else { "requested" },
         [seed.hash(), 0, 0, 0]);
     if let Draft::NativeDefault(class) = seed {
@@ -298,8 +303,14 @@ unsafe fn training_ui(object: usize, args: usize) -> usize {
 
 #[skyline::hook(offset = 0x23ebbf0)]
 unsafe fn training_state(context: usize, args: usize) -> usize {
-    if !ACTIVE.load(Ordering::Acquire) { return original!()(context, args); }
     let base = BASE.load(Ordering::Acquire);
+    // Ordinary Training rotation observes the age-zero state entry here, before
+    // any editor-session logic; it never changes this callback's native return.
+    #[cfg(feature = "training-stage-rotation-alpha")]
+    if native::Training::entering(base, context) {
+        crate::training_stage_rotation::training_entry(context);
+    }
+    if !ACTIVE.load(Ordering::Acquire) { return original!()(context, args); }
     let Some(current) = native::Training::bind(base, context) else { return original!()(context, args); };
     let phase = {
         let mut state = STATE.lock().unwrap();
@@ -381,6 +392,10 @@ unsafe fn training_state(context: usize, args: usize) -> usize {
             // First qualification never restores native pointer-bearing objects.
             // A changed input contract falls back to native Quit/CSS for inspection.
             let queued = unchanged && preview.is_some_and(|(active, _)| active == 0) && current.reenter();
+            // Only this successful product reenter marks the next age-zero
+            // Training state call as a return rather than a new entry.
+            #[cfg(feature = "training-stage-rotation-alpha")]
+            if queued { crate::training_stage_rotation::reenter_requested(context); }
             let mut state = STATE.lock().unwrap(); let s = state.as_mut().unwrap();
             s.phase = if queued { Phase::Returning } else { Phase::Refused };
             if !s.interrupted { connected::forget(&s.seed); }

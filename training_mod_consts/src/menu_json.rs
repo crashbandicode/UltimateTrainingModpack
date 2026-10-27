@@ -36,15 +36,53 @@ pub fn deserialize_mii_preferences<'de, D: Deserializer<'de>>(
     Ok(preferences)
 }
 
-/// Optional UI metadata cannot invalidate the independent rotation/menu.
-/// Only catalog IDs are eligible for Direct; malformed metadata restores Rotation.
+/// Absent legacy metadata defaults to Normal at the envelope/field boundary.
+/// Present invalid selections fail the whole parse before any settings publication.
 pub fn deserialize_stage_preferences<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<training_mod_tui::stage_menu::Preferences, D::Error> {
-    let value = Value::deserialize(deserializer)?;
-    Ok(serde_json::from_value::<training_mod_tui::stage_menu::Preferences>(value).ok()
-        .filter(|prefs| crate::lobby_stages::STAGES.iter().any(|(id, _)| *id == prefs.direct_stage))
-        .unwrap_or_default())
+    let prefs = training_mod_tui::stage_menu::Preferences::deserialize(deserializer)?;
+    crate::lobby_stages::validate_preferences(&prefs).map_err(de::Error::custom)?;
+    Ok(prefs)
+}
+
+/// File ingress may recover independent settings from unsupported stage metadata.
+/// Live menu responses still use the strict `MenuJsonStruct` parser directly.
+#[derive(Debug)]
+pub struct LoadedMenuFile {
+    pub settings: crate::MenuJsonStruct,
+    pub rejected_stage_preferences: Option<String>,
+}
+
+pub fn parse_menu_file(contents: &str) -> Result<LoadedMenuFile, serde_json::Error> {
+    match serde_json::from_str::<crate::MenuJsonStruct>(contents) {
+        Ok(settings) => Ok(LoadedMenuFile { settings, rejected_stage_preferences: None }),
+        Err(stage_error) => {
+            // Re-parse the original text, not a Value round-trip: duplicate fields
+            // and invalid numeric menus must remain errors, even during recovery.
+            #[derive(Deserialize)]
+            struct WithoutStage {
+                #[serde(deserialize_with = "deserialize_menu")]
+                menu: TrainingModpackMenu,
+                #[serde(deserialize_with = "deserialize_menu")]
+                defaults_menu: TrainingModpackMenu,
+                #[serde(default, deserialize_with = "deserialize_mii_preferences")]
+                mii_preferences: crate::mii::selection::Preferences,
+                #[serde(default, rename = "stage_preferences")]
+                _stage_preferences: Option<de::IgnoredAny>,
+            }
+            let recovered: WithoutStage = serde_json::from_str(contents)?;
+            Ok(LoadedMenuFile {
+                settings: crate::MenuJsonStruct {
+                    menu: recovered.menu,
+                    defaults_menu: recovered.defaults_menu,
+                    mii_preferences: recovered.mii_preferences,
+                    stage_preferences: Default::default(),
+                },
+                rejected_stage_preferences: Some(stage_error.to_string()),
+            })
+        }
+    }
 }
 
 /// One role's retired fixed-slot keys and the value each slot had when absent.
@@ -422,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn every_stored_key_has_a_submenu_and_slot_keys_are_not_written() {
+    fn every_live_stored_key_has_a_submenu_and_retired_keys_are_not_written() {
         let mut app = unsafe { crate::create_app() };
         let ids: Vec<&str> = app
             .tabs
@@ -430,11 +468,14 @@ mod tests {
             .flat_map(|tab| tab.submenus.iter().map(|submenu| submenu.id))
             .chain(app.hidden_submenus.iter().map(|submenu| submenu.id))
             .collect();
-        let stored = modern();
+        let mut stored = modern();
+        // Old files still accept this field, but shortcuts now live in the INI.
+        stored["menu_open_start_press"] = serde_json::to_value(crate::OnOff::ON).unwrap();
         let keys = stored.as_object().unwrap();
-        for key in keys.keys() {
+        for key in keys.keys().filter(|key| key.as_str() != "menu_open_start_press") {
             assert!(ids.contains(&key.as_str()), "{} has no submenu", key);
         }
+        assert!(!ids.contains(&"menu_open_start_press"));
         for (key, _) in PLAYER.slots.iter().chain(CPU.slots.iter()) {
             assert!(!keys.contains_key(*key), "{} is still written", key);
         }
@@ -448,9 +489,12 @@ mod tests {
             .any(|submenu| submenu.id.starts_with("trio_")));
         // Both visible and shared-editor settings must survive a full commit.
         app.update_all_from_json(&stored.to_string());
+        let emitted: Value = serde_json::from_str(&app.current_settings_to_json()).unwrap();
+        assert!(!emitted.as_object().unwrap().contains_key("menu_open_start_press"));
         let committed: TrainingModpackMenu =
             serde_json::from_str(&app.current_settings_to_json()).unwrap();
         assert_eq!(rosters(&committed), rosters(&BASE_MENU));
+        assert_eq!(committed.menu_open_start_press, crate::OnOff::OFF);
     }
 
     #[test]
@@ -515,7 +559,7 @@ mod tests {
 
     #[test]
     fn stage_direct_close_preserves_rotation_and_emits_only_one_explicit_action() {
-        use training_mod_tui::{stage_menu::{Mode, Preferences}, AppPage};
+        use training_mod_tui::{stage_forms::{Form, Selection}, stage_menu::{Mode, Preferences}, AppPage};
         let mut app = unsafe { crate::create_app() };
         let mut menu = BASE_MENU;
         // Existing independent serde contract: All=0, Waiting rank2, BF rank1, FD rank3.
@@ -546,20 +590,22 @@ mod tests {
         let fd = crate::lobby_stages::STAGES.iter().position(|(id, _)| *id == 3).unwrap() + 1;
         let cols = app.selected_submenu().toggles.cols;
         app.selected_submenu().toggles.select(fd / cols, fd % cols);
-        app.on_y(); // Direct editing cannot clear rotation ranks.
+        app.on_y(); // Final Destination Normal -> Battlefield; ranks stay intact.
         app.on_a(); // Actual production action: save choice, close, emit once.
         assert!(app.page == AppPage::CLOSE);
-        assert_eq!(app.take_pending_stage(), Some(3));
+        assert_eq!(app.take_pending_stage(), Some(Selection { stage: 3, form: Form::Battlefield }));
         assert_eq!(app.take_pending_stage(), None);
         assert!(app.take_pending_mii_selection(0).is_none());
         let saved: MenuJsonStruct = serde_json::from_str(&app.get_serialized_settings_with_defaults()).unwrap();
         assert_eq!(saved.menu.lobby_stages.stages(), vec![0, 311, 3]);
         assert_eq!(saved.defaults_menu.lobby_stages, BASE_MENU.lobby_stages);
-        assert_eq!(saved.stage_preferences, Preferences { mode: Mode::Direct, direct_stage: 3 });
+        assert_eq!(saved.stage_preferences, Preferences { mode: Mode::Direct, direct_stage: 3,
+            direct_form: Form::Battlefield, ..Preferences::default() });
         // A later menu opening restores preferences but does not replay a live action.
         app.open_settings_for_player(&serde_json::to_string(&saved.menu).unwrap(), Some(9));
         app.open_stage_menu(true, saved.stage_preferences);
         app.page = AppPage::TOGGLE;
+        assert_eq!(app.stage_selection(), Some(Selection { stage: 3, form: Form::Battlefield }));
         assert!(app.take_pending_stage().is_none());
         app.on_x();
         assert!(!app.stage_is_direct());
@@ -572,7 +618,7 @@ mod tests {
 
     #[test]
     fn stage_training_view_keeps_manual_actions_separate_from_lobby_preferences() {
-        use training_mod_tui::{stage_menu::{Mode, Preferences}, App, AppPage};
+        use training_mod_tui::{stage_forms::Selection, stage_menu::{Mode, Preferences}, App, AppPage};
 
         fn select_picker(app: &mut App<'_>) {
             let tab = app.tabs.iter().position(|tab| tab.submenus.iter()
@@ -597,7 +643,7 @@ mod tests {
         let fd = crate::lobby_stages::STAGES.iter().position(|(id, _)| *id == 3).unwrap() + 1;
 
         for mode in [Mode::Rotation, Mode::Direct] {
-            let preferences = Preferences { mode, direct_stage: 311 };
+            let preferences = Preferences { mode, direct_stage: 311, ..Preferences::default() };
             let mut app = unsafe { crate::create_app() };
             app.serialized_default_settings = modern().to_string();
             app.open_settings_for_player(&settings, Some(9));
@@ -621,7 +667,7 @@ mod tests {
             app.selected_submenu().toggles.select(fd / cols, fd % cols);
             app.on_a();
             assert!(app.page == AppPage::CLOSE);
-            assert_eq!(app.take_pending_stage(), Some(3));
+            assert_eq!(app.take_pending_stage(), Some(Selection::normal(3)));
             assert_eq!(app.take_pending_stage(), None);
             let applied: MenuJsonStruct = serde_json::from_str(
                 &app.get_serialized_settings_with_defaults()).unwrap();
@@ -650,13 +696,15 @@ mod tests {
             app.on_b(); app.on_b();
             let rotated: MenuJsonStruct = serde_json::from_str(
                 &app.get_serialized_settings_with_defaults()).unwrap();
-            assert_eq!(rotated.stage_preferences, Preferences { mode: Mode::Rotation, direct_stage: 311 });
+            assert_eq!(rotated.stage_preferences, Preferences { mode: Mode::Rotation, direct_stage: 311,
+                ..Preferences::default() });
             assert_eq!(rotated.menu.lobby_stages.stages(), vec![0, 311]);
             assert!(app.take_pending_stage().is_none());
 
             app.open_stage_menu(true, rotated.stage_preferences);
             assert!(!app.stage_is_direct()); // Lobby restores its persisted mode.
-            app.open_stage_menu(true, Preferences { mode: Mode::Direct, direct_stage: 311 });
+            app.open_stage_menu(true, Preferences { mode: Mode::Direct, direct_stage: 311,
+                ..Preferences::default() });
             assert_eq!(app.stage_direct_marker(), Some(311));
         }
     }
@@ -668,11 +716,11 @@ mod tests {
         let old: MenuJsonStruct = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(old.stage_preferences, Preferences::default());
         value["stage_preferences"] = json!({"mode": "direct", "direct_stage": 0xffffffffu32});
-        let invalid: MenuJsonStruct = serde_json::from_value(value).unwrap();
-        assert_eq!(invalid.stage_preferences, Preferences::default());
+        assert!(serde_json::from_value::<MenuJsonStruct>(value).is_err());
         let mut app = unsafe { crate::create_app() };
         app.open_settings_for_player(&modern().to_string(), Some(9));
-        app.open_stage_menu_in_context(false, Preferences { mode: Mode::Direct, direct_stage: 3 }, true);
+        app.open_stage_menu_in_context(false, Preferences { mode: Mode::Direct, direct_stage: 3,
+            ..Preferences::default() }, true);
         let tab = app.tabs.iter().position(|tab| tab.submenus.iter().any(|s| s.id == "lobby_stages")).unwrap();
         app.tabs.state.select(Some(tab));
         let index = app.selected_tab().submenus.iter().position(|s| s.id == "lobby_stages").unwrap();
@@ -686,6 +734,46 @@ mod tests {
         assert!(app.take_pending_stage().is_none());
         let numeric: TrainingModpackMenu = serde_json::from_str(&app.current_settings_to_json()).unwrap();
         assert_eq!(numeric.lobby_stages.stages(), vec![311, 0]);
+    }
+
+    #[cfg(feature = "training-stage-rotation")]
+    #[test]
+    fn training_stage_rotation_defaults_off_for_legacy_files_and_round_trips_on() {
+        use crate::OnOff;
+        // A file written before the activation existed: no key, no activation.
+        let mut legacy = modern();
+        assert!(legacy.as_object_mut().unwrap().remove("training_stage_rotation").is_some());
+        let parsed = ingress(&legacy, &legacy).unwrap();
+        assert_eq!(parsed.menu.training_stage_rotation, OnOff::OFF);
+        assert_eq!(parsed.defaults_menu.training_stage_rotation, OnOff::OFF);
+        // Old waiting ranks alone never activate Training rotation.
+        let mut ranked = legacy.clone();
+        ranked["lobby_stages"] = json!([0, 0, 1, 2]);
+        let ranked_menu = menu_of(&ranked);
+        assert_eq!(ranked_menu.training_stage_rotation, OnOff::OFF);
+        assert_eq!(ranked_menu.lobby_stages.stages(), vec![0, 3]);
+        // The production file loader keeps an explicit On through save and reload,
+        // with ranks, forms and the independent defaults menu untouched.
+        let mut on = modern();
+        on["training_stage_rotation"] = serde_json::to_value(OnOff::ON).unwrap();
+        on["lobby_stages"] = json!([0, 0, 1, 2]);
+        let text = json!({ "menu": on, "defaults_menu": modern() }).to_string();
+        let loaded = parse_menu_file(&text).unwrap();
+        assert!(loaded.rejected_stage_preferences.is_none());
+        assert_eq!(loaded.settings.menu.training_stage_rotation, OnOff::ON);
+        assert_eq!(loaded.settings.defaults_menu.training_stage_rotation, OnOff::OFF);
+        assert_eq!(loaded.settings.menu.lobby_stages.stages(), vec![0, 3]);
+        let saved = serde_json::to_string(&loaded.settings).unwrap();
+        let again = parse_menu_file(&saved).unwrap();
+        assert_eq!(again.settings.menu.training_stage_rotation, OnOff::ON);
+        assert_eq!(again.settings.menu.lobby_stages, loaded.settings.menu.lobby_stages);
+        assert_eq!(again.settings.stage_preferences, loaded.settings.stage_preferences);
+        // The menu exposes the activation as its own submenu next to the stage order.
+        let app = unsafe { crate::create_app() };
+        let misc = app.tabs.iter().find(|tab| tab.id == "misc").unwrap();
+        let ids: Vec<&str> = misc.submenus.iter().map(|submenu| submenu.id).collect();
+        let order = ids.iter().position(|id| *id == "lobby_stages").unwrap();
+        assert_eq!(ids.get(order + 1), Some(&"training_stage_rotation"));
     }
 
 }

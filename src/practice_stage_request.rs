@@ -8,6 +8,7 @@ use policy::{ActivationRead, Commit, Resource, Scene, View};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use skyline::hooks::{getRegionAddress, Region};
+use training_mod_consts::lobby_stages::{native_stage, Selection};
 
 include!("practice_stage_request_words.rs");
 
@@ -28,10 +29,17 @@ pub enum Phase {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Status { pub id: u64, pub stage: u32, pub phase: Phase }
+pub struct Status {
+    pub id: u64,
+    /// Resolved native ID, including the requested alternate form.
+    pub stage: u32,
+    /// Stable base catalog ID and requested form.
+    pub selection: Selection,
+    pub phase: Phase,
+}
 
 #[derive(Clone, Copy)]
-struct Ticket { id: u64, stage: u32, scene: Scene, original: usize }
+struct Ticket { id: u64, selection: Selection, scene: Scene, original: usize }
 
 struct State {
     next: u64,
@@ -66,6 +74,11 @@ impl State {
         }
     }
     fn retire(&mut self) {
+        #[cfg(feature = "training-stage-rotation-alpha")]
+        if let (Some(_), Some((scene, _))) = (self.live, self.seen) {
+            // Published but not completed: the departing scene's live stage is unknown.
+            crate::training_stage_rotation::direct_uncertain(scene.mode, scene.melee);
+        }
         if let (Some(lease),Some(last))=(self.live,self.last_activation) {
             crate::logging::diagnostic(format_args!(
                 "[PracticeStageRequest] departed_last_activation lease={lease:?} last_observed={last:?}"));
@@ -89,20 +102,18 @@ pub fn menu_context() -> Option<MenuContext> {
 }
 
 /// A UI close may only address the scene/active stage that opened that menu.
-pub fn request_in(context: MenuContext, stage: u32) -> Result<u64, &'static str> {
-    queue(stage, Some(context))
+pub fn request_in(context: MenuContext, stage: impl Into<Selection>) -> Result<u64, &'static str> {
+    queue(stage.into(), Some(context))
 }
 
 /// Submit once from the existing UI after choosing a catalog stage. Queued means
 /// no native mutation yet. The next current update either commits or refuses;
 /// nothing retries automatically. The original stage is not a global preference.
-pub fn request(stage: u32) -> Result<u64, &'static str> { queue(stage, None) }
+pub fn request(stage: impl Into<Selection>) -> Result<u64, &'static str> { queue(stage.into(), None) }
 
-fn queue(stage: u32, context: Option<MenuContext>) -> Result<u64, &'static str> {
+fn queue(selection: Selection, context: Option<MenuContext>) -> Result<u64, &'static str> {
     if !VERIFIED.load(Ordering::Acquire) { return Err("native contract not verified"); }
-    if !training_mod_consts::lobby_stages::STAGES.iter().any(|(id, _)| *id == stage) {
-        return Err("stage outside native selectable catalog");
-    }
+    let stage = native_stage(selection)?;
     let mut state=STATE.try_lock().map_err(|_| "request busy")?;
     if state.queued.is_some() || state.live.is_some() { return Err("request already owned"); }
     let (scene, original)=state.seen.ok_or("no current practice update")?;
@@ -112,9 +123,9 @@ fn queue(stage: u32, context: Option<MenuContext>) -> Result<u64, &'static str> 
     }
     state.next=state.next.checked_add(1).ok_or("request id exhausted")?;
     let id=state.next;
-    state.queued=Some(Ticket { id, stage, scene, original });
-    state.status=Some(Status { id, stage, phase: Phase::Queued });
-    crate::logging::diagnostic(format_args!("[PracticeStageRequest] queued id={id} stage={stage} scene={scene:?} original=0x{original:x}"));
+    state.queued=Some(Ticket { id, selection, scene, original });
+    state.status=Some(Status { id, stage, selection, phase: Phase::Queued });
+    crate::logging::diagnostic(format_args!("[PracticeStageRequest] queued id={id} selection={selection:?} stage={stage} scene={scene:?} original=0x{original:x}"));
     crate::training::ui::notifications::clear_notification("Practice Stage");
     crate::training::ui::notifications::notification("Practice Stage".into(), "Stage requested".into(), 180);
     Ok(id)
@@ -243,10 +254,13 @@ unsafe fn prepare(ticket:Ticket,settled:Option<Commit>)->Result<(Commit,[u8;0xb0
     check(policy::current_request(ticket.scene,first.scene,ticket.original,first.slots[first.active as usize]),
         "active stage changed after request")?;
     let base=getRegionAddress(Region::Text) as usize;
-    let hash_at=base+0x454a7e8+ticket.stage as usize*72+24;
+    // Resolve again at admission: alternate IDs and hashes are one native row.
+    // The full selection stays in the ticket, never reconstructed by arithmetic.
+    let stage=native_stage(ticket.selection)?;
+    let hash_at=base+0x454a7e8+stage as usize*72+24;
     check(span(hash_at,8,false),"stage catalog span unavailable")?;
     let hash=rd::<u64>(hash_at)&0xffffffffff;
-    let plan=policy::plan(first,settled,ticket.stage,hash)?;
+    let plan=policy::plan_selection(first,settled,ticket.selection,hash)?;
     // All fallible reads/checks precede publication, under the current update.
     check(read(ticket.scene)?==first,"native admission changed during preparation")?;
     check(EPOCH.load(Ordering::Acquire)==ticket.scene.epoch,"scene epoch changed")?;
@@ -285,6 +299,8 @@ pub(crate) unsafe fn update(wrapper:usize,core:usize,mode:u32,melee:u8,active_ob
                     "[PracticeStageRequest] native_complete lease={c:?} state={} active={} pair=({},{}) task=({},0x{:x}) slots={:?} resources={:?}",
                     v.state,v.active,v.incoming,v.outgoing,v.task_state,v.task_fiber,v.slots,v.resources));
                 state.live=None; state.settled=Some(c); state.phase(Phase::Complete);
+                #[cfg(feature = "training-stage-rotation-alpha")]
+                crate::training_stage_rotation::direct_completed(scene.mode, scene.melee, c.target, c.hash);
             }
             Ok(v) if !policy::same_owner(v,c) => state.phase(Phase::Retained("native owner changed")),
             Ok(v) if v.resources[3].is_some() => state.phase(Phase::Retained("native match preload owns cache")),

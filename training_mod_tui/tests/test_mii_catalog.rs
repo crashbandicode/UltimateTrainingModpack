@@ -44,7 +44,7 @@ fn preset_failure_keeps_native_choices_usable_but_native_defects_still_block() {
     let wanted = canonical(&snapshot, 20);
     let mut preferences = Preferences::default();
     let context = Context { epoch: 1, original: PlayerOrigin::NotMii,
-        active: Active { player: PlayerLive::NotMii, cpu: None } };
+        active: Active { player: PlayerLive::NotMii, cpu: None }, cpu_original: None };
     assert!(snapshot.is_complete());
     let choice = training_mod_mii::selection::resolve(&snapshot, &preferences,
         Role::Cpu, MiiClass::Gunner, context.original).unwrap();
@@ -88,7 +88,7 @@ fn imported_preset_name_is_shown_in_both_role_summaries_and_the_dropdown() {
         .with(Role::Cpu, MiiClass::Gunner, Some(id)).unwrap();
     let before = preferences.clone();
     let context = Context { epoch: 1, original: PlayerOrigin::NotMii,
-        active: Active { player: PlayerLive::NotMii, cpu: None } };
+        active: Active { player: PlayerLive::NotMii, cpu: None }, cpu_original: None };
     let mut menu = CatalogMenu::new(snapshot, context, &preferences).unwrap();
     menu.open_class(MiiClass::Gunner);
     let view = menu.view(&preferences);
@@ -112,7 +112,8 @@ fn independent_dropdowns_keep_slot0_fallback_and_emit_only_at_actual_close() {
     let persisted_player = serde_json::to_value(&app.mii_preferences).unwrap()["player"].clone();
     let ordinary_settings = app.current_settings_to_json();
     let context = Context { epoch: 9, original: PlayerOrigin::Mii(Origin(original)),
-        active: Active { player: PlayerLive::Origin, cpu: Some((MiiClass::Swordfighter, original)) } };
+        active: Active { player: PlayerLive::Origin, cpu: Some((MiiClass::Swordfighter, original)) },
+        cpu_original: None };
     assert!(app.mount_mii_catalog(snapshot, context));
     assert_eq!(app.tabs.items[0].submenus.iter().map(|s| s.id).collect::<Vec<_>>(),
         ["solo_popo_original", "mii_brawler_config", "mii_sword_config", "mii_gunner_config"]);
@@ -152,7 +153,8 @@ fn departure_discards_pending_and_incomplete_catalog_cannot_change_preferences()
     let mut snapshot = catalog();
     let original = canonical(&snapshot, 2622);
     let context = Context { epoch: 11, original: PlayerOrigin::NotMii,
-        active: Active { player: PlayerLive::NotMii, cpu: Some((MiiClass::Swordfighter, original)) } };
+        active: Active { player: PlayerLive::NotMii, cpu: Some((MiiClass::Swordfighter, original)) },
+        cpu_original: None };
     let mut app = app();
     assert!(app.mount_mii_catalog(snapshot.clone(), context));
     app.tabs.items[0].submenus.select(0, 2);
@@ -181,7 +183,7 @@ fn long_saved_catalog_pages_select_canonical_values_beyond_first_screen() {
     let wanted = canonical(&snapshot, 40);
     let mut preferences = Preferences::default();
     let context = Context { epoch: 1, original: PlayerOrigin::NotMii,
-        active: Active { player: PlayerLive::NotMii, cpu: None } };
+        active: Active { player: PlayerLive::NotMii, cpu: None }, cpu_original: None };
     let mut menu = CatalogMenu::new(snapshot, context, &preferences).unwrap();
     menu.open_class(MiiClass::Gunner);
     menu.confirm(&mut preferences);
@@ -202,7 +204,8 @@ fn saved_class_cycle_admission_preserves_origin_and_refuses_other_classes() {
         let origin = canonical(&snapshot, 10);
         let mut app = app();
         let context = Context { epoch: 9, original: PlayerOrigin::Mii(Origin(origin)),
-            active: Active { player: PlayerLive::Origin, cpu: None } };
+            active: Active { player: PlayerLive::Origin, cpu: None },
+            cpu_original: None };
         assert!(app.mount_mii_catalog(snapshot.clone(), context));
         assert!(!app.roster_excluded(training_mod_tui::roster_grid::Role::Player, class as u32));
         assert!(app.roster_excluded(training_mod_tui::roster_grid::Role::Player, MiiClass::Swordfighter as u32));
@@ -221,7 +224,7 @@ fn ordinary_cycle_cell_requires_captured_player_context_and_never_enables_cpu_or
     let snapshot=catalog();
     let mut app=app();
     let context=Context {epoch:19,original:PlayerOrigin::NotMii,
-        active:Active {player:PlayerLive::NotMii,cpu:None}};
+        active:Active {player:PlayerLive::NotMii,cpu:None},cpu_original:None};
     assert!(app.mount_mii_catalog(snapshot.clone(),context));
     assert!(app.roster_excluded(training_mod_tui::roster_grid::Role::Player,MiiClass::Swordfighter as u32));
     app.cancel_mii_catalog();
@@ -246,7 +249,7 @@ fn ordinary_dropdown_routes_active_player_on_close_and_keeps_slot_zero_unchanged
     let before=Preferences::default().with(Role::Player,MiiClass::Swordfighter,Some(active)).unwrap();
     let context=Context {epoch:20,original:PlayerOrigin::NotMii,
         active:Active {player:PlayerLive::Cycled {class:MiiClass::Swordfighter,canonical:active},
-            cpu:Some((MiiClass::Swordfighter,origin))}};
+            cpu:Some((MiiClass::Swordfighter,origin))},cpu_original:None};
     let mut preferences=before.clone();
     let mut menu=CatalogMenu::new(snapshot.clone(),context,&before).unwrap();
     menu.open_class(MiiClass::Swordfighter);
@@ -299,7 +302,8 @@ fn failed_cpu_recapture_keeps_ordinary_player_menu_but_never_queues_cpu() {
     let alternate = canonical(&snapshot, 2700);
     let ordinary = PlayerLive::Cycled { class: MiiClass::Swordfighter, canonical: original };
     let raw = Context { epoch: 30, original: PlayerOrigin::NotMii,
-        active: Active { player: PlayerLive::NotMii, cpu: Some((MiiClass::Swordfighter, original)) } };
+        active: Active { player: PlayerLive::NotMii, cpu: Some((MiiClass::Swordfighter, original)) },
+        cpu_original: None };
     let mut capture = MenuCapture::closed();
     capture.begin();
     capture.finish(Role::Player, false); // ordinary adapter owns Player, not SavedRole
@@ -348,7 +352,8 @@ fn failed_saved_player_recapture_protects_origin_and_keeps_valid_cpu_independent
     let later = canonical(&snapshot, 2900);
     let raw = Context { epoch: 40, original: PlayerOrigin::Mii(Origin(original)),
         active: Active { player: PlayerLive::Cycled { class: MiiClass::Swordfighter, canonical: alternate },
-            cpu: Some((MiiClass::Swordfighter, original)) } };
+            cpu: Some((MiiClass::Swordfighter, original)) },
+        cpu_original: None };
     let mut capture = MenuCapture::closed();
     capture.begin();
     capture.finish(Role::Player, false);
@@ -395,7 +400,7 @@ fn ordinary_cpu_cycle_is_explicit_and_preferences_do_not_submit_saved_origin_rel
     let mut capture=MenuCapture::closed();capture.begin();
     capture.finish(Role::Player,false);capture.finish(Role::Cpu,false);
     let raw=Context {epoch:17,original:PlayerOrigin::NotMii,
-        active:Active {player:PlayerLive::NotMii,cpu:None}};
+        active:Active {player:PlayerLive::NotMii,cpu:None},cpu_original:None};
     let context=capture.take_context_with_cpu(raw,None,true).unwrap();
     assert_eq!(context.original,PlayerOrigin::NotMii);
     assert_eq!(context.active.cpu,None); // never fabricate a saved-origin role
@@ -425,7 +430,7 @@ fn reopen_after_ordinary_cycle_resets_then_captures_publishes_and_redraws() {
     let active = canonical(&snapshot, 2700);
     let live = PlayerLive::Cycled { class: MiiClass::Swordfighter, canonical: active };
     let raw = Context { epoch: 50, original: PlayerOrigin::NotMii,
-        active: Active { player: PlayerLive::NotMii, cpu: None } };
+        active: Active { player: PlayerLive::NotMii, cpu: None }, cpu_original: None };
     let mut app = app();
     app.mii_preferences = Preferences::default()
         .with(Role::Player, MiiClass::Swordfighter, Some(active)).unwrap();
@@ -484,7 +489,7 @@ fn unified_saved_origin_context_keeps_slot_zero_grey_and_cpu_independent() {
     let mut capture=MenuCapture::closed();capture.begin();
     capture.finish(Role::Player,false);capture.finish(Role::Cpu,false);
     let raw=Context{epoch:50,original:PlayerOrigin::NotMii,
-        active:Active{player:PlayerLive::NotMii,cpu:None}};
+        active:Active{player:PlayerLive::NotMii,cpu:None},cpu_original:None};
     let context=capture.take_owned_context(raw,
         Some((PlayerOrigin::Mii(Origin(origin)),PlayerLive::Origin)),
         Some(Some((MiiClass::Swordfighter,origin)))).unwrap();
@@ -515,7 +520,7 @@ fn unified_saved_origin_context_keeps_slot_zero_grey_and_cpu_independent() {
 fn helper_hat_requires_both_captures_and_a_real_class_without_changing_preferences() {
     let snapshot=catalog();let prefs=Preferences::default();let before=prefs.clone();
     let context=Context {epoch:8,original:PlayerOrigin::NotMii,
-        active:Active {player:PlayerLive::Origin,cpu:None}};
+        active:Active {player:PlayerLive::Origin,cpu:None},cpu_original:None};
     let mut menu=CatalogMenu::new(snapshot,context,&prefs).unwrap();
     assert!(!menu.alpha_helper_hat(0x48));menu.qualify_ordinary_cpu_cycle(true);
     assert!(menu.alpha_helper_hat(0x48));assert!(!menu.alpha_helper_hat(0x06));

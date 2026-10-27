@@ -1,6 +1,6 @@
 //! Bridges value checkpoints to the owned native editor's current callbacks.
-use super::{connected_native as contract, cosmetic_resume, current_thread, lifecycle, name_keyboard, native,
-    settings_resume, specials_resume, ui_resume, Origin, Phase, BASE, EDIT_CONTEXT, EDIT_OWNED, STATE, ACTIVE};
+use super::{connected_native as contract, cosmetic_resume, current_thread, handshake, lifecycle, name_keyboard,
+    native, settings_resume, specials_resume, ui_resume, Origin, Phase, BASE, EDIT_CONTEXT, EDIT_OWNED, STATE, ACTIVE};
 use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex};
 
 struct Capture {
@@ -447,14 +447,22 @@ unsafe fn resume_room(
     origin: Origin, generation: u64, practice: contract::Practice, lobby_ready: bool, base: usize,
 ) {
     let match_received = practice.match_received();
-    let no_event = contract::pending_interruption(base) == Some(0);
+    // A Local Wireless round the host has already committed is pending work for
+    // native practice even before its match-start event exists. Reopening the
+    // editor over it would only be refused at the quit and burn this return.
+    // Quickplay's readiness is exactly the queued-event result, as before.
+    let local_wireless = origin == Origin::LocalWireless;
+    let sample = if local_wireless { contract::ldn_handshake(base, Some(generation)) }
+        else { handshake::Sample::UNBOUND };
+    let no_event = handshake::resume_no_event(local_wireless, contract::pending_interruption(base), sample);
     let native_ready = practice.ready(base);
     // The native match flag is never cleared on a receiving PracticeScene.
     // A subsequent ready instance under this generation is the return witness.
     ui_resume::observe_practice(generation, match_received, native_ready);
     auto_observation(7, u64::from(native_ready) | (u64::from(match_received) << 1)
         | (u64::from(no_event) << 2) | (u64::from(lobby_ready) << 3)
-        | (ui_resume::readiness_bits(generation) << 4));
+        | (ui_resume::readiness_bits(generation) << 4)
+        | (u64::from(local_wireless && sample.committed()) << 8));
     let ready = !match_received && no_event && native_ready && lobby_ready;
     if let Some((ticket, checkpoint)) = ui_resume::begin(generation, ready, false) {
         if let Err(reason) = super::resume_checkpoint(origin, ticket, checkpoint) {

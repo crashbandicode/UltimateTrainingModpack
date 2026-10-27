@@ -51,6 +51,17 @@ pub(super) struct Training {
 
 impl Training {
     pub unsafe fn bind(base: usize, context: usize) -> Option<Self> {
+        Self::qualify(base, context, false)
+    }
+
+    /// The age-zero state-5 call that follows a state-stack transition or the
+    /// product reenter. Identity only: no editor logic may run on that call.
+    #[cfg(feature = "training-stage-rotation-alpha")]
+    pub unsafe fn entering(base: usize, context: usize) -> bool {
+        Self::qualify(base, context, true).is_some()
+    }
+
+    unsafe fn qualify(base: usize, context: usize, age_zero: bool) -> Option<Self> {
         if !aligned(context) {
             return None;
         }
@@ -60,7 +71,7 @@ impl Training {
             || read::<usize>(scene, 0xe8) != context
             || read::<usize>(scene, 0) != base + 0x50bad50
             || read::<i32>(context, 0xf0) != 5
-            || read::<u32>(context, 0xf4) == 0
+            || (read::<u32>(context, 0xf4) == 0) != age_zero
         {
             return None;
         }

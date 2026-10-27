@@ -1010,6 +1010,8 @@ unsafe fn handle_final_input_mapping(
     {
         let current_b = controller_struct.controller.current_buttons.b();
         let previous_b = controller_struct.controller.previous_buttons.b();
+        let current_a = controller_struct.controller.current_buttons.a();
+        let previous_a = controller_struct.controller.previous_buttons.a();
         menu::handle_final_input_mapping(player_idx, controller_struct, out);
         // Loading cancellation arms the close guard inside menu handling, after
         // this poll's ownership check. Preserve its closing sample on this call too.
@@ -1026,6 +1028,13 @@ unsafe fn handle_final_input_mapping(
         if preserve_close_b {
             controller.current_buttons.set_b(current_b);
             controller.previous_buttons.set_b(previous_b);
+        }
+        // Preserve the physical A sample while this poll belongs to a visible or
+        // parked editor. Its own neutralization must not manufacture a release.
+        // Use this poll's ownership snapshot rather than querying two moving owners.
+        if editor_was_loading || editor_was_open {
+            controller.current_buttons.set_a(current_a);
+            controller.previous_buttons.set_a(previous_a);
         }
         return;
     }

@@ -10,7 +10,7 @@ Change your fighter, or the CPU's, during Training without going back to charact
 
 *Recorded in Linux Eden Training with an earlier development build. P1 cycles from Mario through Solo Popo to Mythra; the CPU changes from Solo Popo to Kirby.*
 
-Player 1 goes through the numbered fighters, then returns to **slot 0**, your character-select pick. A fresh Training visit starts again from slot 0. The CPU loops through its own list.
+Player 1 goes through the numbered fighters, then returns to **slot 0**, your character-select pick. The CPU does the same with the fighter it actually started as. A fresh Training visit captures those originals again and starts from slot 0.
 
 ## Set the order
 
@@ -30,7 +30,7 @@ Open **Characters → Character Cycles**. Red numbers (top-left) are Player 1's 
 
 *Normal Ice Climbers is added as Player slot 2 while original slot 0 stays Solo Popo. The shortcut then goes to Kirby, the pair and original Solo Popo.*
 
-Your original fighter shows a grey **0** and cannot be added, except Ice Climbers with the opposite Solo Popo setting or a [Mii class with another saved configuration](mii-fighters.md). The CPU's original stays selectable. Pyra/Mythra and Pokémon Trainer take one slot each. Down+B still transforms, and the next press moves on.
+Each role's original fighter shows a grey **0** and cannot be added again, except Player 1's Ice Climbers when its Solo Popo setting differs from the cycle, or a [Mii class with another saved configuration](mii-fighters.md). The CPU's one Solo Popo setting does not open a second Ice Climbers slot. Pyra/Mythra and Pokémon Trainer take one slot each. Down+B still transforms, and the next press moves on.
 
 ## Pick a fighter directly
 

@@ -5,7 +5,7 @@
 use crate::{character_forms::Forms, TrioFighter};
 use training_mod_mii::{
     inventory::{Canonical, MiiClass, Snapshot},
-    selection::{self, Choice, Origin, PlayerOrigin, Preferences, Role},
+    selection::{self, Choice, Fallback, Origin, PlayerOrigin, Preferences, Role, Source},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,7 +52,7 @@ impl Target {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Step {
     pub target: Target,
-    /// None is Player slot 0; Some(0) is the first numbered entry.
+    /// None is that role's slot 0; Some(0) is the first numbered entry.
     pub cursor: Option<usize>,
 }
 
@@ -89,6 +89,31 @@ pub fn direct(
     Some(Step { target, cursor: None })
 }
 
+/// One numbered configuration for a class. The role's exact saved original is
+/// slot 0, so a different configuration of that class is the numbered choice.
+fn numbered_saved(
+    catalog: &Snapshot,
+    preferences: &Preferences,
+    role: Role,
+    class: MiiClass,
+    player_origin: PlayerOrigin,
+    original: Identity,
+) -> Option<Choice> {
+    let resolved = selection::resolve(catalog, preferences, role, class, player_origin)?;
+    if let Identity::Saved(canonical) = original {
+        if resolved.canonical == canonical {
+            return selection::eligible(catalog, role, class, player_origin)
+                .find(|cfg| cfg.canonical != canonical)
+                .map(|cfg| Choice {
+                    canonical: cfg.canonical,
+                    slot_id: cfg.slot_id,
+                    source: Source::FirstEligible(Fallback::PreferenceIsOrigin),
+                });
+        }
+    }
+    Some(resolved)
+}
+
 fn matches(target: Target, live: Identity) -> bool {
     match (target, live) {
         (Target::Fighter(kind), Identity::Fighter(current)) => {
@@ -104,8 +129,8 @@ fn matches(target: Target, live: Identity) -> bool {
 /// The caller must supply a qualified exact original/live identity and commit the
 /// returned cursor only after native completion. A result grants no native authority.
 ///
-/// Player slot 0 is outside the numbered order. CPU has no slot-0 return: it wraps
-/// through numbered choices, retaining the existing actual-group fallback on entry.
+/// Each role's slot 0 is outside the numbered order and is the return between
+/// loops. A kind-only Mii or a non-catalog sentinel is not an original.
 /// Missing/ineligible saved choices are skipped without rewriting preferences.
 pub fn next_cycle(
     ordered: &[TrioFighter],
@@ -124,13 +149,18 @@ fn next_cycle_with_ice_climbers(
     ordered: &[TrioFighter], catalog: &Snapshot, preferences: &Preferences,
     role: Role, original: Identity, live: Live, separate_ice_climbers: bool,
 ) -> Option<Step> {
-    // A kind-only Mii cannot establish the immutable configuration identity.
+    // A kind-only Mii cannot establish a configuration. A non-catalog sentinel
+    // is not slot 0 and must not be replaced with Mii Swordfighter.
     if matches!(original, Identity::Fighter(kind) if MiiClass::from_kind(kind).is_some())
         || matches!(live, Live::Numbered { identity: Identity::Fighter(kind), .. }
             if MiiClass::from_kind(kind).is_some())
     {
         return None;
     }
+    let slot_zero = match original {
+        Identity::Saved(_) => true,
+        Identity::Fighter(kind) => TrioFighter::from_kind(kind).is_some(),
+    };
     let player_origin = match original {
         Identity::Fighter(_) => PlayerOrigin::NotMii,
         Identity::Saved(canonical) => PlayerOrigin::Mii(Origin(canonical)),
@@ -144,15 +174,14 @@ fn next_cycle_with_ice_climbers(
             ) {
                 continue;
             }
-            if let Some(choice) =
-                selection::resolve(catalog, preferences, role, class, player_origin)
-            {
+            if let Some(choice) = numbered_saved(
+                catalog, preferences, role, class, player_origin, original,
+            ) {
                 choices.push(Target::Saved(choice));
             }
         } else {
             let forms = Forms::starting(kind);
-            if (role == Role::Player
-                && matches!(original, Identity::Fighter(current) if forms.same_group(current))
+            if (matches!(original, Identity::Fighter(current) if forms.same_group(current))
                 && !(separate_ice_climbers && kind == 0x4b))
                 || choices.iter().any(
                     |target| matches!(target, Target::Fighter(other) if forms.same_group(*other)),
@@ -164,8 +193,7 @@ fn next_cycle_with_ice_climbers(
         }
     }
     let position = match live {
-        Live::Original if role == Role::Player => None,
-        Live::Original => choices.iter().position(|target| matches(*target, original)),
+        Live::Original => None,
         Live::Numbered { identity, cursor } => cursor
             .filter(|i| {
                 choices
@@ -181,25 +209,22 @@ fn next_cycle_with_ice_climbers(
                 cursor: Some(index + 1),
             });
         }
-        if role == Role::Player {
+        if slot_zero {
             return Some(Step {
                 target: Target::Original,
                 cursor: None,
             });
         }
     }
-    choices
-        .first()
-        .map(|target| Step {
-            target: *target,
-            cursor: Some(0),
+    choices.first().map(|target| Step {
+        target: *target,
+        cursor: Some(0),
+    }).or_else(|| {
+        slot_zero.then_some(Step {
+            target: Target::Original,
+            cursor: None,
         })
-        .or_else(|| {
-            (role == Role::Player).then_some(Step {
-                target: Target::Original,
-                cursor: None,
-            })
-        })
+    })
 }
 
 
@@ -255,8 +280,8 @@ fn next_qualified<T>(
 ) -> Option<(Step, T)> {
     let mut lookup = live;
     let mut first = None;
-    // Numbered choices cannot outnumber roster entries. Player also has slot 0.
-    let limit = ordered.len().saturating_add(usize::from(role == Role::Player));
+    // Numbered choices cannot outnumber roster entries. Slot 0 is one more step.
+    let limit = ordered.len().saturating_add(1);
     for _ in 0..limit {
         let step = next_cycle_with_ice_climbers(ordered, catalog, preferences, role,
             original, lookup, separate_ice_climbers)?;
@@ -400,7 +425,10 @@ mod tests {
             assert_eq!(next.target, Target::Fighter(8));
             assert_eq!(next.cursor, Some(2));
             let wrap = next_cycle(&ordered, &catalog, &preferences, role, original, applied(next)).unwrap();
-            assert_eq!(wrap.target, if role == Role::Player { Target::Original } else { Target::Fighter(6) });
+            // Both roles restore their captured slot 0 between numbered loops.
+            assert_eq!(wrap, Step { target: Target::Original, cursor: None });
+            let restart = next_cycle(&ordered, &catalog, &preferences, role, original, applied(wrap)).unwrap();
+            assert_eq!(restart, Step { target: Target::Fighter(6), cursor: Some(0) });
         }
         // Manual ordinary swaps remain available with a Mii in the cycle and
         // retain the requested group's starting form without adding a cycle slot.
@@ -546,7 +574,7 @@ mod tests {
 
 
     #[test]
-    fn cpu_qualification_reaches_later_choice_and_wraps_without_committing() {
+    fn cpu_qualification_returns_slot_zero_between_loops() {
         let catalog = example();
         let prefs = Preferences::default();
         let prefs_before = serde_json::to_vec(&prefs).unwrap();
@@ -562,12 +590,13 @@ mod tests {
         assert_eq!(first.cursor, Some(2));
         // The policy returns a proposal; the caller's actual live value stays original.
         assert_eq!(live, Live::Original);
-        let (ordinary, ()) = next_qualified_cpu(&order, &catalog, &prefs, origin,
+        let (returned, ()) = next_qualified_cpu(&order, &catalog, &prefs, origin,
             applied(first), qualify).unwrap();
-        assert_eq!(ordinary, Step {target: Target::Fighter(9), cursor: Some(3)});
-        let (wrapped, ()) = next_qualified_cpu(&order, &catalog, &prefs, origin,
-            applied(ordinary), qualify).unwrap();
-        assert_eq!(wrapped, first);
+        assert_eq!(returned, Step {target: Target::Original, cursor: None});
+        assert_ne!(returned.target, Target::Fighter(9));
+        let (again, ()) = next_qualified_cpu(&order, &catalog, &prefs, origin,
+            Live::Original, qualify).unwrap();
+        assert_eq!(again, first);
         assert_eq!(serde_json::to_vec(&prefs).unwrap(), prefs_before);
     }
 
@@ -580,12 +609,18 @@ mod tests {
         let order = roster(&[0x48, 0x49, 0x49, 0x4a]);
         let live = Live::Original;
         let mut visited = Vec::new();
+        let mut saw_original = false;
         let result = next_qualified_cpu(&order, &catalog, &prefs,
             Identity::Fighter(9), live, |step| {
+                if step.target == Target::Original {
+                    saw_original = true;
+                    return None;
+                }
                 visited.push((step.cursor, saved(step).slot_id.unwrap()));
                 None::<()>
             });
         assert_eq!(result, None);
+        assert!(saw_original);
         assert_eq!(visited, [(Some(0), 4155), (Some(1), 2622), (Some(2), 3137)]);
         assert_eq!(live, Live::Original);
         assert_eq!(serde_json::to_vec(&prefs).unwrap(), prefs_before);
@@ -652,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn cpu_uses_its_preferences_includes_player_original_and_wraps_numbered() {
+    fn cpu_uses_its_preferences_includes_player_original_and_returns_slot_zero() {
         let catalog = example();
         let prefs = Preferences::default()
             .with(
@@ -665,7 +700,7 @@ mod tests {
             .unwrap();
         let order = roster(&[0x49, 0x4a]);
         let mut live = Live::Original;
-        for slot in [2622, 3137, 2622] {
+        for slot in [2622, 3137] {
             let step = next_cycle(
                 &order,
                 &catalog,
@@ -679,22 +714,108 @@ mod tests {
             assert_eq!(saved(step).slot_id.unwrap(), slot);
             live = applied(step);
         }
-        // Native CPU already in a numbered saved choice advances, without inserting slot 0.
+        let returned = next_cycle(
+            &order,
+            &catalog,
+            &prefs,
+            Role::Cpu,
+            Identity::Fighter(9),
+            live,
+        )
+        .unwrap();
+        assert_eq!(returned, Step { target: Target::Original, cursor: None });
+        let again = next_cycle(
+            &order,
+            &catalog,
+            &prefs,
+            Role::Cpu,
+            Identity::Fighter(9),
+            applied(returned),
+        )
+        .unwrap();
+        assert_eq!(saved(again).slot_id.unwrap(), 2622);
+        // Preference 2622 is this CPU's saved original, so the numbered Swordfighter
+        // is the other configuration. Gunner follows, then slot 0. Luigi above is a
+        // different original, which is why 2622 was numbered in that loop.
+        let sword = next_cycle(
+            &order,
+            &catalog,
+            &prefs,
+            Role::Cpu,
+            Identity::Saved(id(&catalog, 2622)),
+            Live::Original,
+        )
+        .unwrap();
+        assert_eq!(saved(sword).slot_id.unwrap(), 2700);
+        let gunner = next_cycle(
+            &order,
+            &catalog,
+            &prefs,
+            Role::Cpu,
+            Identity::Saved(id(&catalog, 2622)),
+            applied(sword),
+        )
+        .unwrap();
+        assert_eq!(saved(gunner).slot_id.unwrap(), 3137);
         assert_eq!(
-            saved(
-                next_cycle(
-                    &order,
-                    &catalog,
-                    &prefs,
-                    Role::Cpu,
-                    Identity::Saved(id(&catalog, 2622)),
-                    Live::Original
-                )
-                .unwrap()
+            next_cycle(
+                &order,
+                &catalog,
+                &prefs,
+                Role::Cpu,
+                Identity::Saved(id(&catalog, 2622)),
+                applied(gunner),
             )
-            .slot_id.unwrap(),
-            3137
+            .unwrap(),
+            Step { target: Target::Original, cursor: None }
         );
+    }
+
+    #[test]
+    fn cpu_ness_returns_between_numbered_loops() {
+        let catalog = example();
+        let prefs = Preferences::default();
+        let order = roster(&[0x08, 0x0a, 0x06]);
+        let original = Identity::Fighter(0x0a);
+        let first = next_cycle(&order, &catalog, &prefs, Role::Cpu, original, Live::Original).unwrap();
+        assert_eq!(first, Step { target: Target::Fighter(0x08), cursor: Some(0) });
+        let second = next_cycle(&order, &catalog, &prefs, Role::Cpu, original, applied(first)).unwrap();
+        assert_eq!(second, Step { target: Target::Fighter(0x06), cursor: Some(1) });
+        let returned = next_cycle(&order, &catalog, &prefs, Role::Cpu, original, applied(second)).unwrap();
+        assert_eq!(returned, Step { target: Target::Original, cursor: None });
+        let again = next_cycle(&order, &catalog, &prefs, Role::Cpu, original, applied(returned)).unwrap();
+        assert_eq!(again, first);
+        let sentinel = next_cycle(
+            &order, &catalog, &prefs, Role::Cpu, Identity::Fighter(u32::MAX), Live::Original,
+        ).unwrap();
+        assert_eq!(sentinel, Step { target: Target::Fighter(0x08), cursor: Some(0) });
+        let sentinel_wrap = next_cycle(
+            &order, &catalog, &prefs, Role::Cpu, Identity::Fighter(u32::MAX),
+            Live::Numbered { identity: Identity::Fighter(0x06), cursor: Some(2) },
+        ).unwrap();
+        assert_eq!(sentinel_wrap, Step { target: Target::Fighter(0x08), cursor: Some(0) });
+        assert_ne!(sentinel_wrap.target, Target::Original);
+        assert!(next_cycle(
+            &order, &catalog, &prefs, Role::Cpu, Identity::Fighter(0x49), Live::Original,
+        ).is_none());
+    }
+
+    #[test]
+    fn cpu_saved_original_skips_exact_config_and_returns_slot_zero() {
+        let catalog = example();
+        let origin = Identity::Saved(id(&catalog, 2622));
+        let order = roster(&[0x49, 0x4a, 0x48]);
+        let prefs = Preferences::default();
+        let mut live = Live::Original;
+        for (index, slot) in [2700, 3137, 4155].iter().copied().enumerate() {
+            let step = next_cycle(&order, &catalog, &prefs, Role::Cpu, origin, live).unwrap();
+            assert_eq!(step.cursor, Some(index));
+            assert_eq!(saved(step).slot_id.unwrap(), slot);
+            assert_ne!(saved(step).slot_id.unwrap(), 2622);
+            live = applied(step);
+        }
+        let step = next_cycle(&order, &catalog, &prefs, Role::Cpu, origin, live).unwrap();
+        assert_eq!(step, Step { target: Target::Original, cursor: None });
     }
 
     #[test]
@@ -928,12 +1049,32 @@ mod tests {
                 cursor: None
             }
         );
+        assert_eq!(
+            next_cycle(
+                &order,
+                &catalog,
+                &prefs,
+                Role::Cpu,
+                Identity::Fighter(9),
+                Live::Original
+            ),
+            Some(Step { target: Target::Original, cursor: None })
+        );
         assert!(next_cycle(
             &order,
             &catalog,
             &prefs,
             Role::Cpu,
-            Identity::Fighter(9),
+            Identity::Fighter(0x49),
+            Live::Original
+        )
+        .is_none());
+        assert!(next_cycle(
+            &order,
+            &catalog,
+            &prefs,
+            Role::Cpu,
+            Identity::Fighter(u32::MAX),
             Live::Original
         )
         .is_none());

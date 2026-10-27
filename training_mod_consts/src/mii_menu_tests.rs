@@ -29,6 +29,52 @@ fn six_preferences() -> Preferences {
     prefs
 }
 
+#[test]
+fn invalid_persisted_stage_metadata_preserves_numeric_menu_and_mii_selectors() {
+    let prefs = six_preferences();
+    let mut menu = BASE_MENU;
+    menu.lobby_practice = OnOff::ON;
+    let mut defaults = BASE_MENU;
+    defaults.hud = OnOff::OFF;
+    for stage in [
+        serde_json::json!({"future_training_activation": true}),
+        serde_json::json!({"rotation_forms": ["normal"]}),
+        serde_json::json!({"direct_stage": 309}),
+        serde_json::json!({"direct_stage": 311, "direct_form": "omega"}),
+        serde_json::json!({"direct_form": "unknown"}),
+        serde_json::Value::Null,
+    ] {
+        let contents = serde_json::json!({
+            "menu": menu, "defaults_menu": defaults,
+            "mii_preferences": prefs, "stage_preferences": stage,
+        }).to_string();
+        assert!(serde_json::from_str::<MenuJsonStruct>(&contents).is_err());
+        let loaded = menu_json::parse_menu_file(&contents).unwrap();
+        assert!(loaded.rejected_stage_preferences.is_some_and(|error| !error.is_empty()));
+        assert_eq!(serde_json::to_value(loaded.settings.menu).unwrap(), serde_json::to_value(menu).unwrap());
+        assert_eq!(serde_json::to_value(loaded.settings.defaults_menu).unwrap(), serde_json::to_value(defaults).unwrap());
+        assert_eq!(loaded.settings.mii_preferences, prefs);
+        assert_eq!(loaded.settings.stage_preferences, training_mod_tui::stage_menu::Preferences::default());
+    }
+}
+
+#[test]
+fn file_stage_recovery_does_not_relax_numeric_or_duplicate_field_validation() {
+    let menu = serde_json::to_string(&BASE_MENU).unwrap();
+    let valid = format!(r#"{{"menu":{menu},"defaults_menu":{menu}}}"#);
+    assert!(menu_json::parse_menu_file(&valid).unwrap().rejected_stage_preferences.is_none());
+    let bad_stage = r#""stage_preferences":{"direct_stage":309}"#;
+    let duplicate_menu = menu.replacen('{', r#"{"hud":[0],"#, 1);
+    for contents in [
+        format!(r#"{{"menu":{{}},"defaults_menu":{menu},{bad_stage}}}"#),
+        format!(r#"{{"menu":{duplicate_menu},"defaults_menu":{menu},{bad_stage}}}"#),
+        format!(r#"{{"menu":{menu},"defaults_menu":{menu},{bad_stage},{bad_stage}}}"#),
+        format!(r#"{{"menu":{menu},"defaults_menu":{menu},{bad_stage}}} trailing"#),
+    ] {
+        assert!(menu_json::parse_menu_file(&contents).is_err());
+    }
+}
+
 fn editor(envelope: &MenuJsonStruct) -> App<'static> {
     let mut app = unsafe { create_app() };
     app.mii_preferences = envelope.mii_preferences.clone();

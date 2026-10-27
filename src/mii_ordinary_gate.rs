@@ -18,6 +18,26 @@ pub(super) unsafe fn valid(base:usize)->bool {
             .fold(0xcbf29ce484222325u64,|h,b|(h^u64::from(*b)).wrapping_mul(0x100000001b3))==*want
     })
 }
+/// Separate opt-in qualification: equal-hat loaders retain their existing gate.
+/// 13.0.5 ELF SHA256 0789f0a4ae9652f335eca5eabc7df3e58b0954012a0bebdea374f317706536c2.
+/// These sites are outside the detour patch; recheck before INSTALL and publication.
+pub(super) unsafe fn headgear_valid(base:usize)->bool {
+    const WORDS:&[(usize,u32)]=&[
+        (0x650910,0x7940966a), // FE+4a -> cached hat
+        (0x651358,0xa906a6a8), // cached tokens -> O+68..77
+        (0x66dd50,0x79435a89), // E+1ac -> hat
+        (0x66ddfc,0x290da688), // outfit/hat -> O+6c/+70
+        (0x17e6c34,0xb9407298), // requester reads O+70
+        (0x17e6cb8,0x34002698), // zero hat skips request
+        (0x17e6eb8,0x11000ef9), // kind*42 + 3
+        (0x17e6ed4,0x97ffefc7), // missing-resource attach
+        (0x17e70ec,0x97ffef41), // resolved-resource attach
+        (0x17e46d0,0x97fff8e8), // reset destroys resource tree
+        (0x17e46d8,0xa9007e7f), // reset empties tree
+        (0x17e46e4,0xf803c27f), // reset clears configuration latch
+    ];
+    WORDS.iter().all(|(at,want)|std::ptr::read_volatile((base+at) as *const u32)==*want)
+}
 pub(super) unsafe fn install(base:usize) {
     // Startup only, before any game callback can execute. Engine publishes original before patch.
     REFUSE.store(base+0x651464,Ordering::Release);

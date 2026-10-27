@@ -4,6 +4,8 @@
 
 **UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-full-experimental.20261024.5). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
 
+**On the lobby-parity branch:** Quickplay and Local Wireless practice gain save states, recordings and exact interrupted-editor return, plus selectable stage forms. The [C72 candidate](docs/lobby-parity-release.md) has completed its emulator checks and awaits console review.
+
 [Download this fork from Forgejo](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases). Version 7.1.2 reduces input-display work in Training; see the [performance checks](docs/input-display-performance.md).
 
 [Browse the guide by modpack menu page](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/wiki).

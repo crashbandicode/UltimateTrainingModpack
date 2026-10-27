@@ -94,6 +94,14 @@ const CODE: &[(usize, usize, u64)] = &[
     (0x17c6440, 0xb4, 0x38f7af7d49cb1339),
     (0x180cc40, 0x174, 0x2f5c38bb4ffc724b),
     (0x22d5dc0, 0x60, 0x7170baf4694f7be9),
+    // Local Wireless round handshake, read only: the practice-owned consumer
+    // predicate (resolved byte, then mask; window starts past its entry), the
+    // guest acknowledgement store, and the commit function's early-exit head
+    // plus its resolved-byte store tail.
+    (0x1566f40, 0xe0, 0x634261521667fa0),
+    (0x1699c10, 0x1c, 0xe4c4dbafc910dcd3),
+    (0x169bf18, 0x24, 0x5ad49dddb8defeac),
+    (0x169c3a8, 0x14, 0xa7b50e17d2e35ada),
 ];
 pub(super) unsafe fn matches(base: usize) -> bool {
     let mut accepted = true;

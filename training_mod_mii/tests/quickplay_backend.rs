@@ -15,9 +15,16 @@ use training_mod_mii::{
 #[allow(dead_code)]
 #[path = "../../src/character_memory.rs"]
 mod character_memory;
-#[allow(dead_code)]
 #[path = "../../src/mii_hud_portrait_policy.rs"]
 mod portrait_policy;
+
+// This host harness exercises native_fields' in-memory tests without the
+// Switch-only feature names declared by the product crate.
+#[allow(dead_code, unexpected_cfgs)]
+#[path = "../../src/native_fields.rs"]
+mod native_fields;
+#[path = "../../src/native_hud_refresh.rs"]
+mod native_hud_refresh;
 
 fn owners() -> [Option<Owner>; 8] {
     // run18's four native selectors/current indices; addresses are synthetic.

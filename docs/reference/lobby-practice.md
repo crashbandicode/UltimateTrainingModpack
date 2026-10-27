@@ -33,7 +33,7 @@ titled **Lobby Practice**.
 | A new lobby | Both remembered fighters are cleared. This is in-memory session state, not a saved character-select override |
 | Ordinary Training | Keeps its own selections. Portrait and name update at once; native **L + R + A** reset keeps the current fighter |
 | Practice tools while waiting | Save/load (default **ZL + D-pad Down / Up**), recording/playback, macro and clip editing, **L + R + A** reset, hitboxes, hidden tech animations and hazards |
-| Stage rotation | Advances on the next lobby-practice entry, including after a match or a return through character select. Never rotates ordinary Training |
+| Stage rotation | Advances on the next lobby-practice entry, including after a match or a return through character select. Ordinary Training rotates only while **Training Stage Rotation** is On (default Off), once per entry from character select; resets, stage changes and the Mii editor return never advance it. Saved Normal/Ω/Battlefield forms apply to both. Emulator-checked; physical console pending |
 
 Restoration after a match waits for native dialogs, another load or pending
 practice actions. A new explicit character request takes priority, and an
@@ -112,23 +112,32 @@ when the embedded Training UI or the supported stock archive changes:
 
 ## Test record
 
-The current branch's [fourteen-item ledger](../plans/lobby-parity.md#required-behavior)
-records all fourteen as source-implemented; acceptance is incomplete. Quickplay
-waiting has observed save/load, reset, recording/playback, macro naming, clip preview, hit/grab boxes,
-hidden tech, hazards, direct stage changes and match-return rotation, hats, items,
-Mii swaps and CPU portraits. Run111 (candidate57, `e29a398`) confirmed exact
-Headgear/Outfit cursors after actual Quickplay matches, with cancellation preserving
-original equipment; Voice Type2/High resumed exactly. Random returned with No
-focused, and only a later explicit Plus Save wrote native Mii `13348`.
+The branch [ledger](../plans/lobby-parity.md#required-behavior) has all 22
+items accepted in the documented emulator/shared-code scope. Grounded saves
+restore below platforms. Brawler and Swordfighter have changed-equipment load
+and original-return checks alongside Gunner, in ordinary CPU Training.
 
-Candidate58 corrected Color: an actual Quickplay match returned to the Pink
-preview with Blue still equipped, and Cancel kept Blue without saving a Mii.
-Local Wireless position save/load and quick reset are observed; recording/playback
-checks are ongoing. Native editor entry, Test and explicit-cancel return passed,
-but incoming-match editor return is pending because native-room joining fails.
-Short Quickplay idle samples before/after the match remained near 60 FPS and
+- **Quickplay waiting:** save/load (including nonzero damage and a fresh process),
+  reset, recording/playback, macro naming, clip preview, hit/grab boxes, hidden
+  tech, hazards, direct stage changes and match-return rotation, hats, items, Mii
+  swaps and CPU portraits. After actual matches, native Mii Headgear, Outfit, Voice,
+  Random and Color resumed exactly; Cancel kept the original equipment and saved no Mii.
+- **Local Wireless waiting:** a guest request approved on the host, then the host's
+  L+R start, contact, results and same-lobby return. Observed position and exact
+  held-item restore, quick reset, numbered recording, direct and automatic ledge
+  playback, exact-Mii 500-input clip preview, and native Mii Add New/Test.
+- **Interrupted by an actual LDN match:** an active recording stopped. An
+  unfinished macro name and a Mii Specials draft each came back exactly in the
+  same lobby, and Cancel or Exit Without Saving still discarded them. Practice
+  hazards Off did not turn off a hazards-On match, and practice stage forms did
+  not change the match's stage.
+- **Shared-code coverage, not separate LDN runs:** nonzero-damage restore,
+  non-interrupted named saves, hit/grab boxes and hidden tech, plus the mash-slot
+  and save-state playback trigger combinations.
+
+Short Quickplay idle samples before/after a match stayed near 60 FPS and
 0.94 CPU cores with zero swap. They do not establish a memory improvement.
-Earlier evidence below remains historical; it does not establish the remaining paths.
+Earlier evidence below remains historical.
 
 Emulator and local-wireless (LDN) checks passed for P1/CPU swaps, menus, the CPU
 icon, the embedded waiting UI and a two-peer match/return. They do not establish
@@ -145,6 +154,8 @@ vanilla-peer desync checks.
 | Embedded waiting UI (external archive removed) | Training editor and P1/CPU swaps; waiting editor, swaps and CPU icon; LDN against a vanilla guest with original G&W, matching combat/results; a second waiting load reopened the editor (then from a cached UI; per-load since [revision 33](../REVISION33_STARTUP_MEMORY.md)). Rust decoder reproduced the accepted archive byte for byte. Three decoder tests, warning-free all-target NRO Clippy, no-default-features release build | Save/record and mid-load interruption (earlier regression checks only) |
 | Same-lobby restore (earlier development build) | Two-peer LDN match/return and fresh-room reset | Online arenas, physical Switch |
 | Enhancements development build, 2026-10-16 | Strict all-target Clippy, release and no-default builds; 150 host suite tests and 5 probes. Native Training and solo local-wireless Solo Popo, dual cycle orders, All, P1/CPU swaps, CPU form and CPU icon — see [development validation](../character-cycles-validation.md#enhancements-development-build--2026-10-16) | New two-peer match/return, online arenas, physical Switch |
+| Lobby-parity development builds, 2026-10-25/26 | Ledger items 1–20, including actual LDN match interruption and same-lobby return | Save-state placement under platforms, Brawler/Swordfighter headgear loads, online arenas, physical Switch |
+| C72 and class check, 2026-10-27 | All 22 ledger items in their stated scope; exact under-platform fixture, nearby ground restore, CPU ledge continuation; Brawler/Swordfighter equipment and original return | Online arenas, physical Switch; fresh online replay capture for Brawler/Swordfighter was not repeated |
 
 </details>
 

@@ -52,7 +52,7 @@ pub fn staged_descriptor(mut original:[u8;0x70], target:Option<crate::lifetime::
         word(&mut original,0x14,1);word(&mut original,0x18,c.canonical().class as u32);
         word(&mut original,0x1c,u32::MAX);word(&mut original,0x20,u32::MAX);
         word(&mut original,0x28,1);original[0x43]=0;
-        for (off,v) in [(0x48,c.tokens().outfit),(0x4c,c.tokens().colour),(0x4e,c.tokens().voice)] {
+        for (off,v) in [(0x48,c.tokens().outfit),(0x4a,c.tokens().hat),(0x4c,c.tokens().colour),(0x4e,c.tokens().voice)] {
             original[off..off+2].copy_from_slice(&v.to_le_bytes());
         }
     }
@@ -630,7 +630,7 @@ mod tests {
         assert_eq!(u32::from_le_bytes(saved_descriptor[0x18..0x1c].try_into().unwrap()),0x49);
         for off in 0..0x70 {
             if !(0x14..0x24).contains(&off) && !(0x28..0x2c).contains(&off)
-                && off!=0x43 && !(0x48..0x4a).contains(&off) && !(0x4c..0x50).contains(&off) {
+                && off!=0x43 && !(0x48..0x50).contains(&off) {
                 assert_eq!(saved_descriptor[off],ordinary[off],"unowned descriptor byte {off}");
             }
         }

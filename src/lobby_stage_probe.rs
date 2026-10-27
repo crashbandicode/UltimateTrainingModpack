@@ -5,13 +5,14 @@ use std::sync::Mutex;
 
 use skyline::hooks::{getRegionAddress, InlineCtx, Region};
 use training_mod_consts::{OnOff, MENU};
+use training_mod_consts::lobby_stages::{native_stage, Selection};
 use training_mod_sync::read;
 
 use crate::lobby_stage_cycle::{self, StageCycle, WaitingStageFamily};
 
 // Each native waiting family owns its preload until its own scene consumes it.
 // An abandoned Quickplay search cannot lend its prepared descriptor to LDN.
-static CYCLES: Mutex<[StageCycle; 2]> = Mutex::new([StageCycle::new(), StageCycle::new()]);
+static CYCLES: Mutex<[StageCycle<Selection>; 2]> = Mutex::new([StageCycle::new(), StageCycle::new()]);
 static QUICKPLAY_VERIFIED: AtomicBool = AtomicBool::new(false);
 static RESOURCE_LINES: AtomicUsize = AtomicUsize::new(0);
 
@@ -27,25 +28,30 @@ pub(super) fn qualified_waiting(mode: u32, melee: u8) -> bool {
     lobby_stage_cycle::waiting(mode, melee) && cycle_index(mode).is_some()
 }
 
-fn prepare_entry(index: usize) -> Option<u32> {
+fn prepare_entry(index: usize) -> Option<(Selection, u32)> {
     let menu = read(&MENU);
-    let stages = menu.lobby_stages.stages();
-    #[cfg(feature = "practice-stage-request-alpha")]
     let prefs = crate::common::menu::stage_preferences();
     let mut cycles = CYCLES.lock().unwrap();
-    let cycle = &mut cycles[index];
-    if menu.lobby_practice != OnOff::ON {
-        cycle.cancel_preload();
-        return None;
+    match cycles[index].prepare_preferences(menu.lobby_practice == OnOff::ON,
+        menu.lobby_stages, &prefs, cfg!(feature = "practice-stage-request-alpha"))
+        .and_then(|selection| selection.map(|selection| native_stage(selection)
+            .map(|stage| (selection, stage))).transpose()) {
+        Ok(selection) => selection,
+        Err(why) => {
+            crate::logging::diagnostic(format_args!("[LobbyStageProbe] preparation refused: {why}"));
+            None
+        }
     }
-    #[cfg(feature = "practice-stage-request-alpha")]
-    let selected = if prefs.mode == training_mod_tui::stage_menu::Mode::Direct {
-        cycle.prepare_direct(prefs.direct_stage)
-    } else if stages.is_empty() { None } else { cycle.prepare(&stages) };
-    #[cfg(not(feature = "practice-stage-request-alpha"))]
-    let selected = if stages.is_empty() { None } else { cycle.prepare(&stages) };
-    if selected.is_none() { cycle.cancel_preload(); }
-    selected
+}
+
+fn consume_entry(index: usize) -> Option<(Selection, u32)> {
+    match CYCLES.lock().unwrap()[index].enter_resolved() {
+        Ok(selection) => selection,
+        Err(why) => {
+            crate::logging::diagnostic(format_args!("[LobbyStageProbe] entry refused: {why}"));
+            None
+        }
+    }
 }
 
 #[skyline::hook(offset = 0x25f7860, inline)]
@@ -55,6 +61,10 @@ unsafe fn resource_request(ctx: &mut InlineCtx) {
     let Some(mode) = crate::common::game_mode::current() else {
         return;
     };
+    // Ordinary Training's explicit entry rotation shares this callback and
+    // returns before the waiting-family gate below; it never takes that branch.
+    #[cfg(feature = "training-stage-rotation-alpha")]
+    crate::training_stage_rotation::resource_request(ctx, mode);
     let Some(index) = cycle_index(mode.mode) else { return; };
     let config = ctx.registers[1].x() as *const u8;
     if config.is_null() || config as usize & 7 != 0 {
@@ -83,13 +93,13 @@ unsafe fn resource_request(ctx: &mut InlineCtx) {
         && kind == 311
         && hash == 0x165a48f367
     {
-        let Some(stage) = prepare_entry(index) else { return; };
+        let Some((selection, stage)) = prepare_entry(index) else { return; };
         let record = (base + 0x454a7e8 + stage as usize * 72) as *const u8;
         let native_hash = crate::native_fields::read_unchecked::<u64>(record as usize, 24) & 0xffffffffff;
         crate::native_fields::write_unchecked(config as usize, 0, stage);
         crate::native_fields::write_unchecked(config as usize, 8, native_hash);
         crate::logging::diagnostic(format_args!(
-            "[LobbyStageProbe] preload selected={stage} hash=0x{native_hash:x}"
+            "[LobbyStageProbe] preload selection={selection:?} native={stage} hash=0x{native_hash:x}"
         ));
     }
 }
@@ -116,9 +126,9 @@ unsafe fn stage_entry(ctx: &mut InlineCtx) {
     }
     let Some(index) = cycle_index(mode.mode) else { return; };
     let previous = ctx.registers[1].w();
-    let prepared = CYCLES.lock().unwrap()[index].enter();
-    let stage = if let Some(stage) = prepared {
-        stage
+    let prepared = consume_entry(index);
+    let (selection, stage) = if let Some(selection) = prepared {
+        selection
     } else {
         // Retained Quickplay returns omit the driver's stack preload. Run109
         // captured this constructor with w1=311 and all four resource slots
@@ -133,13 +143,14 @@ unsafe fn stage_entry(ctx: &mut InlineCtx) {
             .and_then(|owner| crate::native_fields::read::<usize>(owner, 2 * 8)) == Some(0);
         if !empty { return; }
         if prepare_entry(index).is_none() { return; }
-        let Some(stage) = CYCLES.lock().unwrap()[index].enter() else { return; };
-        stage
+        let Some(selection) = consume_entry(index) else { return; };
+        selection
     };
     ctx.registers[1].set_w(stage);
     crate::logging::diagnostic(format_args!(
-        "[LobbyStageProbe] entry native={} selected={} mode={:?}",
+        "[LobbyStageProbe] entry previous={} selection={:?} native={} mode={:?}",
         previous,
+        selection,
         stage,
         mode
     ));
@@ -201,6 +212,15 @@ pub fn init() {
         std::slice::from_raw_parts((base + offset) as *const u32, words.len()) == *words
     });
     QUICKPLAY_VERIFIED.store(quickplay_verified, Ordering::Release);
+    #[cfg(feature = "training-stage-rotation-alpha")]
+    {
+        // The first two windows are the generic loader's slot choice and its
+        // resource call; ordinary Training's apply depends on them as well.
+        let loader_verified = quickplay_checks[..2].iter().all(|(offset, words)| unsafe {
+            std::slice::from_raw_parts((base + offset) as *const u32, words.len()) == *words
+        });
+        crate::training_stage_rotation::init(base, verified && loader_verified);
+    }
     crate::logging::diagnostic(format_args!("[LobbyStageProbe] verified={verified} quickplay={quickplay_verified}"));
     if verified {
         skyline::install_hooks!(stage_entry, resource_request);

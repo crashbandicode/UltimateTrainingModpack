@@ -25,7 +25,7 @@ static STAGE_PREFERENCES: LazyLock<RwLock<training_mod_tui::stage_menu::Preferen
 #[cfg(feature = "practice-stage-request-alpha")]
 static STAGE_CONTEXT: RwLock<Option<crate::practice_stage_request::MenuContext>> = RwLock::new(None);
 
-#[cfg(feature = "practice-stage-request-alpha")]
+#[cfg(any(feature = "lobby-stage-probe", feature = "practice-stage-request-alpha"))]
 pub fn stage_preferences() -> training_mod_tui::stage_menu::Preferences { read(&STAGE_PREFERENCES) }
 
 pub fn mii_preferences() -> training_mod_consts::mii::selection::Preferences {
@@ -68,8 +68,15 @@ pub fn load_from_file() {
     // With the switch default, it'll crash w/o a helpful error message
     info!("Checking for previous menu in {MENU_OPTIONS_PATH}...");
     if fs::metadata(MENU_OPTIONS_PATH).is_ok() {
-        match filesystem::read_json::<MenuJsonStruct>(MENU_OPTIONS_PATH) {
-            Ok(menu_conf_json) => {
+        let loaded = fs::read_to_string(MENU_OPTIONS_PATH)
+            .map_err(anyhow::Error::from)
+            .and_then(|contents| Ok(training_mod_consts::menu_json::parse_menu_file(&contents)?));
+        match loaded {
+            Ok(loaded) => {
+                if let Some(reason) = loaded.rejected_stage_preferences {
+                    warn!("Stage preferences could not be loaded: {reason}. Using default stage preferences; other settings and the saved file are preserved.");
+                }
+                let menu_conf_json = loaded.settings;
                 assign(&MENU, menu_conf_json.menu);
                 assign(&DEFAULTS_MENU, menu_conf_json.defaults_menu);
                 assign(&MII_PREFERENCES, menu_conf_json.mii_preferences);

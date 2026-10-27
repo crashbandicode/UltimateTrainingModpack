@@ -271,6 +271,7 @@ fn context(s: &Alpha) -> MenuContext {
         epoch: menu_epoch(),
         original,
         active: Active { player, cpu },
+        cpu_original: None,
     }
 }
 
@@ -562,7 +563,21 @@ unsafe fn finish_saved_capture(
     // publish_mii_catalog takes an owned Snapshot. ALPHA keeps the Arc, so this
     // one clone is the menu publish, not a per-tick copy.
     let publish = s.menu.take_owned_context(captured_context,ordinary,cpu_context)
-        .map(|context|((*catalog).clone(),context));
+        .map(|context| {
+            #[cfg(feature="mii-ordinary-cpu-alpha")]
+            let mut context = context;
+            #[cfg(feature="mii-ordinary-cpu-alpha")]
+            {
+                // Exact captured original only. An unqualified adapter publishes none,
+                // and the player origin is not a substitute.
+                context.cpu_original = if ordinary_cpu {
+                    super::mii_ordinary_cpu::cpu_original_canonical()
+                } else {
+                    None
+                };
+            }
+            ((*catalog).clone(), context)
+        });
     refresh_work(&s);
     drop(s);
     if let Some((catalog, context)) = publish {

@@ -39,10 +39,10 @@ macro_rules! impl_submenutrait {
                             .map(|title| Toggle { title, value, max })
                             .collect();
                         SubMenu {
-                            title: title,
-                            id: id,
-                            help_text: help_text,
-                            submenu_type: submenu_type,
+                            title,
+                            id,
+                            help_text,
+                            submenu_type,
                             toggles: StatefulTable::with_items(
                                 NX_SUBMENU_ROWS,
                                 NX_SUBMENU_COLUMNS,
@@ -59,10 +59,10 @@ macro_rules! impl_submenutrait {
                             .map(|title| Toggle { title, value, max })
                             .collect();
                         SubMenu {
-                            title: title,
-                            id: id,
-                            help_text: help_text,
-                            submenu_type: submenu_type,
+                            title,
+                            id,
+                            help_text,
+                            submenu_type,
                             toggles: StatefulTable::with_items(
                                 NX_SUBMENU_ROWS,
                                 NX_SUBMENU_COLUMNS,
@@ -81,10 +81,10 @@ macro_rules! impl_submenutrait {
                             ..StatefulSlider::new()
                         };
                         SubMenu {
-                            title: title,
-                            id: id,
-                            help_text: help_text,
-                            submenu_type: submenu_type,
+                            title,
+                            id,
+                            help_text,
+                            submenu_type,
                             toggles: StatefulTable::with_items(
                                 NX_SUBMENU_ROWS,
                                 NX_SUBMENU_COLUMNS,
@@ -224,14 +224,14 @@ impl LedgeOption {
     }
 
     pub fn is_playback(self) -> bool {
-        match self {
+        matches!(
+            self,
             LedgeOption::PLAYBACK_1
-            | LedgeOption::PLAYBACK_2
-            | LedgeOption::PLAYBACK_3
-            | LedgeOption::PLAYBACK_4
-            | LedgeOption::PLAYBACK_5 => true,
-            _ => false,
-        }
+                | LedgeOption::PLAYBACK_2
+                | LedgeOption::PLAYBACK_3
+                | LedgeOption::PLAYBACK_4
+                | LedgeOption::PLAYBACK_5
+        )
     }
 
     pub fn playback_slot(self) -> Option<usize> {
@@ -424,14 +424,14 @@ impl Action {
     }
 
     pub fn is_playback(self) -> bool {
-        match self {
+        matches!(
+            self,
             Action::PLAYBACK_1
-            | Action::PLAYBACK_2
-            | Action::PLAYBACK_3
-            | Action::PLAYBACK_4
-            | Action::PLAYBACK_5 => true,
-            _ => false,
-        }
+                | Action::PLAYBACK_2
+                | Action::PLAYBACK_3
+                | Action::PLAYBACK_4
+                | Action::PLAYBACK_5
+        )
     }
 
     pub fn playback_slot(self) -> usize {
@@ -441,7 +441,7 @@ impl Action {
             Action::PLAYBACK_3 => 2,
             Action::PLAYBACK_4 => 3,
             Action::PLAYBACK_5 => 4,
-            _ => panic!("Invalid Action playback slot: {}", self.to_string()),
+            _ => panic!("Invalid Action playback slot: {}", self),
         }
     }
 }

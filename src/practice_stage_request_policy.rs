@@ -187,9 +187,114 @@ pub(super) fn plan(v: View, settled: Option<Commit>, target: u32, hash: u64) -> 
             resource:v.resources[v.active as usize].ok_or("active resource absent")? }, activated:None }, descriptor))
 }
 
+/// Typed ingress is also the last admission barrier before native publication.
+/// Only kind/hash change: music, hazards and all other descriptor fields survive.
+pub(super) fn plan_selection(v: View, settled: Option<Commit>, selection: training_mod_consts::lobby_stages::Selection,
+    hash: u64) -> Result<(Commit, [u8; 0xb0]), &'static str> {
+    let target = training_mod_consts::lobby_stages::native_stage(selection)?;
+    plan(v, settled, target, hash)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use training_mod_consts::lobby_stages::{Form, Selection};
+
+    #[test]
+    fn form_change_uses_native_kind_even_when_battlefield_package_hash_is_shared() {
+        let mut v = waiting();
+        // Recorded table rows0/1 share stage/battlefield/normal. Comparing only
+        // the package hash would wrongly refuse the Normal -> Omega transition.
+        v.descriptor[..4].copy_from_slice(&0u32.to_le_bytes());
+        v.descriptor[8..16].copy_from_slice(&0x18dcbe2bc4u64.to_le_bytes());
+        v.resources[2].as_mut().unwrap().kind = 0;
+        v.resources[2].as_mut().unwrap().hash = 0x18dcbe2bc4;
+        let (commit, descriptor) = plan_selection(v, None,
+            Selection { stage: 0, form: Form::Omega }, 0x18dcbe2bc4).unwrap();
+        assert_eq!(commit.target, 1);
+        assert_eq!(&descriptor[..4], &1u32.to_le_bytes());
+        assert_eq!(&descriptor[4..], &v.descriptor[4..]);
+        let (loaded, ready) = loaded(v, commit);
+        let mut wrong_kind = ready;
+        wrong_kind.target_kind = 0;
+        assert!(acknowledge(loaded, commit, wrong_kind).is_err());
+        assert!(acknowledge(loaded, commit, ready).unwrap().is_some());
+    }
+
+    #[test]
+    fn form_requests_reject_special_combinations_and_leave_real_matches_native() {
+        let original = waiting();
+        for stage in [2, 308, 311, 347] {
+            for form in [Form::Omega, Form::Battlefield] {
+                assert_eq!(plan_selection(original, None, Selection { stage, form }, 99),
+                    Err("form unavailable for this stage"));
+            }
+        }
+        assert_eq!(original, waiting());
+        for mode in [0x02010000, 0x07010100, 0x87010101, 0x04040000] {
+            let mut real_match = original;
+            real_match.scene.mode = mode;
+            real_match.scene.melee = 1;
+            let before = real_match;
+            assert_eq!(plan_selection(real_match, None,
+                Selection { stage: 95, form: Form::Omega }, 0x1b9fc8fb46),
+                Err("not owned practice scene"));
+            assert_eq!(real_match, before);
+        }
+        for (mode, melee) in [(0x04040000, 0x20), (0x02010000, 0x0d), (0x07010101, 0x0d)] {
+            let mut practice = original;
+            practice.scene.mode = mode;
+            practice.scene.melee = melee;
+            if melee == 0x20 {
+                practice.active = 0;
+                practice.slots.swap(0, 2);
+                practice.resources.swap(0, 2);
+            }
+            let (commit, descriptor) = plan_selection(practice, None,
+                Selection { stage: 3, form: Form::Battlefield }, 0x100f8e9a50).unwrap();
+            assert_eq!(commit.target, 4);
+            assert_eq!(&descriptor[4..8], &practice.descriptor[4..8]);
+            assert_eq!(&descriptor[16..], &practice.descriptor[16..]);
+        }
+    }
+
+    #[test]
+    fn alternate_forms_complete_then_require_a_new_menu_and_preserve_match_cache_ownership() {
+        for (mode, melee) in [(0x04040000, 0x20), (0x02010000, 0x0d), (0x87010101, 0x0d)] {
+            let mut v = waiting();
+            v.scene.mode = mode;
+            v.scene.melee = melee;
+            if melee == 0x20 {
+                v.active = 0;
+                v.slots.swap(0, 2);
+                v.resources.swap(0, 2);
+            }
+            let (first, _) = plan_selection(v, None,
+                Selection { stage: 95, form: Form::Omega }, 0x1b9fc8fb46).unwrap();
+            let (constructed, ready) = loaded(v, first);
+            let acknowledged = acknowledge(constructed, first, ready).unwrap().unwrap();
+            let mut done = constructed;
+            done.state = 0;
+            done.active = first.incoming as i32;
+            done.slots[first.outgoing] = 0;
+            done.resources[first.outgoing] = None;
+            done.descriptor[..4].copy_from_slice(&96u32.to_le_bytes());
+            done.descriptor[8..16].copy_from_slice(&0x1b9fc8fb46u64.to_le_bytes());
+            assert!(complete(done, acknowledged));
+            assert!(!current_request(first.scene, done.scene, first.original.object,
+                done.slots[done.active as usize]));
+            let selection = Selection { stage: 95, form: Form::Battlefield };
+            let (second, _) = plan_selection(done, Some(acknowledged), selection, 0x1b9fc8fb46).unwrap();
+            assert_eq!(second.target, 97); // Shared package, distinct native form.
+            for state in [0, 1] {
+                let mut match_preloading = done;
+                match_preloading.resources[3] = Some(Resource { address: 88, state, kind: 44, hash: 99 });
+                assert_eq!(plan_selection(match_preloading, Some(acknowledged), selection, 0x1b9fc8fb46),
+                    Err("pending match cache occupied"));
+                assert_eq!(match_preloading.resources[3].unwrap().state, state);
+            }
+        }
+    }
     fn waiting() -> View {
         let mut descriptor = [0x5a; 0xb0];
         descriptor[..4].copy_from_slice(&311u32.to_le_bytes());

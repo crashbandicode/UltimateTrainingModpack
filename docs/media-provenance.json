@@ -400,6 +400,26 @@
       ],
       "visual_review": "Native crop of current matched-build passive table; Pool/Results/Save all green checks; Counterpick On, Needs pool No. Preserved native329x243, no upscale.",
       "scope": "Documentation demonstration; not console acceptance"
+    },
+    {
+      "path": "docs/lobby-practice/enable.png",
+      "type": "static_screenshot",
+      "recorded_date": "2026-10-27",
+      "environment": "Linux Eden, ordinary Training; Lobby Practice option",
+      "nro_sha256": "7941988cc4f188c2baa01de09a6b55c0ede40251035f60ddb41a2c6eccc26ed5",
+      "source_manifest_sha256": "aed34cb4652f24ad0792dd0ce982257e759cd6d399172752de195d52526bd4c2",
+      "sha256": "9fcc4ce9acd3dd8bdf49f02d365771f769e3b4490b2354addccad9b332f4ee66",
+      "source_sha256": "5e91876cb6952a6f2df3267cbd99182f6087987c404a352d4b6adcf0ac6274c7",
+      "dimensions": [
+        900,
+        506
+      ],
+      "crop_source_pixels": {
+        "top": 71,
+        "bottom": 73
+      },
+      "source_capture": "runtime145/collected145/live/b-button-a-1793075774117112653.png",
+      "visual_review": "On has the native checkmark; current help states save states and recording apply only to local practice fighters. No setting changed; native page opened and closed in ordinary Training."
     }
   ]
 }

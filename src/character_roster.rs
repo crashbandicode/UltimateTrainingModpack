@@ -30,6 +30,9 @@ use native_install::{InstallGate, InstallToken};
 #[path = "native_fighter_install.rs"]
 mod native_fighter_install;
 
+#[path = "native_hud_refresh.rs"]
+mod native_hud_refresh;
+
 #[path = "native_source.rs"]
 mod native_source;
 #[cfg(any(
@@ -389,10 +392,20 @@ fn publish_partners(role: Role, forms: Forms) {
     SOLO_ACTIVE[role as usize].store(forms == Forms::solo_popo(), Ordering::Release);
 }
 
+/// Ordinary slot 0 for this role. A CPU Mii class kind is not a saved identity;
+/// that return belongs to the saved-Mii cycle, not a default Swordfighter load.
+fn cycle_original(role: Role) -> Option<u32> {
+    let kind = original_kind(role)?;
+    if role == Role::Cpu && (0x48..=0x4a).contains(&kind) {
+        return None;
+    }
+    Some(kind)
+}
+
 fn selection_label(role: Role, fighter: TrioFighter, slot: Option<usize>) -> String {
     match slot {
         Some(index) => format!("{}. {}", index + 1, fighter.name()),
-        None if role == Role::Player && original_kind(role) == Some(fighter.kind()) => {
+        None if cycle_original(role) == Some(fighter.kind()) => {
             format!("0. {}", fighter.name())
         }
         None => fighter.name().into(),
@@ -400,14 +413,22 @@ fn selection_label(role: Role, fighter: TrioFighter, slot: Option<usize>) -> Str
 }
 
 fn roster(m: &TrainingModpackMenu, role: Role) -> Vec<TrioFighter> {
-    match role {
-        Role::Player => m.player_roster.fighters_excluding(training_mod_tui::roster_grid::cycle_exclusion(
+    let excluded = match role {
+        Role::Player => training_mod_tui::roster_grid::cycle_exclusion(
             original_kind(role),
             m.solo_popo_original == OnOff::ON,
             m.solo_popo_player_cycle == OnOff::ON,
-        )),
-        Role::Cpu => m.cpu_roster.fighters(),
-    }.into_iter().filter(|f| !(0x48..=0x4a).contains(&f.kind())).collect()
+        ),
+        Role::Cpu => {
+            let solo = m.solo_popo_cpu == OnOff::ON;
+            training_mod_tui::roster_grid::cycle_exclusion(cycle_original(role), solo, solo)
+        }
+    };
+    let fighters = match role {
+        Role::Player => m.player_roster.fighters_excluding(excluded),
+        Role::Cpu => m.cpu_roster.fighters_excluding(excluded),
+    };
+    fighters.into_iter().filter(|f| !(0x48..=0x4a).contains(&f.kind())).collect()
 }
 
 /// Numbered slot of `kind`'s group in `role`'s current cycle.
@@ -1088,11 +1109,7 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
         Selection::Cycle => {
             let choices = roster(&m, role);
             let kinds: Vec<_> = choices.iter().map(|fighter| fighter.kind()).collect();
-            let original = if role == Role::Player {
-                original_kind(role)
-            } else {
-                None
-            };
+            let original = cycle_original(role);
             // Slot 0 is told apart from a numbered slot of the same group (Ice Climbers whose
             // Solo preference differs) by the cursor, which a by-group search cannot see.
             let at_original = state.cursor.is_none()
@@ -1340,10 +1357,31 @@ unsafe fn publish_mii_presentation(
     drop(state);
     role.sync_selection(fighter);
     #[cfg(feature="mii-hud-portrait-alpha")]
-    mii_hud_portrait::before_refresh(entry, owner, kind);
+    if mii_hud_portrait::should_defer_hud(owner, kind, portrait) {
+        // The exact texture does not exist yet. Keep the previous portrait and let the
+        // service callback refresh and bind after the render proof. A rejected hold
+        // still paints the new kind, so the old portrait cannot stick.
+        let accepted = mii_hud_portrait::request(entry, owner, generation, kind, portrait, true);
+        if policy_rejected_hud(accepted) {
+            mii_hud_portrait::before_refresh(entry, owner, kind);
+            refresh_hud(entry, owner, kind);
+        }
+    } else {
+        mii_hud_portrait::before_refresh(entry, owner, kind);
+        refresh_hud(entry, owner, kind);
+        mii_hud_portrait::request(entry, owner, generation, kind, portrait, false);
+    }
+    #[cfg(not(feature="mii-hud-portrait-alpha"))]
     refresh_hud(entry, owner, kind);
-    #[cfg(feature="mii-hud-portrait-alpha")]
-    mii_hud_portrait::request(entry, owner, generation, kind, portrait);
+}
+
+/// The publish site is the engine entry-service callback, after
+/// `mii_hud_portrait::service` has returned, so this call does not hold that
+/// function's `ServiceCallback`. Rejection still falls back here.
+#[cfg(feature="mii-hud-portrait-alpha")]
+fn policy_rejected_hud(accepted: bool) -> bool {
+    mii_hud_portrait_policy::rejected_deferral(true, accepted, true, true)
+        == mii_hud_portrait_policy::HudStep::RefreshFallback
 }
 
 /// Native reset already owns the HUD lookup. Admit our fresh, active fighter body
@@ -1382,7 +1420,11 @@ struct PortraitEvent {
 
 /// Full reload emits body-ID event1e but not the portrait event1d. Find only
 /// the registered HUD listener now and invoke its native functor. The native
-/// dispatch depth/deferred-removal protocol protects iterator lifetime.
+/// dispatch depth/deferred-removal protocol protects iterator lifetime: removal
+/// is postponed while depth != 0, and the flush runs when this call returns the
+/// depth to zero. The functor itself runs on this caller. Publication and the
+/// later portrait service are both the 650010 entry callback, so a deferred
+/// refresh uses that same callback and does not hop threads.
 unsafe fn refresh_hud(entry: *const u8, owner: u32, kind: u32) {
     let role = if owner == 0 { Role::Player } else { Role::Cpu };
     let current_scope = scope(role);
@@ -1493,7 +1535,11 @@ unsafe fn refresh_hud(entry: *const u8, owner: u32, kind: u32) {
             } else {
                 let invoke: unsafe extern "C" fn(*mut u8, *const PortraitEvent) =
                     std::mem::transmute(base + 0x1378ad0);
-                invoke(listener, &event);
+                let hud = pointer_chain(base as *const u8, &[0x52c3420, 8, 0])
+                    .map_or(0, |root| root as usize);
+                native_hud_refresh::without_roster_animation(hud, owner, || {
+                    invoke(listener, &event);
+                });
             }
             delivered += 1;
         }

@@ -195,6 +195,7 @@ fn target(t: &Track) -> PublicationTarget<'_> {
         payload: Some(t.data.configuration),
         scalars: Scalars::saved(t.data.configuration),
         source: Some(t.source),
+        hat_change: false,
     }
 }
 pub(super) unsafe fn install(source: SourceToken) -> bool {

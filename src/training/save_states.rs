@@ -698,7 +698,16 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
             }
         }
         let lr = mirror * save_state.lr;
-        PostureModule::set_pos(module_accessor, &pos);
+        if save_state.situation_kind == SITUATION_KIND_GROUND {
+            // Teleport from respawn with native collision synchronization. Resetting
+            // posture history alone still lets the ground module catch an intervening
+            // soft platform. The first flag also resets native ground contacts and
+            // collision-position history at the destination; the second stays false
+            // to avoid translating linked objects. Keep the WAIT handshake below.
+            PostureModule::init_pos(module_accessor, &pos, true, false);
+        } else {
+            PostureModule::set_pos(module_accessor, &pos);
+        }
         PostureModule::set_lr(module_accessor, lr);
         reset::on_reset();
 

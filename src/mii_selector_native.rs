@@ -398,6 +398,8 @@ pub(crate) struct PublicationTarget<'a> {
     pub payload: Option<Configuration>,
     pub scalars: Scalars,
     pub source: Option<SourceToken>,
+    /// CPU Training fresh-O path only; never a helper or retained-O exemption.
+    pub hat_change: bool,
 }
 pub(crate) unsafe fn publication(
     target: PublicationTarget<'_>,
@@ -410,6 +412,7 @@ pub(crate) unsafe fn publication(
         payload,
         scalars,
         source,
+        hat_change,
     } = target;
     if let Some(c) = payload {
         target_rows(c)?;
@@ -502,7 +505,12 @@ pub(crate) unsafe fn publication(
     if payload.is_some() {
         check(observed.rebuild == 0, "Mii rebuild closed")?;
     }
-    check(scalars.e.hat == now.scalars.e.hat, "unqualified hat change")?;
+    policy::HatPublication {
+        layout: now.layout, owner: b.owner, source: source.is_some(), opt_in: hat_change,
+        initialized: observed.initialized,
+        fingerprints: hat_change && super::mii_ordinary_player::native::cpu_headgear_fingerprints(),
+        before: now.scalars.e.hat, target: scalars.e.hat, descriptor, payload,
+    }.validate()?;
     let address = values::record_address(b, b).map_err(|_| "selected G bounds")?;
     Ok(PublicationGuard {
         observed,
@@ -545,6 +553,7 @@ pub(crate) unsafe fn completed(
         payload,
         scalars,
         source,
+        hat_change: _,
     } = target;
     let owner = before.binding.owner as usize;
     let m = map(before.binding.entry, owner)?;

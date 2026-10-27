@@ -17,6 +17,12 @@ pub struct TrainingModpackConfig {
     pub update: UpdaterConfig,
 }
 
+impl Default for TrainingModpackConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TrainingModpackConfig {
     pub fn new() -> TrainingModpackConfig {
         TrainingModpackConfig {
@@ -67,7 +73,7 @@ impl TrainingModpackConfig {
         if fs::metadata(TRAINING_MODPACK_TOML_PATH).is_ok() {
             Err(io::Error::from(io::ErrorKind::AlreadyExists).into())
         } else {
-            if !fs::metadata(TRAINING_MODPACK_ROOT).is_ok() {
+            if fs::metadata(TRAINING_MODPACK_ROOT).is_err() {
                 // Root path doesn't exist, create it before trying to make the file
                 println!("Creating directory...");
                 fs::create_dir_all(TRAINING_MODPACK_ROOT)?;
@@ -151,8 +157,8 @@ pub struct UpdaterConfig {
     pub last_update_version: String,
 }
 
-impl UpdaterConfig {
-    pub fn default() -> UpdaterConfig {
+impl Default for UpdaterConfig {
+    fn default() -> Self {
         UpdaterConfig {
             last_update_version: now_utc(),
         }

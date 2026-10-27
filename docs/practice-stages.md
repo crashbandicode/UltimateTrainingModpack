@@ -12,9 +12,11 @@ Open **Misc Settings → Practice Stages**. It opens at **Change Stage Now**: hi
 
 This works in Training and in lobby practice. In Training the new stage lasts for that session only. In a lobby, **A** also keeps the stage for your later lobby entries.
 
+Press **Y** on a named stage to cycle its form (Normal, Ω / Final Destination or Battlefield) where the game has one. The help line shows the current form.
+
 ## Rotate stages between lobby visits
 
-Press **X** to open **Lobby Stage Rotation**, then press **A** on stages in the order you want to visit them. The rotation advances each time you enter lobby practice, including after a match. It never changes an ordinary Training session. Press **X** again to return to Change Stage Now.
+Press **X** to open **Lobby Stage Rotation**, then press **A** on stages in the order you want to visit them. The rotation advances each time you enter lobby practice, including after a match. Ordinary Training follows it only while **Misc Settings → Training Stage Rotation** is On (default Off): each Training entry from character select takes the next stage. Press **X** again to return to Change Stage Now.
 
 ![Waiting Room, Battlefield and Small Battlefield selected as lobby stages 1, 2 and 3.](feature-walkthroughs/stage-rotation.png)
 

@@ -1,6 +1,6 @@
 use super::*;
 use training_mod_tui::{
-    roster_grid::{Role, RosterPurpose},
+    roster_grid::{CellContent, Role, RosterPurpose},
     AppPage,
 };
 
@@ -290,6 +290,7 @@ fn manual_mii_portraits_use_qualified_roles_without_rewriting_saved_identities()
     assert!(app.mount_mii_catalog(catalog, training_mod_tui::mii_menu::Context {
         epoch: 7, original: PlayerOrigin::NotMii,
         active: Active { player: PlayerLive::Origin, cpu: None },
+        cpu_original: None,
     }));
     app.qualify_ordinary_cpu_cycle(true);
     let preferences = app.mii_preferences.clone();
@@ -822,16 +823,35 @@ fn kirby_and_mii_cannot_be_chosen_and_hats_have_no_solo_action() {
     open_hats(&mut app);
     let values = app.roster_values(Role::Player);
     seek(&mut app, 0x06);
+    assert!(app.hat_cell_disabled(0x06));
     app.on_a();
     app.on_r();
     assert_eq!(app.roster_values(Role::Player), values);
-    seek_label(&mut app, "Mii Brawler");
-    assert_eq!(
-        app.roster_grid.cursor_info().content,
-        training_mod_tui::roster_grid::CellContent::Unsupported
-    );
-    app.on_a();
-    assert_eq!(app.roster_values(Role::Player), values);
+    // Saved-catalog builds draw the three native Mii classes as fighter
+    // portraits. An unqualified helper still refuses them as hats.
+    let role = app.roster_grid.role();
+    for (label, kind) in [
+        ("Mii Brawler", 0x48),
+        ("Mii Swordfighter", 0x49),
+        ("Mii Gunner", 0x4a),
+    ] {
+        seek_label(&mut app, label);
+        let cell = app.roster_grid.cursor_info();
+        assert_eq!(cell.label, label);
+        if cfg!(feature = "mii-saved-alpha") {
+            assert_eq!(cell.content, CellContent::Fighter(kind));
+            assert_eq!(cell.kind(), Some(kind));
+        } else {
+            assert_eq!(cell.content, CellContent::Unsupported);
+            assert_eq!(cell.kind(), None);
+        }
+        assert!(app.hat_cell_disabled(kind));
+        assert!(app.roster_excluded(role, kind));
+        app.on_a();
+        assert_eq!(app.roster_values(Role::Player), values);
+        app.on_r();
+        assert_eq!(app.roster_values(Role::Player), values);
+    }
     seek(&mut app, 0x4b);
     app.on_y();
     assert_eq!(app.roster_values(Role::Player), values);
@@ -926,4 +946,352 @@ fn kirby_hat_roles_restore_in_a_fresh_process() {
         assert!(status.success(), "{} process failed", phase);
     }
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn cpu_resolved_original_is_grey_zero_and_swordfighter_is_not_a_default_marker() {
+    let mut app = editor();
+    app.set_original_player_kind(Some(0x08));
+    let before = app.current_settings_to_json();
+    app.set_original_cpu_kind(Some(0x0a));
+    assert_eq!(app.current_settings_to_json(), before);
+    assert!(app.roster_slot_zero(Role::Player, 0x08));
+    assert_eq!(app.roster_badge(Role::Player, 0x08), Some(0));
+    assert!(!app.roster_slot_zero(Role::Cpu, 0x08));
+    assert_ne!(app.roster_badge(Role::Cpu, 0x08), Some(0));
+    assert!(app.roster_excluded(Role::Cpu, 0x0a));
+    assert_eq!(app.roster_badge(Role::Cpu, 0x0a), Some(0));
+    assert!(!app.roster_slot_zero(Role::Player, 0x0a));
+    assert_ne!(app.roster_badge(Role::Player, 0x0a), Some(0));
+    app.on_zr();
+    seek(&mut app, 0x0a);
+    let cpu_values = app.roster_values(Role::Cpu);
+    app.on_a();
+    assert_eq!(app.roster_values(Role::Cpu), cpu_values);
+    if cfg!(feature = "mii-saved-alpha") {
+        for role in [Role::Player, Role::Cpu] {
+            assert!(app.roster_excluded(role, 0x49));
+            assert!(!app.roster_slot_zero(role, 0x49));
+            for kind in [0x48, 0x49, 0x4a] {
+                assert_eq!(app.roster_badge(role, kind), None);
+            }
+        }
+    }
+    app.set_original_cpu_kind(Some(u32::MAX));
+    assert!(!app.roster_slot_zero(Role::Cpu, 0x0a));
+    assert_ne!(app.roster_badge(Role::Cpu, 0x0a), Some(0));
+    assert_eq!(app.roster_badge(Role::Cpu, 0x49), None);
+    assert_eq!(app.roster_badge(Role::Player, 0x08), Some(0));
+}
+
+#[test]
+fn cpu_original_group_and_ice_climbers_follow_one_solo_setting() {
+    let mut app = editor();
+    app.set_original_cpu_kind(Some(0x26));
+    for kind in [0x24, 0x25, 0x26] {
+        assert!(app.roster_slot_zero(Role::Cpu, kind));
+        assert_eq!(app.roster_badge(Role::Cpu, kind), Some(0));
+        assert!(!app.roster_slot_zero(Role::Player, kind));
+    }
+    app.on_zr();
+    seek(&mut app, 0x24);
+    let values = app.roster_values(Role::Cpu);
+    app.on_a();
+    assert_eq!(app.roster_values(Role::Cpu), values);
+    app.set_original_cpu_kind(Some(0x4b));
+    assert!(app.roster_slot_zero(Role::Cpu, 0x4b));
+    assert_eq!(app.roster_badge(Role::Cpu, 0x4b), Some(0));
+    seek(&mut app, 0x4b);
+    app.on_y();
+    assert!(app.roster_solo_enabled(Role::Cpu));
+    assert!(app.roster_slot_zero(Role::Cpu, 0x4b));
+    assert_eq!(app.roster_badge(Role::Cpu, 0x4b), Some(0));
+    assert!(!app.roster_slot_zero(Role::Player, 0x4b));
+}
+
+#[test]
+fn cpu_badges_resolve_numbered_order_without_rewriting_saved_choices() {
+    let mut menu = BASE_MENU;
+    menu.cpu_roster = OrderedFighterRoster::from_fighters(&[
+        TrioFighter::from_kind(0x0a).unwrap(),
+        TrioFighter::PIKACHU,
+        TrioFighter::KIRBY,
+    ]).unwrap();
+    let settings = serde_json::to_string(&menu).unwrap();
+    let mut app = editor();
+    app.update_all_from_json(&settings);
+    let before = app.current_settings_to_json();
+    // The stored Ness1/Pikachu2/Kirby3 order becomes Ness0/Pikachu1/Kirby2.
+    // The next scene can have a different original without losing any choice.
+    for (original, badges) in [
+        (Some(0x0a), [Some(0), Some(1), Some(2)]),
+        (Some(0x08), [Some(1), Some(0), Some(2)]),
+        (Some(0x01), [Some(1), Some(2), Some(3)]),
+        (None, [Some(1), Some(2), Some(3)]),
+        (Some(u32::MAX), [Some(1), Some(2), Some(3)]),
+    ] {
+        app.set_original_cpu_kind(original);
+        assert_eq!([0x0a, 0x08, 0x06].map(|kind| app.roster_badge(Role::Cpu, kind)), badges);
+        assert_eq!(app.current_settings_to_json(), before);
+    }
+    let restored: TrainingModpackMenu = serde_json::from_str(&before).unwrap();
+    assert_eq!(restored.cpu_roster, menu.cpu_roster);
+}
+
+#[cfg(feature = "mii-managed-helper-alpha")]
+fn saved_slot(class: training_mod_mii::inventory::MiiClass, id: u32, special: u8) -> training_mod_mii::inventory::RawSlot {
+    use training_mod_mii::inventory::*;
+    RawSlot {
+        index: id as usize,
+        slot_id: id,
+        name_len: 1,
+        name_units: [u16::from(b'A' + special), 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        colour: 0,
+        voice: 37,
+        specials: [special, 0, 0, 0],
+        charinfo: [0; CHARINFO_LEN],
+        tag_outfit: TaggedId(0x1300011bfef7a5f7),
+        tag_hat: TaggedId(0x5a00000fa9efa5ea),
+        tag_chara: TaggedId(match class {
+            MiiClass::Brawler => 0xc1004c13fdfdfb2b,
+            MiiClass::Swordfighter => 0xc1004d15d7061f77,
+            MiiClass::Gunner => 0xc1004e1257ab1d87,
+        }),
+    }
+}
+
+#[cfg(feature = "mii-managed-helper-alpha")]
+fn saved_canonical(catalog: &training_mod_mii::inventory::Snapshot, id: u32) -> training_mod_mii::inventory::Canonical {
+    catalog.configs.iter().find(|config| config.slot_id == id).unwrap().canonical
+}
+
+/// The real numbered cycle is the oracle. Gunner is returned only when that
+/// saved configuration is a numbered choice, not when the loop returns to slot 0.
+#[cfg(feature = "mii-managed-helper-alpha")]
+fn numbered_gunner(
+    catalog: &training_mod_mii::inventory::Snapshot,
+    preferences: &training_mod_mii::selection::Preferences,
+    origin: training_mod_mii::inventory::Canonical,
+) -> Option<training_mod_mii::selection::Choice> {
+    use training_mod_mii::inventory::MiiClass;
+    use training_mod_mii::selection::Role as MiiRole;
+    let order = [
+        TrioFighter::from_kind(0x4a).unwrap(),
+        TrioFighter::PIKACHU,
+        TrioFighter::KIRBY,
+    ];
+    let mut live = mii_cycle::Live::Original;
+    let identity = mii_cycle::Identity::Saved(origin);
+    for _ in 0..4 {
+        let step = mii_cycle::next_cycle(&order, catalog, preferences, MiiRole::Cpu, identity, live)
+            .expect("captured saved CPU original remains cycable");
+        match step.target {
+            mii_cycle::Target::Original => return None,
+            mii_cycle::Target::Saved(choice) if choice.canonical.class == MiiClass::Gunner => {
+                return Some(choice);
+            }
+            mii_cycle::Target::Saved(choice) => {
+                live = mii_cycle::Live::Numbered {
+                    identity: mii_cycle::Identity::Saved(choice.canonical),
+                    cursor: step.cursor,
+                };
+            }
+            mii_cycle::Target::Fighter(kind) => {
+                live = mii_cycle::Live::Numbered {
+                    identity: mii_cycle::Identity::Fighter(kind),
+                    cursor: step.cursor,
+                };
+            }
+        }
+    }
+    panic!("numbered cycle did not return to slot 0");
+}
+
+#[cfg(feature = "mii-managed-helper-alpha")]
+#[test]
+fn cpu_saved_original_is_unnumbered_until_another_configuration_exists() {
+    use training_mod_mii::inventory::{build_snapshot, MiiClass, Snapshot};
+    use training_mod_mii::selection::{Active, Origin, PlayerLive, PlayerOrigin, Role as MiiRole};
+    use training_mod_tui::mii_menu::{Context, MenuCapture};
+
+    let identities = build_snapshot(vec![
+        saved_slot(MiiClass::Gunner, 3137, 0),
+        saved_slot(MiiClass::Swordfighter, 2622, 0),
+        saved_slot(MiiClass::Brawler, 4155, 0),
+    ]);
+    let gunner = saved_canonical(&identities, 3137);
+    let sword = saved_canonical(&identities, 2622);
+    let brawler = saved_canonical(&identities, 4155);
+    assert_ne!(gunner, sword);
+    assert_ne!(gunner, brawler);
+
+    let mut capture = MenuCapture::closed();
+    capture.begin();
+    capture.finish(MiiRole::Player, true);
+    capture.finish(MiiRole::Cpu, false);
+    let taken = capture.take_owned_context(
+        Context {
+            epoch: 4,
+            original: PlayerOrigin::NotMii,
+            active: Active { player: PlayerLive::NotMii, cpu: Some((MiiClass::Swordfighter, sword)) },
+            cpu_original: Some(gunner),
+        },
+        Some((PlayerOrigin::Mii(Origin(sword)), PlayerLive::Origin)),
+        Some(Some((MiiClass::Brawler, brawler))),
+    ).unwrap();
+    assert_eq!(taken.cpu_original, Some(gunner));
+    assert!(matches!(taken.original, PlayerOrigin::Mii(Origin(origin)) if origin == sword));
+    assert_eq!(taken.active.cpu, Some((MiiClass::Brawler, brawler)));
+    assert_ne!(taken.cpu_original, Some(sword));
+    assert_ne!(taken.cpu_original, Some(brawler));
+
+    let only = build_snapshot(vec![saved_slot(MiiClass::Gunner, 3137, 0)]);
+    assert!(only.is_complete());
+    assert_eq!(only.configs.len(), 1);
+    assert_eq!(saved_canonical(&only, 3137), gunner);
+    let mut menu = BASE_MENU;
+    menu.cpu_roster = OrderedFighterRoster::from_fighters(&[
+        TrioFighter::from_kind(0x4a).unwrap(),
+        TrioFighter::PIKACHU,
+        TrioFighter::KIRBY,
+    ]).unwrap();
+    let mut app = editor();
+    app.open_settings_for_player(&serde_json::to_string(&menu).unwrap(), Some(0));
+    let player_pikachu = app.roster_badge(Role::Player, 0x08);
+    let player_gunner = app.roster_badge(Role::Player, 0x4a);
+    app.page = AppPage::SUBMENU;
+    let context = Context {
+        epoch: 4,
+        original: PlayerOrigin::NotMii,
+        active: Active { player: PlayerLive::NotMii, cpu: None },
+        cpu_original: Some(gunner),
+    };
+    let mut redraw = false;
+    assert!(app.publish_mii_catalog(only.clone(), context, 4, || redraw = true));
+    assert!(redraw);
+    app.qualify_ordinary_cpu_cycle(true);
+    app.set_original_cpu_kind(Some(0x4a));
+    let settings = app.current_settings_to_json();
+    let preferences = app.mii_preferences.clone();
+    let envelope = app.get_serialized_settings_with_defaults();
+    assert_eq!(app.cpu_numbered_saved(0x4a), numbered_gunner(&only, &app.mii_preferences, gunner));
+    assert!(app.cpu_numbered_saved(0x4a).is_none());
+    assert!(app.roster_slot_zero(Role::Cpu, 0x4a));
+    assert!(app.roster_excluded(Role::Cpu, 0x4a));
+    assert_eq!(
+        [0x4a, 0x08, 0x06].map(|kind| app.roster_badge(Role::Cpu, kind)),
+        [Some(0), Some(1), Some(2)],
+    );
+    assert!(!app.roster_slot_zero(Role::Player, 0x4a));
+    assert_eq!(app.roster_badge(Role::Player, 0x08), player_pikachu);
+    assert_eq!(app.roster_badge(Role::Player, 0x4a), player_gunner);
+    let characters = app.tabs.iter().position(|tab| tab.id == "player_characters").unwrap();
+    app.tabs.state.select(Some(characters));
+    app.selected_tab().submenus.select(0, 3);
+    app.on_a();
+    assert_eq!(app.roster_purpose, RosterPurpose::FighterCycles);
+    app.on_zr();
+    assert_eq!(app.roster_grid.role(), Role::Cpu);
+    seek(&mut app, 0x4a);
+    let cpu_values = app.roster_values(Role::Cpu);
+    app.on_a();
+    assert_eq!(app.roster_values(Role::Cpu), cpu_values);
+    assert_eq!(app.current_settings_to_json(), settings);
+    assert_eq!(app.mii_preferences, preferences);
+
+    let mut manual = app.clone();
+    open_manual(&mut manual, Role::Cpu);
+    assert!(!manual.roster_slot_zero(Role::Cpu, 0x4a));
+    assert!(!manual.roster_excluded(Role::Cpu, 0x4a));
+    assert!(manual.roster_excluded(Role::Cpu, 0x49));
+    seek(&mut manual, 0x4a);
+    manual.on_a();
+    finish_manual_flash(&mut manual, Role::Cpu, 0x4a);
+    assert_eq!(committed(&manual).cpu_character.kind(), 0x4a);
+    assert_eq!(committed(&manual).cpu_roster, menu.cpu_roster);
+    assert_eq!(manual.mii_preferences, preferences);
+
+    let mut hats = app.clone();
+    hats.roster_purpose = RosterPurpose::KirbyHats;
+    assert!(!hats.roster_slot_zero(Role::Cpu, 0x4a));
+    assert_ne!(hats.roster_badge(Role::Cpu, 0x4a), Some(0));
+    assert!(hats.highlights_original_cpu(0x4a));
+    assert_eq!(app.current_settings_to_json(), settings);
+    assert_eq!(app.get_serialized_settings_with_defaults(), envelope);
+
+    app.cancel_mii_catalog();
+    assert!(!app.roster_slot_zero(Role::Cpu, 0x4a));
+    assert_ne!(app.roster_badge(Role::Cpu, 0x4a), Some(0));
+    app.set_original_cpu_kind(Some(u32::MAX));
+    assert!(!app.roster_slot_zero(Role::Cpu, 0x4a));
+    app.set_original_cpu_kind(Some(0x4a));
+    let pair = build_snapshot(vec![
+        saved_slot(MiiClass::Gunner, 3137, 0),
+        saved_slot(MiiClass::Gunner, 3200, 1),
+    ]);
+    let alternate = saved_canonical(&pair, 3200);
+    assert_eq!(saved_canonical(&pair, 3137), gunner);
+    assert_ne!(alternate, gunner);
+    assert_eq!(pair.of_class(MiiClass::Gunner).count(), 2);
+    let stale = Context { epoch: 3, cpu_original: Some(gunner), ..context };
+    redraw = false;
+    assert!(!app.publish_mii_catalog(pair.clone(), stale, 4, || redraw = true));
+    assert!(!redraw);
+    assert!(!app.roster_slot_zero(Role::Cpu, 0x4a));
+    let reopened = Context {
+        epoch: 4,
+        original: PlayerOrigin::NotMii,
+        active: Active { player: PlayerLive::NotMii, cpu: None },
+        cpu_original: Some(gunner),
+    };
+    assert!(app.publish_mii_catalog(pair.clone(), reopened, 4, || redraw = true));
+    assert!(redraw);
+    app.qualify_ordinary_cpu_cycle(true);
+    assert!(!app.roster_slot_zero(Role::Cpu, 0x4a));
+    assert!(!app.roster_excluded(Role::Cpu, 0x4a));
+    assert_eq!(
+        [0x4a, 0x08, 0x06].map(|kind| app.roster_badge(Role::Cpu, kind)),
+        [Some(1), Some(2), Some(3)],
+    );
+    let matches_cycle = |app: &App<'_>, catalog: &Snapshot| {
+        assert_eq!(
+            app.cpu_numbered_saved(0x4a),
+            numbered_gunner(catalog, &app.mii_preferences, gunner),
+        );
+    };
+    matches_cycle(&app, &pair);
+    assert_eq!(app.cpu_numbered_saved(0x4a).unwrap().canonical, alternate);
+    assert_eq!(app.cpu_numbered_saved(0x4a).unwrap().slot_id, Some(3200));
+    app.mii_preferences = preferences.clone().with(MiiRole::Cpu, MiiClass::Gunner, Some(gunner)).unwrap();
+    matches_cycle(&app, &pair);
+    assert_eq!(app.cpu_numbered_saved(0x4a).unwrap().canonical, alternate);
+    app.mii_preferences = preferences.clone().with(MiiRole::Cpu, MiiClass::Gunner, Some(alternate)).unwrap();
+    matches_cycle(&app, &pair);
+    assert_eq!(app.cpu_numbered_saved(0x4a).unwrap().canonical, alternate);
+    assert_ne!(app.cpu_numbered_saved(0x4a).unwrap().slot_id, Some(3137));
+    assert_eq!(app.roster_badge(Role::Cpu, 0x4a), Some(1));
+    app.mii_preferences = preferences.clone();
+    assert_eq!(app.current_settings_to_json(), settings);
+    assert_eq!(app.get_serialized_settings_with_defaults(), envelope);
+
+    app.cancel_mii_catalog();
+    let missing = Context {
+        epoch: 4,
+        original: PlayerOrigin::Mii(Origin(gunner)),
+        active: Active { player: PlayerLive::Origin, cpu: None },
+        cpu_original: None,
+    };
+    assert!(app.publish_mii_catalog(only, missing, 4, || redraw = true));
+    app.qualify_ordinary_cpu_cycle(true);
+    app.set_original_player_kind(Some(0x4a));
+    app.set_original_cpu_kind(Some(0x4a));
+    assert!(app.roster_slot_zero(Role::Player, 0x4a));
+    assert_eq!(app.roster_badge(Role::Player, 0x4a), Some(0));
+    // Missing CPU canonical must not borrow the player original or the class kind.
+    assert!(!app.roster_slot_zero(Role::Cpu, 0x4a));
+    assert_eq!(app.roster_badge(Role::Cpu, 0x4a), Some(1));
+    assert_eq!(app.cpu_numbered_saved(0x4a).unwrap().canonical, gunner);
+    assert!(numbered_gunner(&build_snapshot(vec![saved_slot(MiiClass::Gunner, 3137, 0)]), &preferences, gunner).is_none());
+    assert_eq!(app.mii_preferences, preferences);
+    assert_eq!(committed(&app).cpu_roster, menu.cpu_roster);
 }

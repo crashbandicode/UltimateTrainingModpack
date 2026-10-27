@@ -133,6 +133,7 @@ pub(crate) unsafe fn span(address: usize, size: usize, write: bool) -> bool {
 pub(crate) fn check(ok: bool, reason: &'static str) -> Result<(), &'static str> {
     if ok { Ok(()) } else { Err(reason) }
 }
+pub(crate) unsafe fn cpu_headgear_fingerprints()->bool {super::hook::headgear_valid(super::base())}
 pub(crate) unsafe fn pointer(at: usize, offset: usize, size: usize, write: bool) -> Result<usize, &'static str> {
     let slot=at.checked_add(offset).ok_or("pointer overflow")?;
     check(span(slot,8,false), "pointer slot unmapped")?;
@@ -156,9 +157,10 @@ impl Scalars {
         let t=c.tokens();
         Self { e:t.into(), d_outfit:t.outfit,d_colour:t.colour,d_specials:t.specials.map(u32::from) }
     }
-    /// Only the individually qualified E and D scalars. FE/O publication belongs to native code.
+    /// E+1ac is a native hat source. D+76 and O+70 remain native-owned;
+    /// CPU headgear changes require the shared publisher's explicit fresh-O proof.
     pub(crate) unsafe fn write(self,e:usize,d:usize) {
-        wr(e,0x1aa,self.e.outfit);wr(e,0x1ae,self.e.colour);wr(e,0x1b0,self.e.voice);
+        wr(e,0x1aa,self.e.outfit);wr(e,0x1ac,self.e.hat);wr(e,0x1ae,self.e.colour);wr(e,0x1b0,self.e.voice);
         for (i,v) in self.e.specials.iter().enumerate() { wr(e,0x1b2+i,*v); }
         wr(d,0x74,self.d_outfit);wr(d,0x78,self.d_colour);
         for (i,v) in self.d_specials.iter().enumerate() { wr(d,0x390+i*4,*v); }
@@ -632,4 +634,34 @@ pub(super) unsafe fn capture_origin(entry:usize,epoch:u64,kind:u32,catalog:&Cata
     drop(registry);drop(state);drop(g);
     super::super::observe_mii_origin(super::super::Role::Player,epoch,kind,super::descriptor_forms(&now.descriptor),c);
     Ok(())
+}
+
+#[cfg(test)]
+mod scalar_write_tests {
+    use super::*;
+
+    #[test]
+    fn scalar_write_adds_only_e_hat_and_never_writes_native_d_hat() {
+        // Actual writer over synthetic local memory. No Horizon calls or game bytes.
+        #[repr(align(8))]
+        struct Aligned<const N:usize>([u8;N]);
+        let mut e_memory=Aligned([0xa5u8;0x260]);let mut d_memory=Aligned([0x5au8;0x3a0]);
+        let e=&mut e_memory.0;let d=&mut d_memory.0;
+        let scalars=Scalars {e:Tokens {outfit:75,hat:125,colour:0,voice:37,specials:[2,2,2,1]},
+            d_outfit:75,d_colour:0,d_specials:[2,2,2,1]};
+        unsafe {scalars.write(e.as_mut_ptr() as usize,d.as_mut_ptr() as usize);}
+        assert_eq!(&e[0x1aa..0x1b6],&[75,0,125,0,0,0,37,0,2,2,2,1]);
+        assert!(e[..0x1aa].iter().chain(&e[0x1b6..]).all(|b|*b==0xa5));
+        assert_eq!(&d[0x74..0x7a],&[75,0,0x5a,0x5a,0,0]);
+        assert_eq!(&d[0x390..0x3a0],&[2,0,0,0,2,0,0,0,2,0,0,0,1,0,0,0]);
+        for (i,byte) in d.iter().enumerate() {
+            if !(0x74..0x76).contains(&i) && !(0x78..0x7a).contains(&i) && !(0x390..0x3a0).contains(&i) {
+                assert_eq!(*byte,0x5a,"native-owned D byte {i:#x}");
+            }
+        }
+        // Return to a distinct value exercises the same source writer, not a 125 special case.
+        unsafe {Scalars {e:Tokens {hat:0,..scalars.e},..scalars}.write(e.as_mut_ptr() as usize,d.as_mut_ptr() as usize);}
+        assert_eq!(&e[0x1ac..0x1ae],&[0,0]);
+        assert_eq!(&d[0x76..0x78],&[0x5a,0x5a]);
+    }
 }

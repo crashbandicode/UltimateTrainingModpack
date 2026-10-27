@@ -327,7 +327,7 @@ impl Ownership {
         self.in_flight = None;
         if job.contaminated {
             self.disown(job.request);
-            return Outcome::Discard("contaminated: shared row/sub fields changed before the queue drained");
+            return Outcome::Discard(DISCARD_CONTAMINATED);
         }
         // Reusing the request that already occupies `table[0x12+row]` re-registers the same
         // descriptor, so an unchanged table pointer is fresh only if the retarget was seen.
@@ -336,11 +336,11 @@ impl Ownership {
             && (job.saw_clear || c.table != job.before_table);
         if !registered {
             self.disown(job.request);
-            return Outcome::Discard("queue drained without a fresh registration of our request");
+            return Outcome::Discard(DISCARD_UNREGISTERED);
         }
-        if !self.own(job.request) { return Outcome::Discard("ownership set full; request left unbound"); }
-        if job.departed { return Outcome::Discard("scene departed before completion; request kept free"); }
-        if job.superseded { return Outcome::Discard("superseded before completion; request kept free"); }
+        if !self.own(job.request) { return Outcome::Discard(DISCARD_FULL); }
+        if job.departed { return Outcome::Discard(DISCARD_DEPARTED); }
+        if job.superseded { return Outcome::Discard(DISCARD_SUPERSEDED); }
         Outcome::Bind { owner: job.owner, index: table_index(job.request.row) }
     }
 
@@ -409,6 +409,167 @@ pub fn restore_original(intent: Intent, now_kind: u32, owner: u32, w: RequestWor
             now_kind == original_kind && class_sub(original_kind).is_some()
                 && w.owned_live(owner) && table != 0 && table == descriptor,
         Intent::Exact => false,
+    }
+}
+
+/// What the visible HUD may do at publication. This decides timing only.
+/// It does not identify which pixels the native portrait functor draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HudIntent { NotMii, Exact, Original }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HudRefresh {
+    /// Deliver the portrait event at publication.
+    Now,
+    /// Keep the previous valid portrait until this generation's exact render is proved.
+    DeferUntilPortrait,
+}
+
+/// Mii kinds are Brawler/Sword/Gunner. Only an active, in-scope, unhalted exact
+/// portrait has a later render proof worth waiting for. Original restoration is
+/// the native event itself, so it still publishes immediately.
+pub fn hud_refresh(kind: u32, intent: HudIntent, active: bool, in_scope: bool, halted: bool) -> HudRefresh {
+    if matches!(kind, 0x48..=0x4a)
+        && matches!(intent, HudIntent::Exact)
+        && active && in_scope && !halted
+    {
+        HudRefresh::DeferUntilPortrait
+    } else {
+        HudRefresh::Now
+    }
+}
+
+/// One generation's withheld HUD event. No entry pointer or lease is stored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HudHold {
+    Published,
+    Withheld { generation: u64 },
+    Superseded { generation: u64 },
+    Retired,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HudStep {
+    /// Leave the visible portrait untouched.
+    Keep,
+    /// Event, then a fresh pane read, then the texture bind. One service callback.
+    RefreshRereadBind,
+    /// Event only. The exact texture will not be bound.
+    RefreshFallback,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HudTerminal { Refusal, Retirement, Budget, SceneExit, Superseded, Completed }
+
+impl HudHold {
+    pub const fn start(decision: HudRefresh, generation: u64) -> Self {
+        match decision {
+            HudRefresh::Now => Self::Published,
+            HudRefresh::DeferUntilPortrait => Self::Withheld { generation },
+        }
+    }
+
+    pub const fn is_withheld(self) -> bool {
+        matches!(self, Self::Withheld { .. })
+    }
+
+    /// A newer generation owns the event. This generation must not publish later.
+    pub const fn supersede(self, newer: u64) -> Self {
+        match self {
+            Self::Withheld { generation } if newer != generation => Self::Superseded { generation },
+            other => other,
+        }
+    }
+
+    /// Scene departure drops the right to publish. A published event is already done.
+    pub const fn retire(self) -> Self {
+        match self {
+            Self::Published => Self::Published,
+            _ => Self::Retired,
+        }
+    }
+
+    pub const fn on_proof(self, generation: u64, owner_current: bool, service_context: bool) -> (Self, HudStep) {
+        match self {
+            Self::Withheld { generation: held } if held == generation && owner_current && service_context => {
+                (Self::Published, HudStep::RefreshRereadBind)
+            }
+            Self::Withheld { .. } if !service_context => (self, HudStep::Keep),
+            Self::Withheld { generation: held } if held != generation => (Self::Superseded { generation: held }, HudStep::Keep),
+            Self::Withheld { .. } => (Self::Retired, HudStep::Keep),
+            other => (other, HudStep::Keep),
+        }
+    }
+
+    pub const fn on_terminal(
+        self, generation: u64, owner_current: bool, service_context: bool, terminal: HudTerminal,
+    ) -> (Self, HudStep) {
+        let Self::Withheld { generation: held } = self else {
+            return (self, HudStep::Keep);
+        };
+        match terminal {
+            HudTerminal::SceneExit | HudTerminal::Completed => (Self::Retired, HudStep::Keep),
+            HudTerminal::Superseded => (Self::Superseded { generation: held }, HudStep::Keep),
+            HudTerminal::Refusal | HudTerminal::Retirement | HudTerminal::Budget => {
+                if held != generation {
+                    (Self::Superseded { generation: held }, HudStep::Keep)
+                } else if !owner_current {
+                    (Self::Retired, HudStep::Keep)
+                } else if !service_context {
+                    (self, HudStep::Keep)
+                } else {
+                    (Self::Published, HudStep::RefreshFallback)
+                }
+            }
+        }
+    }
+}
+
+/// A queued successor owns the event, including when the drained render is discarded
+/// for contamination or a missed registration rather than the supersede wording.
+pub const fn terminal_for_finish(requested: HudTerminal, successor: bool) -> HudTerminal {
+    if successor { HudTerminal::Superseded } else { requested }
+}
+
+pub const DISCARD_CONTAMINATED: &str = "contaminated: shared row/sub fields changed before the queue drained";
+pub const DISCARD_UNREGISTERED: &str = "queue drained without a fresh registration of our request";
+pub const DISCARD_FULL: &str = "ownership set full; request left unbound";
+pub const DISCARD_DEPARTED: &str = "scene departed before completion; request kept free";
+pub const DISCARD_SUPERSEDED: &str = "superseded before completion; request kept free";
+
+/// `DISCARD_DEPARTED` is retirement, not a silent scene exit. `on_terminal`
+/// then paints once only for this generation when the caller reports the owner
+/// still current and passes the service token. Scene exit and a dead owner
+/// have already retired the hold, and a failed owner check does not paint.
+pub fn hud_terminal_for_discard(reason: &str) -> HudTerminal {
+    if reason == DISCARD_SUPERSEDED {
+        HudTerminal::Superseded
+    } else if reason == DISCARD_DEPARTED {
+        HudTerminal::Retirement
+    } else {
+        HudTerminal::Refusal
+    }
+}
+
+/// The deferred request was not stored. Paint the kind now, or the previous portrait
+/// would remain for this still-current owner. A foreign callback must not paint.
+pub const fn rejected_deferral(deferred: bool, accepted: bool, owner_current: bool, service_context: bool) -> HudStep {
+    if deferred && !accepted && owner_current && service_context {
+        HudStep::RefreshFallback
+    } else {
+        HudStep::Keep
+    }
+}
+
+/// Pane words read after the portrait event returned. The pre-event index is not an input:
+/// the event may have changed bust mode, and the bind uses the proved table index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaneRead { pub index: u32, pub part_ready: bool }
+
+pub const fn after_event_pane(fresh: Option<PaneRead>) -> bool {
+    match fresh {
+        Some(pane) => pane.part_ready && pane.index < 0x20,
+        None => false,
     }
 }
 
@@ -831,5 +992,156 @@ mod native_admission_tests {
             (0x0e,0x07010101),(0x01,0x02010000),(1,0x01010000),(0x20,0x02010000),(0x20,0x07010101)] {
             assert!(!may_write_scene(melee, mode));
         }
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn hud_refresh_defers_only_an_active_in_scope_exact_mii() {
+        let defer = HudRefresh::DeferUntilPortrait;
+        let now = HudRefresh::Now;
+        // The reproduced switch is Gunner 0x4a. Brawler and Sword are the same exact-portrait path.
+        for kind in [0x48u32, 0x49, 0x4a] {
+            assert_eq!(hud_refresh(kind, HudIntent::Exact, true, true, false), defer);
+        }
+        assert_eq!(hud_refresh(0x4a, HudIntent::Original, true, true, false), now);
+        assert_eq!(hud_refresh(0x4a, HudIntent::NotMii, true, true, false), now);
+        assert_eq!(hud_refresh(0x0a, HudIntent::Exact, true, true, false), now);
+        assert_eq!(hud_refresh(0x47, HudIntent::Exact, true, true, false), now);
+        assert_eq!(hud_refresh(0x4b, HudIntent::Exact, true, true, false), now);
+        assert_eq!(hud_refresh(0x4a, HudIntent::Exact, false, true, false), now);
+        assert_eq!(hud_refresh(0x4a, HudIntent::Exact, true, false, false), now);
+        assert_eq!(hud_refresh(0x4a, HudIntent::Exact, true, true, true), now);
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn deferred_exact_publication_refreshes_once_after_proof() {
+        let held = HudHold::start(hud_refresh(0x4a, HudIntent::Exact, true, true, false), 11);
+        assert!(matches!(held, HudHold::Withheld { generation: 11 }));
+        let (published, step) = held.on_proof(11, true, true);
+        assert_eq!(step, HudStep::RefreshRereadBind);
+        assert_eq!(published, HudHold::Published);
+        assert_eq!(published.on_proof(11, true, true).1, HudStep::Keep);
+        assert_eq!(published.on_terminal(11, true, true, HudTerminal::Refusal).1, HudStep::Keep);
+        let (sealed, step) = held.on_proof(12, true, true);
+        assert_eq!(step, HudStep::Keep);
+        assert_eq!(sealed, HudHold::Superseded { generation: 11 });
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn superseded_generation_cannot_publish() {
+        let old = HudHold::start(HudRefresh::DeferUntilPortrait, 1).supersede(2);
+        assert_eq!(old, HudHold::Superseded { generation: 1 });
+        assert_eq!(old.on_proof(1, true, true).1, HudStep::Keep);
+        assert_eq!(old.on_terminal(1, true, true, HudTerminal::Refusal).1, HudStep::Keep);
+        assert_eq!(old.on_terminal(1, true, true, HudTerminal::Budget).1, HudStep::Keep);
+        let requested = terminal_for_finish(HudTerminal::Refusal, true);
+        assert_eq!(requested, HudTerminal::Superseded);
+        let (kept, step) = HudHold::start(HudRefresh::DeferUntilPortrait, 1)
+            .on_terminal(1, true, true, requested);
+        assert_eq!(step, HudStep::Keep);
+        assert_eq!(kept, HudHold::Superseded { generation: 1 });
+        let newer = HudHold::start(HudRefresh::DeferUntilPortrait, 2);
+        assert_eq!(newer.on_proof(2, true, true).1, HudStep::RefreshRereadBind);
+        assert_eq!(terminal_for_finish(HudTerminal::Refusal, false), HudTerminal::Refusal);
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn refusal_retirement_and_budget_refresh_once_while_scene_exit_does_not() {
+        for terminal in [HudTerminal::Refusal, HudTerminal::Retirement, HudTerminal::Budget] {
+            let held = HudHold::start(HudRefresh::DeferUntilPortrait, 7);
+            let (done, step) = held.on_terminal(7, true, true, terminal);
+            assert_eq!(step, HudStep::RefreshFallback);
+            assert_eq!(done, HudHold::Published);
+            assert_eq!(done.on_terminal(7, true, true, terminal).1, HudStep::Keep);
+        }
+        let held = HudHold::start(HudRefresh::DeferUntilPortrait, 7);
+        let (dead, step) = held.on_terminal(7, true, true, HudTerminal::SceneExit);
+        assert_eq!(step, HudStep::Keep);
+        assert_eq!(dead, HudHold::Retired);
+        let (dead, step) = held.on_terminal(7, false, true, HudTerminal::Refusal);
+        assert_eq!(step, HudStep::Keep);
+        assert_eq!(dead, HudHold::Retired);
+        let (waiting, step) = held.on_terminal(7, true, false, HudTerminal::Refusal);
+        assert_eq!(step, HudStep::Keep);
+        assert_eq!(waiting, held);
+        let (dead, step) = held.on_proof(7, false, true);
+        assert_eq!(step, HudStep::Keep);
+        assert_eq!(dead, HudHold::Retired);
+        assert_eq!(held.retire().on_proof(7, true, true).1, HudStep::Keep);
+        assert_eq!(held.on_terminal(7, true, true, HudTerminal::Completed).1, HudStep::Keep);
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn foreign_callback_does_not_publish_and_a_later_service_proof_does() {
+        let held = HudHold::start(HudRefresh::DeferUntilPortrait, 4);
+        let (still, step) = held.on_proof(4, true, false);
+        assert_eq!(step, HudStep::Keep);
+        assert_eq!(still, held);
+        let (still, step) = still.on_terminal(4, true, false, HudTerminal::Budget);
+        assert_eq!(step, HudStep::Keep);
+        assert_eq!(still, held);
+        assert_eq!(still.on_proof(4, true, true).1, HudStep::RefreshRereadBind);
+        assert_eq!(rejected_deferral(true, false, true, false), HudStep::Keep);
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn fresh_pane_after_the_event_gates_the_bind() {
+        assert!(after_event_pane(Some(PaneRead { index: 0, part_ready: true })));
+        assert!(after_event_pane(Some(PaneRead { index: 0x12, part_ready: true })));
+        assert!(after_event_pane(Some(PaneRead { index: 0x1f, part_ready: true })));
+        assert!(!after_event_pane(Some(PaneRead { index: 0x20, part_ready: true })));
+        assert!(!after_event_pane(Some(PaneRead { index: 0, part_ready: false })));
+        assert!(!after_event_pane(None));
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn rejected_deferral_falls_back_only_for_the_current_owner() {
+        assert_eq!(rejected_deferral(true, false, true, true), HudStep::RefreshFallback);
+        assert_eq!(rejected_deferral(true, true, true, true), HudStep::Keep);
+        assert_eq!(rejected_deferral(true, false, false, true), HudStep::Keep);
+        assert_eq!(rejected_deferral(false, false, true, true), HudStep::Keep);
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn discard_reasons_choose_the_hud_terminal() {
+        assert_eq!(hud_terminal_for_discard(DISCARD_SUPERSEDED), HudTerminal::Superseded);
+        assert_eq!(hud_terminal_for_discard(DISCARD_DEPARTED), HudTerminal::Retirement);
+        assert_eq!(hud_terminal_for_discard(DISCARD_CONTAMINATED), HudTerminal::Refusal);
+        assert_eq!(hud_terminal_for_discard(DISCARD_UNREGISTERED), HudTerminal::Refusal);
+        assert_eq!(hud_terminal_for_discard(DISCARD_FULL), HudTerminal::Refusal);
+        assert_eq!(hud_terminal_for_discard("some other refusal"), HudTerminal::Refusal);
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn departed_discard_refreshes_only_a_current_owner() {
+        let terminal = hud_terminal_for_discard(DISCARD_DEPARTED);
+        assert_eq!(terminal, HudTerminal::Retirement);
+        let held = HudHold::start(HudRefresh::DeferUntilPortrait, 9);
+        let (published, step) = held.on_terminal(9, true, true, terminal);
+        assert_eq!(step, HudStep::RefreshFallback);
+        assert_eq!(published, HudHold::Published);
+        assert_eq!(published.on_terminal(9, true, true, terminal).1, HudStep::Keep);
+        let (dead, step) = held.on_terminal(9, false, true, terminal);
+        assert_eq!(step, HudStep::Keep);
+        assert_eq!(dead, HudHold::Retired);
+        let (waiting, step) = held.on_terminal(9, true, false, terminal);
+        assert_eq!(step, HudStep::Keep);
+        assert_eq!(waiting, held);
+        // Scene exit, owner destruction, and pipeline retirement retire the hold
+        // before completion. A later departed discard must not paint.
+        let retired = held.retire();
+        assert_eq!(retired.on_terminal(9, true, true, terminal).1, HudStep::Keep);
+        assert_eq!(retired.on_terminal(9, false, true, terminal).1, HudStep::Keep);
+        let superseded = terminal_for_finish(terminal, true);
+        assert_eq!(superseded, HudTerminal::Superseded);
+        assert_eq!(held.on_terminal(9, true, true, superseded).1, HudStep::Keep);
     }
 }

@@ -1,4 +1,5 @@
 //! Fresh, callback-scoped contracts for Quickplay's waiting practice.
+use super::handshake::{Identity, Sample};
 use super::native::{aligned, drained, preview_state, read, write};
 use std::mem::transmute;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -169,7 +170,9 @@ unsafe fn local_join(base: usize, service: usize, event: u64) -> Option<bool> {
 /// An unclassified notice also returns ownership rather than stalling behind
 /// the shield. A confidently local Join or native Leave notification may leave
 /// the editor open. Leave has no scene-transition consumer; the native base
-/// network block still pops and delivers it normally.
+/// network block still pops and delivers it normally. A resolved round
+/// (`+0x26a62`) keeps its online "nothing pending" meaning here; the Local
+/// Wireless caller observes that round separately through `ldn_handshake`.
 pub(super) unsafe fn pending_interruption(base: usize) -> Option<u64> {
     let service = service(base)?;
     let event = peek_match(base, service);
@@ -177,6 +180,21 @@ pub(super) unsafe fn pending_interruption(base: usize) -> Option<u64> {
     if read::<u8>(service, 0x26a62) != 0 { return Some(0); }
     let event = peek_front(base, service);
     Some(if passive_notification(base, service, event) { 0 } else { event })
+}
+
+/// Fresh guest-side round-handshake values of the same-session service, as
+/// owned numbers. The resolved byte is read before the mask: the native guest
+/// stores its acknowledgement bit on the host's round request and the resolved
+/// byte on the later commit, so a sample that already sees the resolved byte
+/// also sees that round's mask. The identity carries this callback's service
+/// address and the bound Local Wireless generation; either missing leaves the
+/// sample unbound. Nothing here is written, consumed or cleared, and no event
+/// kind is inferred from these two fields.
+pub(super) unsafe fn ldn_handshake(base: usize, generation: Option<u64>) -> Sample {
+    let Some(service) = service(base) else { return Sample::UNBOUND; };
+    let resolved: u8 = read(service, 0x26a62);
+    let ack: u32 = read(service, 0x26a34);
+    Sample { identity: generation.map(|generation| Identity { service, generation }), ack, resolved }
 }
 
 unsafe fn passive_notification(base: usize, service: usize, event: u64) -> bool {

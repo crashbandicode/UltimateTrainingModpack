@@ -160,10 +160,17 @@ pub fn next_from_original(
     choices: &[u32],
     original: Option<u32>,
 ) -> Option<(u32, Option<usize>)> {
+    let original = catalog_original(original);
     choices
         .first()
         .map(|kind| (*kind, Some(0)))
         .or_else(|| original.map(|kind| (kind, None)))
+}
+
+/// Slot 0 is a catalog fighter. `u32::MAX` and any other non-catalog kind are
+/// missing, not a selected identity.
+fn catalog_original(original: Option<u32>) -> Option<u32> {
+    original.filter(|kind| crate::TrioFighter::from_kind(*kind).is_some())
 }
 
 /// Ordered slots are zero-based internally; None is the original CSS slot 0.
@@ -174,6 +181,7 @@ pub fn next_cycle(
     choices: &[u32],
     original: Option<u32>,
 ) -> Option<(u32, Option<usize>)> {
+    let original = catalog_original(original);
     let position = cursor
         .filter(|i| *i < choices.len() && Forms::starting(choices[*i]).same_group(current))
         .or_else(|| cycle_position(choices, current));
@@ -307,7 +315,7 @@ mod tests {
         assert_eq!(Forms::starting(0x5a).body_state(1, 0), 3);
     }
     #[test]
-    fn player_visits_original_zero_and_cpu_wraps_numbered_slots() {
+    fn player_visits_original_zero_and_cpu_returns_when_original_is_known() {
         let selected = [0x0b, 0x5b, 0x25];
         assert_eq!(
             next_cycle(6, None, &selected, Some(6)),
@@ -330,6 +338,18 @@ mod tests {
             next_cycle(0x26, Some(2), &selected, None),
             Some((0x0b, Some(0)))
         );
+        // A known CPU original is the return between loops, not another numbered copy.
+        assert_eq!(
+            next_cycle(0x26, Some(2), &selected, Some(0x0a)),
+            Some((0x0a, None))
+        );
+        assert_eq!(
+            next_cycle(0x0a, None, &selected, Some(0x0a)),
+            Some((0x0b, Some(0)))
+        );
+        // Missing original does not become Mario, Ness, or a Mii class.
+        assert_eq!(next_cycle(0x0a, None, &selected, None), Some((0x0b, Some(0))));
+        assert_eq!(next_cycle(0x26, Some(2), &selected, Some(u32::MAX)), Some((0x0b, Some(0))));
         // Edited/reordered menu invalidates a stale cursor; actual group wins.
         assert_eq!(
             next_cycle(0x5a, Some(99), &selected, Some(6)),

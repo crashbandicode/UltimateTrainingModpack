@@ -2,7 +2,7 @@
 //! controller at `0x2310570` and keep separate parent binds. The retained owner
 //! is custom orchestration; native practice, Test, editor teardown and
 //! matchmaking still perform their own work.
-use super::{connected_native as contract, native, current_thread,
+use super::{connected_native as contract, handshake, ldn_lifecycle, native, current_thread,
     Origin, Phase, Session, ACTIVE, BASE, EDIT_LEAF_SCENE, EDIT_OWNER,
     EDIT_OWNED, EDIT_SCENE, RELEASED_SCENE, STATE};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -13,8 +13,19 @@ pub(super) fn forget(_seed: &super::draft::Draft) { super::ui_resume::discard();
 
 unsafe fn note_pending(s: &mut Session) {
     if !matches!(s.origin, Origin::Quickplay | Origin::LocalWireless) || s.interrupted { return; }
-    let Some(event) = contract::pending_interruption(BASE.load(Ordering::Acquire)) else { return; };
-    if event == 0 { return; }
+    let base = BASE.load(Ordering::Acquire);
+    let pending = contract::pending_interruption(base);
+    // Local Wireless alone also observes the service's round handshake. The
+    // native consumer that turns a committed round into a match-start event is
+    // practice-owned and does not exist while the editor owns the scene, so the
+    // queued-event peek alone reads that round as "nothing pending". Quickplay
+    // keeps the queued-event decision exactly and never touches the detector.
+    let local_wireless = s.origin == Origin::LocalWireless;
+    let sample = if local_wireless {
+        contract::ldn_handshake(base, ldn_lifecycle::generation_for(s.owner))
+    } else { handshake::Sample::UNBOUND };
+    let Some(interruption) = handshake::interruption(local_wireless, pending,
+        &mut s.ldn_handshake, sample) else { return; };
     // A real opponent's Join returns ownership to native waiting practice,
     // which completes matchmaking. Both it and an already queued match-start
     // remain unconsumed until the editor has released its resources.
@@ -22,8 +33,20 @@ unsafe fn note_pending(s: &mut Session) {
     // Explicit Save already handed this draft to native persistence. It is no
     // longer an unfinished interaction, even if matchmaking arrives during exit.
     if s.explicit_save_finished { s.snapshot_saved = true; }
-    s.observe_inputs("network_interruption");
-    s.event("network_interruption", [event, 0, 0, 0]);
+    match interruption {
+        handshake::Interruption::Network(event) => {
+            s.observe_inputs("network_interruption");
+            s.event("network_interruption", [event, 0, 0, 0]);
+        }
+        handshake::Interruption::Handshake => {
+            // Same capture, release and re-entry path as a queued event. The
+            // flags are left exactly as found; the rebuilt native practice
+            // consumes them and queues its own match-start.
+            s.observe_inputs("ldn_handshake_committed");
+            s.event("ldn_handshake_committed", [u64::from(sample.ack), u64::from(sample.resolved),
+                sample.identity.map_or(0, |identity| identity.generation), 0]);
+        }
+    }
 }
 
 pub(super) unsafe fn before_parent() {
@@ -98,6 +121,8 @@ pub(super) unsafe fn before_edit(scene: usize, frame: usize, context: usize) -> 
 fn relinquish(s: &mut Session, event: &'static str) {
     if let Some(ticket) = s.restore_ticket.take() { super::ui_resume::restore_failed(ticket); }
     s.phase = Phase::Refused;
+    // A refused session is never interrupted later; its handshake baseline ends here.
+    s.ldn_handshake.end();
     s.event(event, [0; 4]);
     RETAINED.store(0, Ordering::Release);
     ACTIVE.store(false, Ordering::Release);
@@ -299,6 +324,15 @@ unsafe fn practice_frame(scene: usize, frame: usize) -> usize {
                 let mut state = STATE.lock().unwrap(); let s = state.as_mut().unwrap();
                 s.phase = Phase::Quitting; s.wait_frames = 0;
                 s.event("connected_practice_quit_requested", [scene as u64, owner as u64, 0, 0]);
+                if s.origin == Origin::LocalWireless {
+                    // Earliest same-session baseline: the accepted quit has just
+                    // refused a non-zero acknowledgement mask. Only a genuine
+                    // resolved-zero reading arms; nothing fires from here.
+                    let sample = contract::ldn_handshake(base, ldn_lifecycle::generation_for(owner));
+                    let armed = s.ldn_handshake.arm(sample);
+                    s.event("ldn_handshake_baseline", [u64::from(armed), u64::from(sample.ack),
+                        u64::from(sample.resolved), sample.identity.map_or(0, |identity| identity.generation)]);
+                }
             }
         }
     }

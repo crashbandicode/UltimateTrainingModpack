@@ -12,7 +12,7 @@ Open **Character Extras → Mii Brawler**, **Mii Swordfighter** or **Mii Gunner*
 
 ## Use it in a cycle
 
-Add the class portrait in **Characters → Character Cycles**. When the [cycle](fighter-hotswap.md) reaches it, that role loads the Mii you chose. If that class is on screen now, it reloads when you close the menu; other choices apply on a later cycle. Player 1's own character-select Mii stays at slot 0, so it is greyed in the Player list.
+Add the class portrait in **Characters → Character Cycles**. When the [cycle](fighter-hotswap.md) reaches it, that role loads the Mii you chose. If that class is on screen now, it reloads when you close the menu; other choices apply on a later cycle. Each role's own character-select Mii stays at that role's slot 0 and is greyed only in that role's list. A class with no admitted Mii does not show 0.
 
 ## Make a new Mii
 

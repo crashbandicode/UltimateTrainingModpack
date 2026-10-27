@@ -291,13 +291,28 @@ mod tests {
                 .kind(),
             0x26
         );
+        // Appended Mii classes lengthen the table. Down from its final cell
+        // wraps to row 0 and does not replace the confirmed fighter.
+        let last = CHOICES.len() - 1;
+        let last_row = last / NX_SUBMENU_COLUMNS;
+        let last_col = last % NX_SUBMENU_COLUMNS;
+        assert_eq!(picker.toggles.rows, last_row + 1);
+        assert_eq!(picker.toggles.get(last_row, last_col).unwrap().title, CHOICES[last].1);
+        picker.toggles.select(last_row, last_col);
         picker.on_down();
         assert_eq!(picker.toggles.state.selected_row(), Some(0));
+        assert_eq!(
+            serde_json::from_str::<TrioFighter>(&serde_json::to_string(&picker).unwrap())
+                .unwrap()
+                .kind(),
+            0x26
+        );
     }
     #[test]
-    fn full_menu_reopens_selected_page_and_commits_a_new_fighter() {
+    fn full_menu_reopens_selected_portrait_and_commits_a_new_fighter() {
         let mut app = unsafe { crate::create_app() };
         let mut initial = crate::BASE_MENU;
+        initial.trio_practice = crate::OnOff::ON;
         initial.player_character = TrioFighter::PALUTENA;
         app.update_all_from_json(&serde_json::to_string(&initial).unwrap());
         let player = app
@@ -317,14 +332,33 @@ mod tests {
             .submenus
             .select(index / cols, index % cols);
         app.on_a();
-        assert_eq!(app.selected_submenu().selected_toggle().title, "Palutena");
-        assert!(app.selected_submenu().toggles.state.selected_row().unwrap() >= NX_SUBMENU_ROWS);
-        app.selected_submenu().toggles.select(19, 3);
+        assert!(app.page == training_mod_tui::AppPage::ROSTER);
+        assert_eq!(app.roster_purpose, training_mod_tui::roster_grid::RosterPurpose::ManualSwap);
+        assert_eq!(app.roster_grid.cursor_info().kind(), Some(TrioFighter::PALUTENA.kind()));
+        'find_sora: for _ in 0..7 {
+            for _ in 0..13 {
+                if app.roster_grid.cursor_info().kind() == Some(0x5d) { break 'find_sora; }
+                app.on_right();
+            }
+            app.on_down();
+        }
+        assert_eq!(app.roster_grid.cursor_info().kind(), Some(0x5d));
+        assert_eq!(app.manual_selected_kind(training_mod_tui::roster_grid::Role::Player),
+            Some(TrioFighter::PALUTENA.kind()));
         app.on_a();
-        app.on_b();
+        assert_eq!(app.take_pending_manual_selection(), None);
+        for _ in 0..training_mod_tui::roster_grid::MANUAL_FLASH_FRAMES {
+            app.advance_manual_selection();
+        }
+        assert!(app.page == training_mod_tui::AppPage::CLOSE);
+        assert_eq!(app.take_pending_manual_selection(),
+            Some((training_mod_tui::roster_grid::Role::Player, 0x5d)));
+        assert_eq!(app.take_pending_manual_selection(), None);
         let menu: crate::TrainingModpackMenu =
             serde_json::from_str(&app.current_settings_to_json()).unwrap();
         assert_eq!(menu.player_character.name(), "Sora");
         assert_eq!(menu.save_state_enable, crate::BASE_MENU.save_state_enable);
+        assert_eq!(menu.player_roster, initial.player_roster);
+        assert_eq!(menu.cpu_roster, initial.cpu_roster);
     }
 }

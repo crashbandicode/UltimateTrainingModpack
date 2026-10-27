@@ -3,6 +3,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::roster_grid::{Direction, Outcome, Role, RosterGrid, RosterPurpose};
+use crate::stage_forms::{Form, Forms, Selection};
 use crate::{InputControl, StatefulList, SubMenu, SubMenuType, Tab};
 
 #[derive(PartialEq, Serialize, Clone, Copy)]
@@ -56,7 +57,10 @@ pub struct App<'a> {
     /// Training's action view is independent of the saved lobby entry mode.
     stage_training_view: Option<crate::stage_menu::Mode>,
     stage_catalog: Vec<u32>,
-    pending_stage: Option<u32>,
+    stage_forms: Vec<[Option<u32>; 3]>,
+    /// Per-opening Direct drafts never borrow or overwrite the rotation forms.
+    stage_direct_forms: Forms,
+    pending_stage: Option<Selection>,
     mii_catalog: Option<crate::mii_menu::CatalogMenu>,
     pending_mii: Option<crate::mii_menu::PendingSelection>,
     #[cfg(feature = "mii-editor-alpha")]
@@ -96,6 +100,8 @@ impl<'a> App<'a> {
             stage_direct_enabled: false,
             stage_training_view: None,
             stage_catalog: Vec::new(),
+            stage_forms: Vec::new(),
+            stage_direct_forms: Forms::NORMAL,
             pending_stage: None,
             mii_catalog: None,
             pending_mii: None,
@@ -118,6 +124,10 @@ impl<'a> App<'a> {
         self.stage_catalog = stages;
     }
 
+    pub fn configure_stage_forms(&mut self, forms: Vec<[Option<u32>; 3]>) {
+        self.stage_forms = forms;
+    }
+
     pub fn open_stage_menu(&mut self, enabled: bool, preferences: crate::stage_menu::Preferences) {
         self.open_stage_menu_in_context(enabled, preferences, false);
     }
@@ -132,6 +142,12 @@ impl<'a> App<'a> {
         self.stage_preferences = preferences;
         self.stage_training_view = (enabled && ordinary_training)
             .then_some(crate::stage_menu::Mode::Direct);
+        self.stage_direct_forms = Forms::NORMAL;
+        if !ordinary_training {
+            if let Some(index) = self.stage_catalog.iter().position(|id| *id == preferences.direct_stage) {
+                let _ = self.stage_direct_forms.set(index, preferences.direct_form);
+            }
+        }
         self.pending_stage = None;
         if let Some(submenu) = self.tabs.iter_mut().flat_map(|tab| tab.submenus.iter_mut())
             .flatten().find(|submenu| submenu.id == "lobby_stages") {
@@ -173,15 +189,55 @@ impl<'a> App<'a> {
     }
 
     pub fn stage_help(&self) -> &'static str {
-        if self.stage_is_direct() && self.stage_training_view.is_some() {
-            "A Apply now (Training only)   X Lobby Stage Rotation   L/R Page   B Back"
-        } else if self.stage_is_direct() {
-            "A Apply now + save lobby stage   X Lobby Stage Rotation   L/R Page   B Back"
-        } else if self.stage_direct_enabled {
-            "A Add/Remove   X Change Stage Now   L/R Page   B Back   Next lobby entry only"
-        } else {
-            "A Add/Remove   L/R Page   B Back   Next lobby entry only"
+        // Static strings preserve the native renderers' borrow contract while
+        // showing the highlighted form on every event-driven redraw.
+        macro_rules! help {
+            ($controls:literal) => {
+                match self.stage_selection().map(|selection| selection.form) {
+                    Some(Form::Normal) => concat!("Normal | Y Form | ", $controls),
+                    Some(Form::Omega) => concat!("Omega / Final Destination | Y Form | ", $controls),
+                    Some(Form::Battlefield) => concat!("Battlefield | Y Form | ", $controls),
+                    None => $controls,
+                }
+            };
         }
+        if self.stage_is_direct() && self.stage_training_view.is_some() {
+            help!("A Apply (Training only) | X Rotation | L/R Page | B Back")
+        } else if self.stage_is_direct() {
+            help!("A Apply + save lobby | X Rotation | L/R Page | B Back")
+        } else if self.stage_direct_enabled {
+            help!("A Add/Remove | X Direct | L/R Page | B Back | Next lobby entry only")
+        } else {
+            help!("A Add/Remove | L/R Page | B Back | Next lobby entry only")
+        }
+    }
+
+    fn stage_index(&self) -> Option<usize> {
+        if !self.stage_page_active() { return None; }
+        let tab = self.tabs.items.get(self.tabs.state.selected()?)?;
+        let toggles = &tab.submenus.get(tab.submenus.state.selected_row()?,
+            tab.submenus.state.selected_col()?)?.toggles;
+        (toggles.state.selected_row()? * toggles.cols + toggles.state.selected_col()?).checked_sub(1)
+    }
+
+    /// Base identity plus the displayed form, validated against the supplied
+    /// catalog. All, missing catalog data and unsupported pairs produce no intent.
+    pub fn stage_selection(&self) -> Option<Selection> {
+        let index = self.stage_index()?;
+        let forms = if self.stage_is_direct() { &self.stage_direct_forms }
+            else { &self.stage_preferences.rotation_forms };
+        let form = forms.get(index)?;
+        self.stage_forms.get(index)?[form as usize]?;
+        Some(Selection { stage: *self.stage_catalog.get(index)?, form })
+    }
+
+    fn edit_stage_form(&mut self) {
+        let Some(index) = self.stage_index() else { return; };
+        let Some(selection) = self.stage_selection() else { return; };
+        let next = selection.form.next(self.stage_forms[index]);
+        let forms = if self.stage_is_direct() { &mut self.stage_direct_forms }
+            else { &mut self.stage_preferences.rotation_forms };
+        let _ = forms.set(index, next);
     }
 
     fn page_stage_menu(&mut self, next: bool) {
@@ -194,7 +250,7 @@ impl<'a> App<'a> {
     }
 
     /// Close intents are consumed once; opening/cancelling never submits one.
-    pub fn take_pending_stage(&mut self) -> Option<u32> {
+    pub fn take_pending_stage(&mut self) -> Option<Selection> {
         if self.page != AppPage::CLOSE { return None; }
         self.pending_stage.take()
     }
@@ -495,7 +551,7 @@ impl<'a> App<'a> {
         self.save_settings();
     }
 
-    /// Green identity for the hat grid. Does not write fighter or hat lists.
+    /// Captured CPU identity for slot 0 and the hat-grid highlight. Does not write lists.
     pub fn set_original_cpu_kind(&mut self, kind: Option<u32>) {
         self.original_cpu_kind = kind.map(crate::roster_grid::group_kind);
     }
@@ -520,6 +576,12 @@ impl<'a> App<'a> {
     pub fn qualify_ordinary_cpu_cycle(&mut self, qualified:bool) {
         if let Some(menu)=self.mii_catalog.as_mut() {menu.qualify_ordinary_cpu_cycle(qualified);}
     }
+    /// Numbered CPU configuration for one class, using the mounted catalog.
+    /// Manual swap keeps `alpha_cpu_cycle` and does not call this.
+    #[cfg(feature="mii-ordinary-cpu-alpha")]
+    pub fn cpu_numbered_saved(&self, kind: u32) -> Option<training_mod_mii::selection::Choice> {
+        self.mii_catalog.as_ref().and_then(|menu| menu.cpu_numbered_choice(kind, &self.mii_preferences))
+    }
     pub fn roster_excluded(&self, role: Role, kind: u32) -> bool {
         if self.roster_purpose == RosterPurpose::ManualSwap {
             if role == Role::Player && !self.player_swapping_enabled() { return true; }
@@ -540,29 +602,108 @@ impl<'a> App<'a> {
         if self.roster_purpose==RosterPurpose::KirbyHats && (0x48..=0x4a).contains(&kind) {
             return self.hat_cell_disabled(kind);
         }
-        #[cfg(feature="mii-ordinary-cpu-alpha")]
-        if (0x48..=0x4a).contains(&kind) && role==Role::Cpu {
-            return !(self.roster_purpose==RosterPurpose::FighterCycles
-                && self.mii_catalog.as_ref().is_some_and(|m|m.alpha_cpu_cycle(kind)));
+        // Slot 0 is only the captured original. An unadmitted Mii stays
+        // unselectable, but that is not an original identity.
+        if self.roster_slot_zero(role, kind) {
+            return true;
         }
-        #[cfg(feature="mii-saved-alpha")]
         if (0x48..=0x4a).contains(&kind) {
-            return !(self.roster_purpose==RosterPurpose::FighterCycles
-                && role==Role::Player && self.mii_catalog.as_ref().is_some_and(|m|m.alpha_player_cycle(kind)));
+            if self.roster_purpose != RosterPurpose::FighterCycles || !self.mii_cycle_admitted(role, kind) {
+                return true;
+            }
+            return false;
         }
-        self.roster_purpose == RosterPurpose::FighterCycles
-            && role == Role::Player
-            && self.player_cycle_exclusion() == Some(crate::roster_grid::group_kind(kind))
+        false
     }
 
-    /// Native group the Player cycle skips. An Ice Climbers original is released while its
-    /// Solo Popo preference differs from the cycle's, since those load different bodies.
+    /// Grey badge 0: this role's captured character-select group, and only when
+    /// adding it would repeat slot 0. A missing or sentinel kind matches nothing.
+    pub fn roster_slot_zero(&self, role: Role, kind: u32) -> bool {
+        if self.roster_purpose != RosterPurpose::FighterCycles {
+            return false;
+        }
+        let Some(original) = self.captured_original(role) else {
+            return false;
+        };
+        if crate::roster_grid::group_kind(original) != crate::roster_grid::group_kind(kind) {
+            return false;
+        }
+        if (0x48..=0x4a).contains(&crate::roster_grid::group_kind(original)) {
+            // Manual swap uses alpha_cpu_cycle and never reaches this FighterCycles
+            // predicate. CPU slot 0 is the captured configuration with no numbered
+            // alternative. Player admission is unchanged.
+            #[cfg(feature = "mii-ordinary-cpu-alpha")]
+            if role == Role::Cpu {
+                return self.mii_catalog.as_ref().is_some_and(|menu|
+                    menu.cpu_unnumbered_original(kind, &self.mii_preferences));
+            }
+            return !self.mii_cycle_admitted(role, kind);
+        }
+        self.role_cycle_exclusion(role) == Some(crate::roster_grid::group_kind(kind))
+    }
+
+    fn captured_original(&self, role: Role) -> Option<u32> {
+        let kind = match role {
+            Role::Player => self.original_player_kind?,
+            Role::Cpu => self.original_cpu_kind?,
+        };
+        let group = crate::roster_grid::group_kind(kind);
+        self.roster_kinds
+            .iter()
+            .any(|candidate| *candidate == kind || *candidate == group)
+            .then_some(kind)
+    }
+
+    /// Admitted Mii class tile. False when the catalog or role qualification is
+    /// missing; that absence is not a selected Swordfighter.
+    fn mii_cycle_admitted(&self, role: Role, kind: u32) -> bool {
+        if self.roster_purpose != RosterPurpose::FighterCycles || !(0x48..=0x4a).contains(&kind) {
+            return false;
+        }
+        match role {
+            Role::Cpu => {
+                #[cfg(feature = "mii-ordinary-cpu-alpha")]
+                {
+                    self.mii_catalog.as_ref().is_some_and(|menu| menu.alpha_cpu_cycle(kind))
+                }
+                #[cfg(not(feature = "mii-ordinary-cpu-alpha"))]
+                {
+                    false
+                }
+            }
+            Role::Player => {
+                #[cfg(feature = "mii-saved-alpha")]
+                {
+                    self.mii_catalog.as_ref().is_some_and(|menu| menu.alpha_player_cycle(kind))
+                }
+                #[cfg(not(feature = "mii-saved-alpha"))]
+                {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Native group this role's numbered cycle skips. Player Ice Climbers is
+    /// released when its original and cycle Solo settings differ. CPU has one
+    /// Solo setting, so those two flags are the same value.
+    fn role_cycle_exclusion(&self, role: Role) -> Option<u32> {
+        let original = self.captured_original(role)?;
+        let (original_solo, cycle_solo) = match role {
+            Role::Player => (
+                self.read_id("solo_popo_original").first().is_some_and(|on| *on != 0),
+                self.roster_solo_enabled(Role::Player),
+            ),
+            Role::Cpu => {
+                let solo = self.roster_solo_enabled(Role::Cpu);
+                (solo, solo)
+            }
+        };
+        crate::roster_grid::cycle_exclusion(Some(original), original_solo, cycle_solo)
+    }
+
     fn player_cycle_exclusion(&self) -> Option<u32> {
-        crate::roster_grid::cycle_exclusion(
-            self.original_player_kind,
-            self.read_id("solo_popo_original").first().is_some_and(|on| *on != 0),
-            self.roster_solo_enabled(Role::Player),
-        )
+        self.role_cycle_exclusion(Role::Player)
     }
 
     fn exclude_original_player(&mut self) {
@@ -636,27 +777,44 @@ impl<'a> App<'a> {
             return vec![None; self.roster_kinds.len()];
         }
         let excluded = match self.roster_purpose {
-            RosterPurpose::FighterCycles if role == Role::Player => self.original_player_kind.filter(|kind|self.roster_excluded(role,*kind)),
+            RosterPurpose::FighterCycles => self
+                .role_cycle_exclusion(role)
+                .filter(|kind| self.roster_slot_zero(role, *kind)),
             RosterPurpose::KirbyHats => Some(0x06),
             _ => None,
         };
         let all = values.first() == Some(&1);
         let order = if all {
             crate::roster_grid::css_order(&self.roster_kinds, values, excluded)
-                .into_iter()
-                .filter(|kind| !self.hat_cell_disabled(*kind) && !self.roster_excluded(role,*kind))
-                .collect()
+        } else if self.roster_purpose == RosterPurpose::FighterCycles {
+            // Stored ranks retain choices across scenes. Display the numbered
+            // order after this role's current original/unavailable cells are
+            // excluded, just as the cycle does, without rewriting preferences.
+            let mut ranked: Vec<_> = self.roster_kinds.iter().copied().enumerate()
+                .filter_map(|(index, kind)| crate::roster_grid::rank(values, index)
+                    .map(|rank| (rank, kind)))
+                .collect();
+            ranked.sort_unstable_by_key(|(rank, _)| *rank);
+            ranked.into_iter().map(|(_, kind)| kind).collect()
         } else {
             Vec::new()
         };
+        let order: Vec<_> = order.into_iter()
+            .filter(|kind| !self.hat_cell_disabled(*kind) && !self.roster_excluded(role, *kind))
+            .collect();
         self.roster_kinds
             .iter()
             .map(|kind| {
                 if self.hat_cell_disabled(*kind) {
                     None
-                } else if self.roster_excluded(role, *kind) {
+                } else if self.roster_slot_zero(role, *kind) {
                     Some(0)
-                } else if all {
+                } else if (0x48..=0x4a).contains(kind)
+                    && self.roster_purpose == RosterPurpose::FighterCycles
+                    && !self.mii_cycle_admitted(role, *kind)
+                {
+                    None
+                } else if all || self.roster_purpose == RosterPurpose::FighterCycles {
                     order
                         .iter()
                         .position(|k| {
@@ -778,15 +936,13 @@ impl<'a> InputControl for App<'a> {
     fn on_a(&mut self) {
         if self.pending_manual.is_some() { return; }
         if self.stage_page_active() && self.stage_is_direct() {
-            let submenu = self.selected_submenu();
-            let index = submenu.toggles.state.selected_row().unwrap_or(0) * submenu.toggles.cols
-                + submenu.toggles.state.selected_col().unwrap_or(0);
             // Cell zero means All in Rotation only; it never becomes a live request.
-            if let Some(stage) = index.checked_sub(1).and_then(|i| self.stage_catalog.get(i)).copied() {
+            if let Some(selection) = self.stage_selection() {
                 if self.stage_training_view.is_none() {
-                    self.stage_preferences.direct_stage = stage;
+                    self.stage_preferences.direct_stage = selection.stage;
+                    self.stage_preferences.direct_form = selection.form;
                 }
-                self.pending_stage = Some(stage);
+                self.pending_stage = Some(selection);
                 // Save edited Mii preferences, but do not issue another native action.
                 self.pending_mii = None;
                 self.page = AppPage::CLOSE;
@@ -971,7 +1127,11 @@ impl<'a> InputControl for App<'a> {
     }
     fn on_y(&mut self) {
         if self.pending_manual.is_some() { return; }
-        if self.stage_page_active() && self.stage_is_direct() { return; }
+        if self.stage_page_active() {
+            self.edit_stage_form();
+            self.save_settings();
+            return;
+        }
         if self.mii_page_active() { return; }
         // Clear current toggle, for toggles w/ weighted selections
         match self.page {

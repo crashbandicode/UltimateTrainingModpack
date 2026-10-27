@@ -37,6 +37,7 @@ impl std::ops::Deref for Track {
 }
 struct Prepared {
     before:native::Snapshot, origin_scalars:Scalars,
+    hat_change:bool,
     origin_index:u16,origin_record:Option<[u8;104]>,
     descriptor:[u8;0x70], publish:Option<Configuration>, destination:Destination, same_class:Option<SameClass>, replay:Option<training_mod_consts::mii::replay::Selection>,
 }
@@ -109,6 +110,14 @@ pub(super) fn cpu_context()->Option<(MiiClass,training_mod_consts::mii::inventor
     if s.departed || !s.menu_valid || s.capture || s.track.is_some() || s.request.is_some() {return None;}
     s.owner.as_ref().filter(|o|o.origin.binding.epoch==epoch())
         .and_then(|o|o.live.target.publish(o.origin_saved)).map(|c|(c.canonical().class,c.canonical()))
+}
+/// Captured saved-Mii original for menu numbered-cycle exposure.
+/// The live class is not an original. None leaves the menu unresolved.
+pub(super) fn cpu_original_canonical()->Option<training_mod_consts::mii::inventory::Canonical> {
+    let s=STATE.lock().unwrap();
+    if s.departed || !s.menu_valid || s.capture || s.track.is_some() || s.request.is_some() {return None;}
+    s.owner.as_ref().filter(|o|o.origin.binding.epoch==epoch())
+        .and_then(|o|o.origin_saved).map(|configuration|configuration.canonical())
 }
 pub(super) fn replay_catalog()->Option<Arc<Catalog>> {
     let s=STATE.lock().unwrap();
@@ -420,6 +429,13 @@ unsafe fn begin(entry:*mut u8)->bool {
         return false;
     }
     if !ready_descriptor(entry,&expected.descriptor) {return false;}
+    // Keep the immutable identity/role origin, but never re-stage its stale native rank.
+    // The current rank must already have passed menu recapture or exact completion;
+    // the fresh preflight and every transaction phase below remain byte-exact.
+    let live_origin=match training_mod_consts::mii::ordinary_cpu::with_native_rank(origin.descriptor,&expected.descriptor) {
+        Ok(descriptor)=>descriptor,
+        Err(reason)=>{refuse_request(request,reason);note(reason);return false;}
+    };
     let menu=setting(&MENU);
     // Only source/catalog/row target qualification can skip a cycle choice.
     // Current-owner, SameClass, INSTALL and publication checks remain below this resolver.
@@ -427,12 +443,13 @@ unsafe fn begin(entry:*mut u8)->bool {
         if !training_mod_consts::mii::ordinary_cpu::supported_kind(c.canonical().class as u32) {
             return Err("CPU class not qualified");
         }
-        if c.tokens().hat!=origin.scalars.e.hat {return Err("CPU unchanged hat required");}
+        if training_mod_consts::mii::ordinary_cpu::cpu_hat_route(origin.layout,expected.scalars.e.hat,c.tokens().hat)?
+            && !provenance::cpu_headgear_fingerprints() {return Err("CPU headgear fingerprint mismatch");}
         native::target_rows(c)?;
-        Ok((Target::mii(c),training_mod_consts::mii::ordinary_cpu::staged_descriptor_in(origin.layout,origin.binding.owner as usize,origin.descriptor,Some(c)).ok_or("CPU backend selector changed")?))
+        Ok((Target::mii(c),training_mod_consts::mii::ordinary_cpu::staged_descriptor_in(origin.layout,origin.binding.owner as usize,live_origin,Some(c)).ok_or("CPU backend selector changed")?))
     };
     let qualify=|step:mii_cycle::Step|->Result<(Target,[u8;0x70]),&'static str> {
-        let mut descriptor=origin.descriptor;
+        let mut descriptor=live_origin;
         let target=match step.target {
             mii_cycle::Target::Saved(choice)=>{
                 let c=catalog.configuration(choice)
@@ -453,7 +470,7 @@ unsafe fn begin(entry:*mut u8)->bool {
                 descriptor[0x43]=0;
                 let index=if origin.layout.waiting() {origin.index}else{0};
                 descriptor[0x46..0x48].copy_from_slice(&index.to_le_bytes());
-                if kind==origin.original_kind && descriptor==origin.descriptor {Target::ORIGINAL}
+                if kind==origin.original_kind && descriptor==live_origin {Target::ORIGINAL}
                 else {Target::fighter(kind)}
             }
         };
@@ -535,6 +552,14 @@ unsafe fn begin(entry:*mut u8)->bool {
         Err(reason)=>{refuse_request(request,reason);note(reason);return false;}
         Ok(_)=>{refuse_request(request,"preflight current configuration changed");note("preflight current configuration changed");return false;}
     };
+    // Include saved/ordinary returns. Admission and phase publication both recheck
+    // the current-to-target transition; the origin's hat alone is insufficient.
+    let hat_change=match training_mod_consts::mii::ordinary_cpu::cpu_hat_route(current.layout,
+        current.scalars.e.hat,publish.map_or(origin.scalars.e.hat,|c|c.tokens().hat)) {
+        Ok(changed) if !changed || provenance::cpu_headgear_fingerprints()=>changed,
+        Ok(_)=>{refuse_request(request,"CPU headgear fingerprint mismatch");note("CPU headgear fingerprint mismatch");return false;}
+        Err(reason)=>{refuse_request(request,reason);note(reason);return false;}
+    };
     // A qualified already-active group/configuration advances only its numbered cursor;
     // no INSTALL or record publication is needed.
     if descriptor==current.descriptor && ready(entry,descriptor_kind(&descriptor))
@@ -567,7 +592,8 @@ unsafe fn begin(entry:*mut u8)->bool {
     // state changed since it was queued. Only the qualified no-INSTALL branch above applies.
     if !request.can_install() {clear_request(request);return false;}
     let same_class=match (active,publish) {
-        (Some(before),Some(after)) if before.canonical().class==after.canonical().class
+        (Some(before),Some(after)) if !hat_change
+            && training_mod_consts::mii::ordinary_cpu::retained_same_class_candidate(before,after)
             && current.index==current.binding.record_index
             && u16::from_le_bytes([descriptor[0x46],descriptor[0x47]])==current.binding.record_index=>
             match native::prepare_same_class(current,before,after) {
@@ -593,7 +619,7 @@ unsafe fn begin(entry:*mut u8)->bool {
         };
         let ticket=Ticket{epoch:epoch(),entry:entry as usize,sequence};
         let t=Track {ticket,gate:Gate::new(ticket).unwrap(),token,installing:true,retained_o:false,
-            data:Arc::new(Prepared {before:current,origin_scalars:origin.scalars,
+            data:Arc::new(Prepared {before:current,origin_scalars:origin.scalars,hat_change,
                 origin_index:origin.index,origin_record:training_mod_consts::mii::role_owner::current_record_claim(origin.original_kind,origin.index)
                     .then_some(origin.current_record),
                 descriptor,publish,destination,same_class,replay:request.replay()})};

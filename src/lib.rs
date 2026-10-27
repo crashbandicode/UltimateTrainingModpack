@@ -73,6 +73,8 @@ pub mod practice_stage_request;
 mod lobby_stage_probe;
 #[cfg(feature = "lobby-stage-probe")]
 mod lobby_stage_cycle;
+#[cfg(feature = "training-stage-rotation-alpha")]
+mod training_stage_rotation;
 #[cfg(feature = "stage-asset-probe")]
 mod stage_asset_probe;
 mod hang_trace;

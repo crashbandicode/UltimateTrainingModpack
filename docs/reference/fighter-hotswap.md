@@ -24,7 +24,7 @@ practice, with no matching character-select pick or re-entry.
 | Role | Order | Defaults |
 | --- | --- | --- |
 | Player 1 | Numbered fighters, then **slot 0** (your character-select fighter in its original starting form), then slot 1 again | Mr. Game & Watch, Palutena, Pikachu |
-| CPU | Its own list. A CPU outside the list starts at its first choice | Pikachu, Kirby, Bowser, Bayonetta |
+| CPU | Its own numbered fighters, then **slot 0** (the CPU's captured character-select fighter), then its first numbered choice again | Pikachu, Kirby, Bowser, Bayonetta |
 
 A fresh Training visit clears the previous cycle position, including after a
 Mii swap, so original Ice Climbers follows its own Solo setting.
@@ -37,10 +37,10 @@ order; **blue, top-right** numbers are the CPU's. The button table is in the
 
 - Close the menu to apply changes. Previewing a form alone changes nothing.
 - Remove and add a group to move it to the end. There is no eight-fighter limit.
-- P1's original group appears as grey **0** and cannot be added, except Ice
-  Climbers with the opposite Solo Popo setting, or a Mii class with another saved
-  Mii chosen (see the [Mii guide](../mii-fighters.md)). The CPU's original
-  fighter stays selectable.
+- Each role's original group appears as grey **0** on that role's numbers and
+  cannot be added, except Player 1's Ice Climbers with the opposite Solo Popo
+  setting, or a Mii class with another saved Mii chosen (see the
+  [Mii guide](../mii-fighters.md)). An unadmitted Mii class is not slot 0.
 - These are plugin roster settings, not new game slots. Portrait icons are the
   SmashWiki stock icons listed in the
   [asset manifest](../../scripts/roster-grid/assets/sources.json).
@@ -54,9 +54,9 @@ Pyra → shortcut → Charizard → (Down+B) Squirtle → shortcut → next grou
 
 **All** (the Smash Ball tile, or **ZL**) follows the character-select rows, left
 to right and top to bottom, with each group once in its configured starting form
-(default Pyra and Squirtle). It excludes P1's original group, except the opposite
-Solo Popo configuration, and includes the CPU's original fighter. Each role's All
-is independent, and picking a fighter while All is active starts a custom order.
+(default Pyra and Squirtle). It excludes that role's original group, except
+Player 1's opposite Solo Popo configuration. Each role's All is independent,
+and picking a fighter while All is active starts a custom order.
 The layout matches the tested all-unlocked character-select screen; other save
 layouts are not read.
 

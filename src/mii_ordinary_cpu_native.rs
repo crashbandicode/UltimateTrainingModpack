@@ -108,7 +108,7 @@ unsafe fn retained_origin(track:&super::Track)->Result<(),&'static str> {
 fn target(track:&super::Track)->shared::PublicationTarget<'_> {
     shared::PublicationTarget {before:&track.before,descriptor:&track.descriptor,
         payload:track.publish.filter(|_|u16::from_le_bytes([track.descriptor[0x46],track.descriptor[0x47]])==track.before.binding.record_index),
-        scalars:track.publish.map_or(track.origin_scalars,Scalars::saved),source:None}
+        scalars:track.publish.map_or(track.origin_scalars,Scalars::saved),source:None,hat_change:track.hat_change}
 }
 pub(super) unsafe fn publish(track:&super::Track,selected:usize,evidence:&mut Option<Publication>)
     ->Result<(),&'static str> {
@@ -152,7 +152,7 @@ pub(super) unsafe fn completed(track:&super::Track)->Result<Snapshot,&'static st
 pub(super) unsafe fn generic_completed(g:&super::Generic,kind:u32,cursor:Option<usize>)
     ->Result<Snapshot,&'static str> {
     let completion=shared::completed(shared::PublicationTarget {
-        before:&g.before,descriptor:&g.descriptor,payload:None,scalars:g.before.scalars,source:None,
+        before:&g.before,descriptor:&g.descriptor,payload:None,scalars:g.before.scalars,source:None,hat_change:false,
     })?;
     let now=completion.now;
     let mut state=super::STATE.lock().unwrap();
@@ -161,11 +161,12 @@ pub(super) unsafe fn generic_completed(g:&super::Generic,kind:u32,cursor:Option<
     let reservation_held=state.reservation.held();
     let owner=state.owner.as_mut().filter(|o|o.expected==g.expected && o.live==g.live)
         .ok_or("generic CPU owner changed during INSTALL")?;
+    let live_origin=policy::with_native_rank(owner.origin.descriptor,&now.descriptor)?;
     let destination=policy::generic_ordinary_commit_in(now.layout,owner.origin.index,policy::GenericOrdinaryFacts {
         reservation_held,transaction_busy,origin_is_saved:owner.origin_saved.is_some(),
         live_is_saved:owner.live.target.saved().is_some(),kind,origin_kind:owner.origin.original_kind,
         published_kind:super::descriptor_kind(&now.descriptor),index:now.index,
-        descriptor_equals_origin:now.descriptor==owner.origin.descriptor,roster_cursor:cursor,
+        descriptor_equals_origin:now.descriptor==live_origin,roster_cursor:cursor,
     })?;
     let registry=final_registry(now.helpers,Some(g.token))?;
     owner.expected=now;owner.live=destination;
@@ -217,21 +218,36 @@ pub(super) unsafe fn completion_failure(track:&super::Track)->Option<Failure> {
 pub(super) unsafe fn capture_origin(entry:usize,epoch:u64,kind:u32,catalog:&Catalog,opening:u64)
     ->Result<(),helpers::CaptureError> {
     let previous={let state=super::STATE.lock().unwrap();
-        state.owner.as_ref().map(|o|(o.expected,state.reservation.held()
+        state.owner.as_ref().map(|o|(o.expected,o.live,state.reservation,state.request,state.reservation.held()
             || o.live.target.publish(o.origin_saved).is_some()))};
-    if let Some((expected,retained))=previous {
-        let now=snapshot(entry,epoch,kind)?;
-        check(same_owned(&now,&expected,retained),"menu current owner changed")?;
+    if let Some((expected,live,reservation,request,retained))=previous {
+        let m=map(entry)?;let b=pool(entry,epoch)?;
+        let helpers=helper_snapshot()?;
+        let g=PoolLock::acquire(super::base(),b.manager);
+        let now=current_locked(m,b,kind,None,helpers)?;
+        let descriptor=policy::recapture_rank(now.layout,expected.binding,now.binding,
+            &expected.descriptor,&now.descriptor)?;
+        // Only rank differs in this local comparison value. All other same_owned
+        // checks (including selected owner/records/control/thread) stay exact.
+        let comparison=Snapshot {descriptor,..expected};
+        check(same_owned(&now,&comparison,retained),"menu current owner changed")?;
+        check(current_locked(m,b,kind,None,helpers)?==now,"CPU menu snapshot changed before rank refresh")?;
         let mut state=super::STATE.lock().unwrap();
         check(super::super::mii_saved_alpha::menu_epoch()==opening
-            && state.capture && state.track.is_none() && super::epoch()==epoch
-            && state.owner.as_ref().is_some_and(|o|o.expected==expected),"menu owner retired")?;
+            && state.capture_at==(epoch,opening) && state.capture && !state.departed
+            && state.track.is_none() && state.generic.is_none() && state.request==request
+            && state.reservation==reservation && super::epoch()==epoch
+            && state.owner.as_ref().is_some_and(|o|o.expected==expected && o.live==live),"menu owner retired")?;
         let registry=final_registry(now.helpers,None)?;
+        // No whole-snapshot adoption: origin and historical foreign-owner values
+        // remain unchanged. Later tickets freeze a fresh, fully qualified union.
+        state.owner.as_mut().unwrap().expected.descriptor=descriptor;
         state.capture=false;state.menu_valid=true;
-        drop(registry);return Ok(());
+        drop(registry);drop(state);drop(g);return Ok(());
     }
     check(catalog.is_complete(),"CPU origin catalog incomplete")?;
     let before=snapshot(entry,epoch,kind)?;
+    policy::native_rank(&before.descriptor)?;
     let c=if MiiClass::from_kind(kind).is_some() {
         check(policy::supported_kind(kind),"CPU origin class not qualified")?;
         let m=map(entry)?;let b=pool(entry,epoch)?;

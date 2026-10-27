@@ -202,7 +202,10 @@ enum Intent { Exact(Configuration), Original { original_kind: u32 } }
 enum Stage { Requested, Leased, Issued }
 
 #[derive(Clone, Copy)]
-struct Pending { entry: usize, kind: u32, generation: u64, logical: u32, physical: u32, layout: Layout, intent: Intent }
+struct Pending {
+    entry: usize, kind: u32, generation: u64, logical: u32, physical: u32, layout: Layout, intent: Intent,
+    defer_hud: bool,
+}
 
 #[derive(Clone, Copy)]
 struct Job {
@@ -216,8 +219,15 @@ struct Job {
     source: usize, batch: usize, hits: u32, skips: u32, camera: u32, draw: u32,
     /// Last logged admission deferral, so each distinct reason is traced once per job.
     deferral: &'static str,
-    /// Bounds setup deferral before any helper is leased (service callbacks, not wall time).
+    /// Service callbacks spent before the render is issued. Setup waits always
+    /// count. Lease and issue waits count only while the HUD event is withheld,
+    /// and 1200 ends that hold. The bound is setup, lease, and issue. A render
+    /// already issued is outside it: observed native drains complete, and an
+    /// unobserved drain failure is not given a timeout.
     pipeline_waits: u16,
+    /// HUD event withheld until this generation's exact render, or already published.
+    /// Scene exit retires it. This is not an entry pointer or a lease.
+    hud: policy::HudHold,
 }
 
 struct State {
@@ -262,6 +272,10 @@ fn new_job(p: Pending, owner: usize) -> Job {
         holder: Holder { category: HOLDER_CATEGORY, id: owner as u64 | (p.generation << 8) },
         lease: None, helper: u32::MAX, helper_entry: 0, request: None, before: None, next: None,
         source: 0, batch: 0, hits: 0, skips: 0, camera: 0, draw: 0, deferral: "", pipeline_waits: 0,
+        hud: policy::HudHold::start(
+            if p.defer_hud { policy::HudRefresh::DeferUntilPortrait } else { policy::HudRefresh::Now },
+            p.generation,
+        ),
     }
 }
 
@@ -303,47 +317,51 @@ pub(super) unsafe fn init(base: usize) {
     trace!("[MiiPortrait] armed: helper-rendered portrait, scoped template skip at +0x32c7404, channels {:?}", sources::PORTRAIT_CHANNELS);
 }
 
-/// From `publish_mii_presentation`, after its exact-completion gates and `refresh_hud`.
-/// `owner` is the physical owner (Training 0/1, waiting 0/4); jobs are kept per logical owner.
-pub(super) unsafe fn request(entry: *const u8, owner: u32, generation: u64, kind: u32, intent: PortraitIntent) {
+/// From `publish_mii_presentation`. `owner` is the physical owner (Training 0/1,
+/// waiting 0/4); jobs are kept per logical owner. `defer_hud` withholds event 0x1d
+/// until the exact render is proved. Returns whether that hold was stored.
+pub(super) unsafe fn request(
+    entry: *const u8, owner: u32, generation: u64, kind: u32, intent: PortraitIntent, defer_hud: bool,
+) -> bool {
     if !ACTIVE.load(Ordering::Acquire) || !(0x48..=0x4a).contains(&kind) {
-        return;
+        return false;
     }
     let intent = match intent {
-        PortraitIntent::NotMii => return,
+        PortraitIntent::NotMii => return false,
         PortraitIntent::Exact(c) => {
             if c.canonical().class as u32 != kind {
                 trace!("[MiiPortrait] owner={} exact configuration class differs from loaded kind 0x{:x}; ignored", owner, kind);
-                return;
+                return false;
             }
             Intent::Exact(c)
         }
         PortraitIntent::Original { original_kind } => Intent::Original { original_kind },
     };
-    let Some(layout) = mii_backend::current() else { return; };
-    let Some(logical) = layout.logical(owner) else { return; };
-    let role = if logical == 0 { Role::Player } else { Role::Cpu };
-    let in_scope = scope(role)
-        .is_some_and(|s| s.owner == owner && (layout != Layout::Training || s.mode == 0x04040000));
-    let pending = Pending { entry: entry as usize, kind, generation, logical: logical as u32, physical: owner, layout, intent };
+    let Some(layout) = mii_backend::current() else { return false; };
+    let Some(logical) = layout.logical(owner) else { return false; };
+    let in_scope = practice_scope(owner);
+    let pending = Pending {
+        entry: entry as usize, kind, generation, logical: logical as u32, physical: owner, layout, intent, defer_hud,
+    };
     let o = logical;
     let mut released = None;
-    {
+    let accepted = {
         let mut s = STATE.lock().unwrap();
-        if s.bootstrap.is_some_and(|p| p.phase != PipelinePhase::Live) { return; }
+        if s.bootstrap.is_some_and(|p| p.phase != PipelinePhase::Live) { return false; }
         if !in_scope {
             refuse_once(&mut s, o, REFUSE_SCOPE, "portrait scope is native Training or a qualified waiting room (local wireless, Quickplay); other scenes are unsupported");
-            return;
+            return false;
         }
         if s.halted {
             refuse_once(&mut s, o, REFUSE_HALT, "portrait halted for this scene: an earlier render failed its after-render proof");
-            return;
+            return false;
         }
         match s.jobs[o] {
             Some(job) if job.stage == Stage::Issued => {
                 // The queued render keeps its lease and request until the native queue drains.
+                // Its generation loses the HUD event; the successor's hold is the only publisher.
                 s.own.supersede(o, generation);
-                s.jobs[o] = Some(Job { next: Some(pending), ..job });
+                s.jobs[o] = Some(Job { next: Some(pending), hud: job.hud.supersede(generation), ..job });
             }
             Some(job) => {
                 released = job.lease;
@@ -352,12 +370,46 @@ pub(super) unsafe fn request(entry: *const u8, owner: u32, generation: u64, kind
             None => s.jobs[o] = Some(new_job(pending, o)),
         }
         s.sync_pending();
-    }
+        defer_hud && s.jobs[o].is_some_and(|job| {
+            job.hud.is_withheld() || job.next.is_some_and(|next| next.defer_hud && next.generation == generation)
+        })
+    };
     if let Some(lease) = released {
         sources::release(lease);
         sources::cancel(CHANNEL_BASE + o);
     }
+    if accepted {
+        trace!("[MiiPortrait] owner={} withheld HUD event 0x1d until exact portrait generation={}", owner, generation);
+    }
+    accepted
 }
+
+/// Publication-time decision. True only when an exact Mii portrait can be proved later.
+pub(super) fn should_defer_hud(owner: u32, kind: u32, intent: PortraitIntent) -> bool {
+    let hud_intent = match intent {
+        PortraitIntent::Exact(_) => policy::HudIntent::Exact,
+        PortraitIntent::Original { .. } => policy::HudIntent::Original,
+        PortraitIntent::NotMii => policy::HudIntent::NotMii,
+    };
+    let halted = STATE.lock().unwrap().halted;
+    policy::hud_refresh(kind, hud_intent, ACTIVE.load(Ordering::Acquire), practice_scope(owner), halted)
+        == policy::HudRefresh::DeferUntilPortrait
+}
+
+fn practice_scope(owner: u32) -> bool {
+    let Some(layout) = mii_backend::current() else { return false; };
+    let Some(logical) = layout.logical(owner) else { return false; };
+    let role = if logical == 0 { Role::Player } else { Role::Cpu };
+    scope(role).is_some_and(|s| s.owner == owner && (layout != Layout::Training || s.mode == 0x04040000))
+}
+
+/// Zero-sized proof that this call is `service` on the 650010 pre-hook.
+/// Constructed only there. A pipeline tick or an entry destructor passes `None`
+/// and cannot publish event 0x1d.
+#[derive(Clone, Copy)]
+struct ServiceCallback(#[allow(dead_code)] ());
+
+const _: [u8; 0] = [0u8; std::mem::size_of::<ServiceCallback>()];
 
 /// From `character_roster::service`, every entry callback, before the Mii adapters.
 pub(super) unsafe fn service(entry: *mut u8, owner: u32) {
@@ -368,15 +420,16 @@ pub(super) unsafe fn service(entry: *mut u8, owner: u32) {
     if base == 0 {
         return;
     }
+    let svc = Some(ServiceCallback(()));
     scene_tick(base);
     if STATE.lock().unwrap().own.in_flight.is_some() {
-        drain_tick(base);
+        drain_tick(base, svc);
     }
     if !ACTIVE.load(Ordering::Acquire) {
         return;
     }
     if let Some(logical) = mii_backend::current().and_then(|l| l.logical(owner)) {
-        job_tick(base, logical, entry as usize);
+        job_tick(base, logical, entry as usize, svc);
     }
 }
 
@@ -399,8 +452,9 @@ pub(super) unsafe fn on_destroy(entry: *const u8, owner: u32) {
                     released = job.lease;
                     s.jobs[o] = None;
                 } else {
-                    // A dead owner never receives a queued successor.
-                    s.jobs[o] = Some(Job { next: None, ..job });
+                    // A dead owner never receives a queued successor, and its withheld
+                    // event must not publish into the destructor.
+                    s.jobs[o] = Some(Job { next: None, hud: job.hud.retire(), ..job });
                 }
             } else if job.helper_entry == entry as usize && job.stage != Stage::Requested {
                 s.own.depart();
@@ -439,7 +493,9 @@ pub(super) fn scene_changed() {
     s.own.depart();
     for o in 0..policy::VISIBLE_OWNERS {
         s.jobs[o] = match s.jobs[o] {
-            Some(job) if job.stage == Stage::Issued => Some(Job { lease: None, next: None, helper_entry: 0, ..job }),
+            Some(job) if job.stage == Stage::Issued => Some(Job {
+                lease: None, next: None, helper_entry: 0, hud: job.hud.retire(), ..job
+            }),
             _ => None,
         };
     }
@@ -471,17 +527,17 @@ unsafe fn scene_tick(base: usize) {
     }
 }
 
-unsafe fn job_tick(base: usize, owner: usize, entry: usize) {
+unsafe fn job_tick(base: usize, owner: usize, entry: usize, svc: Option<ServiceCallback>) {
     let Some(job) = STATE.lock().unwrap().jobs[owner] else { return; };
     if job.entry != entry {
         return;
     }
     if job.stage != Stage::Issued && !owner_valid(&job) {
-        finish_job(base, owner, "owner body, scope or generation changed before the render");
+        finish_job(base, svc, owner, policy::HudTerminal::SceneExit, "owner body, scope or generation changed before the render");
         return;
     }
     if job.stage != Stage::Issued && !scene_writable() {
-        finish_job(base, owner, "scene does not allow portrait writes");
+        finish_job(base, svc, owner, policy::HudTerminal::SceneExit, "scene does not allow portrait writes");
         return;
     }
     match (job.stage, job.intent) {
@@ -490,7 +546,7 @@ unsafe fn job_tick(base: usize, owner: usize, entry: usize) {
                 // No construction bust to return to: the waiting card and an ordinary original go
                 // back to native ownership; the product's own refresh paints them.
                 release_presentation(base, job.layout, job.physical, owner, "original restored");
-                finish_job(base, owner, "restore handled");
+                finish_job(base, svc, owner, policy::HudTerminal::Completed, "restore handled");
                 return;
             }
             match restore_original(base, owner, &job) {
@@ -504,7 +560,7 @@ unsafe fn job_tick(base: usize, owner: usize, entry: usize) {
                     refuse_once(&mut s, owner, REFUSE_RESTORE, reason);
                 }
             }
-            finish_job(base, owner, "restore handled");
+            finish_job(base, svc, owner, policy::HudTerminal::Completed, "restore handled");
         }
         (Stage::Requested, Intent::Exact(c)) => {
             // Decide the presentation target before any helper lease: a target that cannot take
@@ -519,7 +575,7 @@ unsafe fn job_tick(base: usize, owner: usize, entry: usize) {
                     let mut s = STATE.lock().unwrap();
                     refuse_once(&mut s, owner, bit, reason);
                 }
-                finish_job(base, owner, reason);
+                finish_job(base, svc, owner, policy::HudTerminal::Refusal, reason);
                 return;
             }
             // Ordinary-origin scenes never request the game's portrait setup. Start only
@@ -535,7 +591,14 @@ unsafe fn job_tick(base: usize, owner: usize, entry: usize) {
                 result => {
                     let reason = result.err().unwrap_or("native portrait setup did not finish within its callback budget");
                     refuse_once(&mut STATE.lock().unwrap(), owner, REFUSE_PIPELINE, reason);
-                    finish_job(base, owner, reason);
+                    let terminal = if result.is_ok() {
+                        policy::HudTerminal::Budget
+                    } else if reason.contains("retir") || reason.contains("changed") {
+                        policy::HudTerminal::Retirement
+                    } else {
+                        policy::HudTerminal::Refusal
+                    };
+                    finish_job(base, svc, owner, terminal, reason);
                     return;
                 }
             }
@@ -565,13 +628,17 @@ unsafe fn job_tick(base: usize, owner: usize, entry: usize) {
                     drop(s);
                     sources::release(lease);
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    if withheld_wait_expired(owner, &job) {
+                        finish_job(base, svc, owner, policy::HudTerminal::Budget, "native portrait setup did not finish within its callback budget");
+                    }
+                }
                 Err(reason) => {
                     {
                         let mut s = STATE.lock().unwrap();
                         refuse_once(&mut s, owner, REFUSE_LEASE, reason);
                     }
-                    finish_job(base, owner, reason);
+                    finish_job(base, svc, owner, policy::HudTerminal::Refusal, reason);
                 }
             }
         }
@@ -586,16 +653,21 @@ unsafe fn job_tick(base: usize, owner: usize, entry: usize) {
                     let mut s = STATE.lock().unwrap();
                     refuse_once(&mut s, owner, REFUSE_ROW, reason);
                 }
-                finish_job(base, owner, reason);
+                finish_job(base, svc, owner, policy::HudTerminal::Refusal, reason);
             }
             Err(reason) => {
                 // The exclusive lease is held while deferring: every distinct reason is visible.
-                let mut s = STATE.lock().unwrap();
-                if let Some(current) = s.jobs[owner].as_mut() {
-                    if current.generation == job.generation && current.stage == Stage::Leased && current.deferral != reason {
-                        current.deferral = reason;
-                        trace!("[MiiPortrait] owner={} render deferred helper={}: {}", owner, job.helper, reason);
+                {
+                    let mut s = STATE.lock().unwrap();
+                    if let Some(current) = s.jobs[owner].as_mut() {
+                        if current.generation == job.generation && current.stage == Stage::Leased && current.deferral != reason {
+                            current.deferral = reason;
+                            trace!("[MiiPortrait] owner={} render deferred helper={}: {}", owner, job.helper, reason);
+                        }
                     }
+                }
+                if withheld_wait_expired(owner, &job) {
+                    finish_job(base, svc, owner, policy::HudTerminal::Budget, "native portrait setup did not finish within its callback budget");
                 }
             }
         },
@@ -690,7 +762,9 @@ fn request_pipeline_retirement() {
         for (o, lease) in leases.iter_mut().enumerate() {
             if let Some(job) = s.jobs[o] {
                 if job.stage == Stage::Issued {
-                    s.jobs[o] = Some(Job { next: None, ..job });
+                    // The retirement drain is not `service`. Drop the hold so that
+                    // drain can finish, and so its departed discard cannot paint.
+                    s.jobs[o] = Some(Job { next: None, hud: job.hud.retire(), ..job });
                 } else {
                     *lease = job.lease;
                     s.jobs[o] = None;
@@ -792,7 +866,7 @@ unsafe fn begin_pipeline_retirement(base: usize, source: *const u8) -> bool {
         else { restore_waiting_uv(base, 4); }
         STATE.lock().unwrap().own.unbind(1);
     }
-    if STATE.lock().unwrap().own.in_flight.is_some() { drain_tick(base); }
+    if STATE.lock().unwrap().own.in_flight.is_some() { drain_tick(base, None); }
     let words = pipeline_words(base, source);
     let flight = STATE.lock().unwrap().own.in_flight.is_some();
     if !words.retirable(read(source, 0xe8), read(source, 0x144), flight) { return false; }
@@ -960,7 +1034,7 @@ unsafe fn issue(base: usize, source: *mut u8, row: u32, sub: u32) {
     }
 }
 
-unsafe fn drain_tick(base: usize) {
+unsafe fn drain_tick(base: usize, svc: Option<ServiceCallback>) {
     let Some(job) = STATE.lock().unwrap().own.in_flight else { return; };
     let root = base as *const u8;
     let Some(source) = pointer_chain(root, &SOURCE) else {
@@ -969,7 +1043,7 @@ unsafe fn drain_tick(base: usize) {
         if abandoned.is_some() {
             disarm();
             trace!("[MiiPortrait] owner={} native source object gone; queued render abandoned", job.owner);
-            finish_job(base, job.owner, "native source object gone");
+            finish_job(base, svc, job.owner, policy::HudTerminal::Retirement, "native source object gone");
         }
         return;
     };
@@ -982,20 +1056,45 @@ unsafe fn drain_tick(base: usize) {
         // unqualified lifetime disables this private feature until restart; otherwise a
         // later scene could acquire new leases behind an orphaned in-flight record.
         // Existing leases remain in the book until its native departure/destruction cleanup.
-        let mut s = STATE.lock().unwrap();
-        s.own.depart();
-        if !s.halted {
-            trace!("[MiiPortrait] owner={} source identity changed; portrait feature disabled until restart, native cleanup retains ownership", job.owner);
+        let saved = STATE.lock().unwrap().jobs;
+        {
+            let mut s = STATE.lock().unwrap();
+            s.own.depart();
+            if !s.halted {
+                trace!("[MiiPortrait] owner={} source identity changed; portrait feature disabled until restart, native cleanup retains ownership", job.owner);
+            }
+            s.halted = true;
+            disarm();
+            ACTIVE.store(false, Ordering::Release);
+            for slot in &mut s.jobs {
+                if let Some(current) = slot.as_mut() {
+                    current.hud = current.hud.retire();
+                }
+            }
         }
-        s.halted = true;
-        disarm();
-        ACTIVE.store(false, Ordering::Release);
+        for current in saved.iter().flatten() {
+            let owner_current = owner_valid(current);
+            let (_, step) = current.hud.on_terminal(
+                current.generation, owner_current, svc.is_some(), policy::HudTerminal::Retirement,
+            );
+            if step == policy::HudStep::RefreshFallback {
+                trace!("[MiiPortrait] owner={} HUD refresh fallback on portrait retirement kind=0x{:x}", current.physical, current.kind);
+                paint_hud(current.entry, current.physical, current.kind);
+            }
+        }
         return;
     }
     if issued != Some((source as usize, batch_now)) && !job.departed {
         STATE.lock().unwrap().own.depart();
         disarm();
         trace!("[MiiPortrait] owner={} issue-time source/batch identity changed; render will not bind", job.owner);
+    }
+    let withheld = STATE.lock().unwrap().jobs[job.owner].is_some_and(|adapter| adapter.hud.is_withheld());
+    if withheld && svc.is_none() {
+        // Same 650010 callback family owns this functor. A pipeline tick or destructor
+        // must not publish the withheld event, and must not consume the drained render.
+        trace!("[MiiPortrait] owner={} exact portrait drained off the service callback; HUD event stays withheld", job.owner);
+        return;
     }
     let queue = policy::Queue { count: read(source, 0x134), word: read(source, 0x138) };
     let same_target = read::<u32>(source, 0x2e0) == job.request.row && read::<u32>(source, 0x2e4) == job.request.sub;
@@ -1013,10 +1112,12 @@ unsafe fn drain_tick(base: usize) {
         outcome
     };
     match outcome {
+        // Still queued after issue. The 1200-callback bound is setup, lease, and
+        // issue only. This wait is not given a drain timeout.
         policy::Outcome::Wait => {}
         policy::Outcome::Discard(reason) => {
             trace!("[MiiPortrait] owner={} render discarded: {} (count={} word=0x{:x})", job.owner, reason, queue.count, queue.word);
-            finish_job(base, job.owner, reason);
+            finish_job(base, svc, job.owner, policy::hud_terminal_for_discard(reason), reason);
         }
         policy::Outcome::Bind { owner, index } => {
             let adapter = STATE.lock().unwrap().jobs[owner];
@@ -1033,7 +1134,7 @@ unsafe fn drain_tick(base: usize) {
                     if let Some(j) = s.jobs[owner].as_mut() { j.lease = None; }
                     drop(s);
                     trace!("[MiiPortrait] owner={} after-render proof failed: {}; not bound, helper slot={} quarantined until scene departure", owner, reason, current.helper);
-                    finish_job(base, owner, reason);
+                    finish_job(base, svc, owner, policy::HudTerminal::Refusal, reason);
                     return;
                 }
             }
@@ -1044,30 +1145,48 @@ unsafe fn drain_tick(base: usize) {
                     let draw = DRAW_OVERRIDES.load(Ordering::Acquire).wrapping_sub(current.draw);
                     if camera != renders || draw != renders {
                         trace!("[MiiPortrait] owner={} framing not applied: renders={} camera={} draw={}; native portrait retained", owner, renders, camera, draw);
-                        finish_job(base, owner, "render framing unavailable");
+                        finish_job(base, svc, owner, policy::HudTerminal::Refusal, "render framing unavailable");
                         return;
                     }
-                    match bind_target(base, &current, index, descriptor) {
-                        Ok(slot) => {
-                            STATE.lock().unwrap().own.bound(owner, policy::Binding { request: job.request, descriptor });
-                            trace!("[MiiPortrait] owner={} bound index=0x{:x} slot={} layout={:?} request=({},{}) descriptor=0x{:x}", current.physical, index, slot, current.layout, job.request.row, job.request.sub, descriptor);
-                        }
-                        Err(reason) => {
-                            let mut s = STATE.lock().unwrap();
-                            refuse_once(&mut s, owner, REFUSE_PANE, reason);
+                    // Event 0x1d, then a new pane read, then the bind. The issue-time index
+                    // was taken before this event and is not reused.
+                    let bind = if current.hud.is_withheld() {
+                        deliver_exact_hud(base, &current, svc)
+                    } else {
+                        true
+                    };
+                    if bind {
+                        match bind_target(base, &current, index, descriptor) {
+                            Ok(slot) => {
+                                STATE.lock().unwrap().own.bound(owner, policy::Binding { request: job.request, descriptor });
+                                trace!("[MiiPortrait] owner={} bound index=0x{:x} slot={} layout={:?} request=({},{}) descriptor=0x{:x}", current.physical, index, slot, current.layout, job.request.row, job.request.sub, descriptor);
+                            }
+                            Err(reason) => {
+                                let mut s = STATE.lock().unwrap();
+                                refuse_once(&mut s, owner, REFUSE_PANE, reason);
+                            }
                         }
                     }
                 }
                 _ => trace!("[MiiPortrait] owner={} render completed but the owner changed; not bound, request kept free", owner),
             }
-            finish_job(base, owner, "render completed");
+            let still_withheld = STATE.lock().unwrap().jobs[owner].is_some_and(|current| current.hud.is_withheld());
+            let terminal = if still_withheld { policy::HudTerminal::Refusal } else { policy::HudTerminal::Completed };
+            finish_job(base, svc, owner, terminal, "render completed");
         }
     }
 }
 
 /// End the owner's job: after-render proof once, lease release outside every lock, then
 /// start a superseding intent if one was queued.
-unsafe fn finish_job(base: usize, owner: usize, reason: &str) {
+unsafe fn finish_job(base: usize, svc: Option<ServiceCallback>, owner: usize, terminal: policy::HudTerminal, reason: &str) {
+    let preview = STATE.lock().unwrap().jobs[owner];
+    let terminal = policy::terminal_for_finish(terminal, preview.is_some_and(|job| job.next.is_some()));
+    let fallback = preview.is_some_and(|job| {
+        let owner_current = owner_valid(&job);
+        job.hud.on_terminal(job.generation, owner_current, svc.is_some(), terminal).1
+            == policy::HudStep::RefreshFallback
+    });
     let job = {
         let mut s = STATE.lock().unwrap();
         let job = s.jobs[owner].take();
@@ -1075,6 +1194,10 @@ unsafe fn finish_job(base: usize, owner: usize, reason: &str) {
         job
     };
     let Some(job) = job else { return; };
+    if fallback {
+        trace!("[MiiPortrait] owner={} HUD refresh fallback kind=0x{:x} reason=\"{}\"", job.physical, job.kind, reason);
+        paint_hud(job.entry, job.physical, job.kind);
+    }
     if job.stage == Stage::Issued {
         // Read the helper only while this callback proves it alive: valid lease and the same
         // entry in the native slot. Departed or destroyed helpers carry helper_entry 0.
@@ -1116,8 +1239,59 @@ unsafe fn finish_job(base: usize, owner: usize, reason: &str) {
             Intent::Exact(c) => PortraitIntent::Exact(c),
             Intent::Original { original_kind } => PortraitIntent::Original { original_kind },
         };
-        request(next.entry as *const u8, next.physical, next.generation, next.kind, intent);
+        let accepted = request(next.entry as *const u8, next.physical, next.generation, next.kind, intent, next.defer_hud);
+        let owner_current = mii_backend::current() == Some(next.layout)
+            && active_body(next.entry as *const u8, next.physical, next.kind)
+            && mii_saved_alpha::current_generation(next.logical) == next.generation;
+        if policy::rejected_deferral(next.defer_hud, accepted, owner_current, svc.is_some())
+            == policy::HudStep::RefreshFallback
+        {
+            trace!("[MiiPortrait] owner={} deferred HUD request was not accepted; refreshing kind=0x{:x}", next.physical, next.kind);
+            paint_hud(next.entry, next.physical, next.kind);
+        }
     }
+}
+
+fn withheld_wait_expired(owner: usize, job: &Job) -> bool {
+    if !job.hud.is_withheld() {
+        return false;
+    }
+    let mut state = STATE.lock().unwrap();
+    let Some(current) = state.jobs[owner].as_mut() else { return false; };
+    if current.generation != job.generation || !current.hud.is_withheld() {
+        return false;
+    }
+    current.pipeline_waits = current.pipeline_waits.saturating_add(1);
+    current.pipeline_waits >= 1200
+}
+
+/// Refresh and bind stay on this callback. The pane is read after the event returns.
+unsafe fn deliver_exact_hud(base: usize, job: &Job, svc: Option<ServiceCallback>) -> bool {
+    let (next, step) = job.hud.on_proof(job.generation, true, svc.is_some());
+    if step != policy::HudStep::RefreshRereadBind {
+        trace!("[MiiPortrait] owner={} exact portrait proved without a HUD publication", job.physical);
+        return false;
+    }
+    trace!("[MiiPortrait] owner={} HUD refresh after exact portrait kind=0x{:x} generation={}", job.physical, job.kind, job.generation);
+    paint_hud(job.entry, job.physical, job.kind);
+    if let Some(current) = STATE.lock().unwrap().jobs[job.logical as usize].as_mut() {
+        current.hud = next;
+    }
+    let fresh = match pane_state(base, job) {
+        Ok((index, part_ready)) => Some(policy::PaneRead { index, part_ready }),
+        Err(_) => None,
+    };
+    let admit = policy::after_event_pane(fresh);
+    if !admit {
+        trace!("[MiiPortrait] owner={} pane after HUD event is not bindable", job.physical);
+    }
+    admit
+}
+
+unsafe fn paint_hud(entry: usize, physical: u32, kind: u32) {
+    let entry = entry as *const u8;
+    before_refresh(entry, physical, kind);
+    super::refresh_hud(entry, physical, kind);
 }
 
 /// Gate for binding a drained render and returning its helper: every armed render of this job

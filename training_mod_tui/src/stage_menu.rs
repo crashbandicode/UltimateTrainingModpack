@@ -27,15 +27,21 @@ pub enum Mode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Preferences {
     pub mode: Mode,
     /// Native catalog ID, never a page/cell index. Validated by the catalog owner.
     pub direct_stage: u32,
+    pub direct_form: crate::stage_forms::Form,
+    pub rotation_forms: crate::stage_forms::Forms,
 }
 
 impl Default for Preferences {
-    fn default() -> Self { Self { mode: Mode::Rotation, direct_stage: 311 } }
+    fn default() -> Self {
+        Self { mode: Mode::Rotation, direct_stage: 311,
+            direct_form: crate::stage_forms::Form::Normal,
+            rotation_forms: crate::stage_forms::Forms::NORMAL }
+    }
 }
 
 #[cfg(test)]

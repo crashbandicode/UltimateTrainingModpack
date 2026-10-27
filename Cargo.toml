@@ -84,7 +84,7 @@ native-unlink-probe = ["console-swap-trace"]
 native-unlink-guard = []
 # Combined operator-review build. Keep the accepted alpha controls together so
 # a focused Mii/cosmetic rebuild cannot silently drop direct practice stages.
-enhancements-alpha = ["mii-editor-alpha", "cpu-pilot-probe", "mii-managed-helper-alpha", "waiting-roster-reload", "practice-stage-request-alpha"]
+enhancements-alpha = ["mii-editor-alpha", "cpu-pilot-probe", "mii-managed-helper-alpha", "waiting-roster-reload", "practice-stage-request-alpha", "training-stage-rotation-alpha"]
 # P1 AI assistance and private native driver; disabled by default.
 cpu-pilot-probe = ["training_mod_consts/p1-cpu-control"]
 # Read-only results lifetime capture for qualifying save/rematch automation.
@@ -111,6 +111,10 @@ lobby-stage-probe = []
 practice-stage-observer = ["lobby-stage-probe"]
 # Default-off native request API; UI integration and mutation acceptance are separate.
 practice-stage-request-alpha = ["practice-stage-observer"]
+# Default-off ordinary Training entry rotation. Rides the Mii bridge's Training
+# state callback and the lobby probe's resource callback, plus one fingerprinted
+# installer hook; the explicit menu toggle exists only in builds that carry it.
+training-stage-rotation-alpha = ["lobby-stage-probe", "mii-editor-alpha", "training_mod_consts/training-stage-rotation"]
 stage-asset-probe = ["lobby-stage-probe"]
 item-state-probe = []
 # Development-only read-only Mii identity observer (artifacts/enhancements/mii-fable/probe-next).

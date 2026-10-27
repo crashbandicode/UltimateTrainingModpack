@@ -514,12 +514,8 @@ pub fn trace_close_input(controller: usize, draw: u32, raw_before: bool, raw_aft
 }
 
 pub fn on_pad(pad: Pad) {
-    on_action(match pad {
-        Pad::Confirm => ClipAction::Confirm, Pad::Back => ClipAction::Cancel,
-        Pad::Left => ClipAction::Nudge(-1), Pad::Right => ClipAction::Nudge(1),
-        Pad::Up => ClipAction::PreviousFighter, Pad::Down => ClipAction::NextFighter,
-        Pad::Extra => ClipAction::TogglePlay,
-    });
+    let action = EDITOR.lock().unwrap().as_ref().and_then(|editor| editor.action_for_pad(pad));
+    if let Some(action) = action { on_action(action); }
 }
 
 pub fn on_action(action: ClipAction) {
@@ -599,8 +595,12 @@ pub fn on_input(controller: &crate::input::Controller) {
         hold.0 = direction;
         hold.2 = modifier;
     }
+    // The opening A belongs to the browser: a fresh Confirm needs a release this
+    // owned gate observed. B (above all) and the other controls are unaffected.
+    let confirm = EDITOR.lock().unwrap().as_mut()
+        .is_some_and(|editor| editor.allows_confirm(b.a(), controller.just_release.a(), p.a()));
     let action = if p.b() { Some(ClipAction::Cancel) }
-        else if p.a() { Some(ClipAction::Confirm) }
+        else if confirm { Some(ClipAction::Confirm) }
         else if p.x() { Some(if modifier { ClipAction::ToggleCapture } else { ClipAction::TogglePlay }) }
         else if p.y() { Some(if modifier { ClipAction::UseLeadIn } else { ClipAction::Restart }) }
         else if p.l() || (gcc && p.real_digital_l()) { Some(ClipAction::SelectIn) }
