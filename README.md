@@ -4,7 +4,7 @@
 
 **UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-full-experimental.20261024.5). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
 
-**New in source, not yet in a download:** features marked *New* below come from the unstable C89 build. Emulator checks passed; console review is pending ([C89 notes](docs/lobby-parity-release.md)).
+**New in source, not yet in a download:** features marked *New* below are in the full alpha; C90 also clarifies the selected stage form. Console review is pending ([build notes](docs/lobby-parity-release.md)).
 
 [Download this fork from Forgejo](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases). Version 7.1.2 reduces input-display work in Training; see the [performance checks](docs/input-display-performance.md).
 
@@ -14,13 +14,13 @@
 
 ### Named practice setups · *New*
 
-![Moving away from a saved setup, then restoring its spacing.](docs/setup-library/restore.png)
+![Binding a named setup to Slot 3, then moving away and restoring its spacing.](docs/setup-library/library.gif)
 
 Name a saved setup, share it as a file, and bind it to any of the five save-state slots. [Save and restore a setup.](docs/setup-library.md)
 
 ### Record Slots · *New*
 
-![Named Library with a recording highlighted; the footer reads "A loads, Y binds to Record Slot 3, B closes."](docs/named-macros/images/record-slot-library.png)
+![Binding Duck Hunt dash from the Named Library to Record Slot 3.](docs/named-macros/images/record-slot-bind.gif)
 
 Copy a named recording into a numbered Record Slot, or save a slot to the library as a shareable file. [Share a Record Slot.](docs/named-macros.md#share-a-numbered-record-slot)
 
@@ -52,13 +52,13 @@ Use the practice tools while waiting for a match; your real match still uses you
 
 ![The Training CPU playing the opponent's captured P2 Hero inputs.](docs/named-macros/images/playback-p2.gif)
 
-Save a replay, pick either player's captured inputs, and trim a sequence for the Training CPU to play ([walkthrough](docs/named-macros.md)). *New:* a refused preview says why, and **ZL+Y** moves a mid-action start to a clean lead-in.
+Save a replay, pick either player's captured inputs, and trim a sequence for the Training CPU to play ([walkthrough](docs/named-macros.md)). Starting partway through an animation is not yet supported; **ZL+Y** moves the start to an earlier idle or falling frame.
 
 ### Practice stages
 
-![Applying Peach’s Castle in Battlefield form without leaving Training.](docs/practice-stages/forms.gif)
+![Cycling Normal, Omega and Battlefield, then applying Peach’s Castle without leaving Training.](docs/practice-stages/forms.gif)
 
-Change the current stage without backing out, or choose a stage rotation for future lobby visits ([walkthrough](docs/practice-stages.md)). *New:* **Y** picks a stage's Normal, Omega or Battlefield form.
+Change the current stage without backing out, or choose a stage rotation for future lobby visits ([walkthrough](docs/practice-stages.md)). *New:* **Y** cycles Normal, Omega and Battlefield; the footer shows only the selected form.
 
 ### Kirby hats
 
@@ -68,7 +68,7 @@ Choose separate hat orders for Player and CPU Kirby, then use a shortcut to equi
 
 ### Character items
 
-![Character Item choices with icons from the items’ own game assets.](docs/character-items/page-1.png)
+![Selecting Metal Blade, throwing it, and restoring it from a save state.](docs/feature-walkthroughs/character-items.gif)
 
 Give any Player 1 fighter a character item and keep it in a save state, including the selected turnip face ([walkthrough](docs/character-items.md)). *New:* each menu icon comes from the item's own game assets.
 
@@ -80,7 +80,7 @@ Choose saved Miis for either role or create one in Smash's own editor ([Mii guid
 
 ### Elite stages and automatic counterpick
 
-![The Elite Stages plugin page with its compact hook-status table.](docs/feature-walkthroughs/elite-status.png)
+![Scrolling to Counterpick and toggling it off and on; the hook-status table stays visible.](docs/feature-walkthroughs/elite-counterpick.gif)
 
 The separate Elite Stages plugin can propose the loser's configured counterpick on an accepted rematch when your preferred rules are used. [Set the legal stage pool and counterpicks.](docs/elite-counterpick.md)
 

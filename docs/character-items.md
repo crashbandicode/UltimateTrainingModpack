@@ -8,17 +8,13 @@ Open **Character Extras → Character Item**. Its two pages group the items by t
 
 **New in [C89](lobby-parity-release.md):** each icon comes from the item's own game assets.
 
-![Character Item menu with icons rendered from the game assets.](character-items/page-1.png)
+![Selecting Metal Blade with the current item icons, then saving, throwing and restoring it.](feature-walkthroughs/character-items.gif)
 
 [See the second page](character-items/page-2.png).
 
 ## Get it in hand
 
 Close the menu. The item appears in Player 1's hand, replacing anything Player 1 was holding. There is no lasting check mark, so press **A** on the same item whenever you want a fresh one.
-
-![Dedede receives Metal Blade, saves, throws it, and restores it.](feature-walkthroughs/character-items.gif)
-
-*Metal Blade on King Dedede: select → save → throw → load. This earlier recording uses the previous menu icons.*
 
 ## What is listed
 

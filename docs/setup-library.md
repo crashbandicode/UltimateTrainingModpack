@@ -24,7 +24,7 @@ refused; let the Mii finish loading, then save the slot again.
 In **Save States**, set **Save State Slot** to the target slot, here **3**.
 Then open **Setup Library**. The footer names the slot the setup will go into.
 
-![Setup Library with Armored spacing · Mii Gunner vs Duck Hunt highlighted; the footer reads "A loads, Y binds to Slot 3, B closes."](setup-library/list.png)
+![Binding Armored spacing to Slot 3, then moving away and restoring the saved spacing.](setup-library/library.gif)
 
 | Button | Effect |
 | --- | --- |
@@ -41,9 +41,7 @@ The slot is written when you close the menu:
 Load the slot as usual (default **ZL + D-pad Up**). Here P1 walked over to
 Duck Hunt, and loading Slot 3 put both fighters back at the saved spacing:
 
-![Left: P1 has walked next to Duck Hunt. Right: after ZL + D-pad Up, both fighters are back at the Armored spacing positions.](setup-library/restore.png)
-
-*Emulator footage. Left and right are two moments from one recording, 3 s apart.*
+![P1 walks toward Duck Hunt, then ZL + D-pad Up restores both fighters to the saved spacing.](setup-library/restore.gif)
 
 ## When A refuses
 

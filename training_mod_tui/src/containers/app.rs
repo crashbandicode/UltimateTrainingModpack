@@ -1391,7 +1391,7 @@ mod tests {
         for (presses, form) in expected.into_iter().enumerate() {
             assert_eq!(app.stage_selection(), Some(Selection { stage: 95, form }));
             let help = app.stage_help();
-            assert!(help.starts_with(form.label()), "{help}");
+            assert!(help.starts_with(&format!("Form: {}", form.label())), "{help}");
             assert!(!help.contains("Omega /"), "{help}");
             assert!(!help.contains("Final Destination"), "{help}");
             if presses + 1 < expected.len() {
@@ -1413,7 +1413,7 @@ mod tests {
         assert_eq!(app.stage_selection(), Some(Selection { stage: 95, form: Form::Battlefield }));
         assert_eq!(app.stage_preferences.direct_form, Form::Normal);
         assert_eq!(app.stage_preferences.rotation_forms.get(0), Some(Form::Omega));
-        assert!(app.stage_help().starts_with("Battlefield"));
+        assert!(app.stage_help().starts_with("Form: Battlefield"));
         app.on_a();
         assert_eq!(app.take_pending_stage(), Some(Selection { stage: 95, form: Form::Battlefield }));
         assert_eq!(app.take_pending_stage(), None);
@@ -1427,7 +1427,7 @@ mod tests {
         select_stage(&mut battlefield);
         battlefield.on_y();
         assert_eq!(battlefield.stage_selection(), Some(Selection { stage: 0, form: Form::Omega }));
-        assert!(battlefield.stage_help().contains("Y Form: Normal"));
+        assert!(battlefield.stage_help().contains("Y Change Form"));
         battlefield.on_y();
         assert_eq!(battlefield.stage_selection(), Some(Selection::normal(0)));
 
@@ -1436,14 +1436,14 @@ mod tests {
         final_destination.on_y();
         assert_eq!(final_destination.stage_selection(),
             Some(Selection { stage: 3, form: Form::Battlefield }));
-        assert!(final_destination.stage_help().starts_with("Battlefield"));
-        assert!(!final_destination.stage_help().contains("Y Form: Omega"));
+        assert!(final_destination.stage_help().starts_with("Form: Battlefield"));
+        assert!(!final_destination.stage_help().contains("Omega"));
 
         let mut training = stage_app([Some(308), None, None]);
         select_stage(&mut training);
         training.on_y();
         assert_eq!(training.stage_selection(), Some(Selection::normal(308)));
-        assert!(training.stage_help().contains("Y Form | "));
-        assert!(!training.stage_help().contains("Y Form:"));
+        assert!(training.stage_help().starts_with("Form: Normal"));
+        assert!(!training.stage_help().contains("Y Change Form"));
     }
 }

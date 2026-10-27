@@ -1,5 +1,9 @@
 # Lobby parity candidate C89 — unstable
 
+**C90 update:** stage-form labels now show only the selected Normal, Omega or Battlefield form. The full build retains C89’s features; this update does not add mid-animation replay starts.
+
+The menu tests pass (176 tests across seven harnesses), along with warning-free Clippy and the no-default-features build. Yoga verified all three labels and a live Peach’s Castle Battlefield-form change with the current companion plugins. Console review is pending.
+
 C89 builds on C72's waiting-room practice (save/load, recordings, macro previews
 and interrupted Mii editing in Quickplay and Local Wireless waiting) and adds the
 changes below. **Training and waiting-room emulator checks passed with the

@@ -1,25 +1,22 @@
 {
   "path": "docs/practice-stages/forms.gif",
   "recorded_date": "2026-10-27",
-  "build": "C77",
-  "nro_sha256": "208314512dccf35a2ab4c49a0e407a887e97e8e0265cd4f661af100a8b156458",
-  "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime147/collected147/live/peach-battlefield-confirmed/transition.gif",
-  "source_sha256": "568ab5d17a7d3667efdac66fbbee559bc14b2b84e623a3f171ae74c637259114",
-  "sha256": "7619d88efafdb903d074dafa852ee1c63059d592677d9243252ab06346bce1ca",
+  "build": "C90",
+  "nro_sha256": "678041d84f3e4236dbc35d9a6aa6481d7b371e7b394335f36f23c50eb4b91b22",
+  "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/yoga159/stage-forms159",
+  "source_manifest_sha256": "b8256b01bc478fa87263cafbf0e1242f6cf8ff461733764e61895b55921f7af4",
+  "sha256": "5c5600a05569aad34bba5837824dfdce62720604c32317362333a7cae6b6bd38",
   "dimensions": [
     1280,
     720
   ],
-  "source_interval_seconds": [
-    0,
-    10
-  ],
-  "seconds": 9.99,
-  "frames": 60,
-  "fps": 6,
-  "source_requested_fps": 30,
-  "source_dropped_frames": 3,
-  "processing": "Original pixels; time trim and frame-rate reduction only; 128-color GIF palette. No crop, upscale, stitching, overlays or sped-up loading.",
-  "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/main-publish157/stage-accepted",
-  "visual_review": "Menu names Battlefield form with Normal/Omega as alternatives; A applies; native transition ends at three-platform Peach's Castle with Stage ready. C77 predates the separate Mii HUD correction; this clip qualifies stage forms only."
+  "seconds": 18.0,
+  "frames": 180,
+  "fps": 10,
+  "source_requested_fps": 10,
+  "source_frames": 137,
+  "source_max_interval_seconds": 0.42760823699791217,
+  "processing": "Lossless 1920x1108 PNG frames with actual capture timestamps; remove14px top/bottom letterbox, downscale to1280x720,256color palette. No cuts, overlays or time compression. Slower screenshot intervals during native stage load retained as held frames.",
+  "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/stage-encoded-review.png",
+  "visual_review": "Normal, Omega and Battlefield labels each show only the selected form; A applies Battlefield and native transition finishes on three-platform Peach Castle."
 }

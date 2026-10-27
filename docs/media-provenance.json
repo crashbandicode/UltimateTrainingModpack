@@ -164,33 +164,6 @@
       "visual_review": "First: Change Stage Now page1. R shows page2, L returns page1. X shows Lobby Stage Rotation, X returns direct selection. Battlefield selected; native morph transition; final Battlefield with same fighters. Delayed screenshots during load are held according to recorded timestamps, not sped up. No match/online claim."
     },
     {
-      "path": "docs/feature-walkthroughs/character-items.gif",
-      "recorded_date": "2026-10-24",
-      "environment": "Yoga Linux Eden; ordinary Training",
-      "nro_sha256": "97f01b715a9b455ecf9751495ea3d935496da17ed529a1f06c9673cd223665c6",
-      "sha256": "d2cb4958f010e39ba2f8e87a79fdfa8faae7bf4102ab1ec5c6d973b6fa2c4fc1",
-      "dimensions": [
-        1280,
-        721
-      ],
-      "visual_review": "Metal Blade selected; Dedede receives it. Saved Slot 1 label, throw hits Ike, load returns held Metal Blade and 0% CPU. Source 19.232733s, output 19.3s with timestamp-derived frame holds.",
-      "scope": "Documentation demonstration; not console acceptance",
-      "source_manifest_sha256": "0c6c89b566668a89215404d3104b174e34de1f2f28d8bd5cfba844410cae9e6c",
-      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/docs136/runtime/captures/character-items-final",
-      "frames": 175,
-      "seconds": 19.3,
-      "captured_seconds": 19.232733,
-      "fps": 10,
-      "crop_source_pixels": [
-        129,
-        43,
-        1657,
-        933
-      ],
-      "timing": "Timestamp-derived holds; no time compression; GIF rounding/final hold within 0.2s",
-      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/docs136/MEDIA-REVIEW.json"
-    },
-    {
       "path": "docs/feature-walkthroughs/kirby-hats.gif",
       "recorded_date": "2026-10-24",
       "environment": "Yoga Linux Eden; ordinary Training",
@@ -335,54 +308,218 @@
       "visual_review": "Reviewed decoded first/middle/last and Save Replay confirmation. New green Brawler becomes Replay Brawler 2111; existing red \u683c\u6597 1111 leaves the same two-entry list. Native saves unchanged; no console acceptance claim."
     },
     {
-      "path": "docs/feature-walkthroughs/mii-gunner-hud.gif",
+      "path": "docs/setup-library/library.gif",
       "recorded_date": "2026-10-27",
-      "build": "C89",
-      "nro_sha256": "def8782fae866857fb174c19104cadc83086b270e3b828a9f2bc2b91caeafcbb",
-      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime156/collected156/live/training-replay156/transition.gif",
-      "source_sha256": "c1ed2f6f2cd110a3575d93ff079321d2cc1ba974ae3485b50630e2da44e44da4",
-      "sha256": "bc221f70e178323bc5cec630663d5beb622522b4e8ede56c083d6907b2330b9a",
+      "environment": "Linux Eden ordinary Training",
+      "nro_sha256": "9d537cd543c04d380cc616abeed047632c366ddac68aeb57e026e974693cc8ba",
+      "sha256": "22fc203073cbe4eb0938a348babf0ed7f06b492c1a310c3168e2b124d3cd26a9",
+      "frames": 110,
+      "seconds": 11.0,
+      "fps": 10,
       "dimensions": [
         1280,
         720
       ],
-      "source_interval_seconds": [
-        0,
-        7
+      "palette_colors": 256,
+      "source_captures": [
+        {
+          "path": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime150/collected150/live/bind-pending-slot3/transition.gif",
+          "sha256": "44cec59edd8df176236f9159cee4a5875e7d4a3ba0cbf01ebe6863b053112501"
+        },
+        {
+          "path": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime150/collected150/live/slot3-move-and-restore/transition.gif",
+          "sha256": "1d216e4dd69e787ec15af6ee1e5c058ad72026775a7ee2af78b4263ad963abe5"
+        }
       ],
-      "seconds": 7.0,
-      "frames": 70,
+      "source_windows_seconds": [
+        [
+          0,
+          3
+        ],
+        [
+          0,
+          8
+        ]
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/review-four.gif.png",
+      "visual_review": "Named Armored spacing is bound into Slot3; straight cut to the same run moving P1 toward Duck Hunt and restoring saved spacing.",
+      "time_compression": false,
+      "source_format": "native Eden game GIF; retains source quantization",
+      "edits": "One straight cut between two real captures from the same test run; no synthetic frames."
+    },
+    {
+      "path": "docs/setup-library/restore.gif",
+      "recorded_date": "2026-10-27",
+      "environment": "Linux Eden ordinary Training",
+      "nro_sha256": "9d537cd543c04d380cc616abeed047632c366ddac68aeb57e026e974693cc8ba",
+      "sha256": "378a2a8dfa89d79f639bb6fdb3f4412cd38f3fa2039ceb1105d8d1bda2d4eabc",
+      "frames": 80,
+      "seconds": 8.0,
       "fps": 10,
-      "source_requested_fps": 30,
-      "source_dropped_frames": 10,
-      "processing": "Original pixels; time trim and frame-rate reduction only; 128-color GIF palette. No crop, upscale, stitching, overlays or sped-up loading.",
-      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/main-publish157/mii-accepted",
-      "visual_review": "Default green Gunner selected Replay Gunner [3332]; menu closes; armored Gunner and its matching custom portrait appear, CPU Duck Hunt unchanged."
+      "dimensions": [
+        1280,
+        720
+      ],
+      "palette_colors": 256,
+      "source_captures": [
+        {
+          "path": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime150/collected150/live/slot3-move-and-restore/transition.gif",
+          "sha256": "1d216e4dd69e787ec15af6ee1e5c058ad72026775a7ee2af78b4263ad963abe5"
+        }
+      ],
+      "source_windows_seconds": [
+        [
+          0,
+          8
+        ]
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/review-four.gif.png",
+      "visual_review": "P1 moves toward Duck Hunt then both return to saved spacing.",
+      "time_compression": false,
+      "source_format": "native Eden game GIF; retains source quantization"
+    },
+    {
+      "path": "docs/named-macros/images/record-slot-bind.gif",
+      "recorded_date": "2026-10-27",
+      "environment": "Linux Eden ordinary Training",
+      "nro_sha256": "9d537cd543c04d380cc616abeed047632c366ddac68aeb57e026e974693cc8ba",
+      "sha256": "11d94c9d41f367b02257d54c37dce687c245ae3b1b6f65ac30f355bec2ebb8ab",
+      "frames": 50,
+      "seconds": 5.0,
+      "fps": 10,
+      "dimensions": [
+        1280,
+        720
+      ],
+      "palette_colors": 256,
+      "source_captures": [
+        {
+          "path": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime150/collected150/live/bind-record-slot3/transition.gif",
+          "sha256": "e503a7b18aef650e29032536f288d6782765e254974a5d186f8ad14c69ec8263"
+        }
+      ],
+      "source_windows_seconds": [
+        [
+          0,
+          5
+        ]
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/review-four.gif.png",
+      "visual_review": "Named Library shows Duck Hunt dash and Y binds to Record Slot3; Y returns to Input Recording. Runtime150 RECORDING150.json verifies copied51inputs; GIF alone is UI transition evidence.",
+      "time_compression": false,
+      "source_format": "native Eden game GIF; retains source quantization"
+    },
+    {
+      "path": "docs/feature-walkthroughs/mii-gunner-hud.gif",
+      "recorded_date": "2026-10-27",
+      "environment": "Linux Eden ordinary Training",
+      "nro_sha256": "def8782fae866857fb174c19104cadc83086b270e3b828a9f2bc2b91caeafcbb",
+      "sha256": "d2c7c5d28cb757f84ab5ae32ae420b9ee1d1a1c6eeeb448b9a9eaa1efd2967db",
+      "frames": 70,
+      "seconds": 7.0,
+      "fps": 10,
+      "dimensions": [
+        1280,
+        720
+      ],
+      "palette_colors": 256,
+      "source_captures": [
+        {
+          "path": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime156/collected156/live/training-replay156/transition.gif",
+          "sha256": "c1ed2f6f2cd110a3575d93ff079321d2cc1ba974ae3485b50630e2da44e44da4"
+        }
+      ],
+      "source_windows_seconds": [
+        [
+          0,
+          7
+        ]
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/review-four.gif.png",
+      "visual_review": "Green Gunner switched to armored Replay Gunner, matching custom HUD portrait with Duck Hunt CPU unchanged.",
+      "time_compression": false,
+      "source_format": "native Eden game GIF; retains source quantization"
+    },
+    {
+      "path": "docs/feature-walkthroughs/character-items.gif",
+      "recorded_date": "2026-10-27",
+      "environment": "Yoga Linux Eden ordinary Training",
+      "nro_sha256": "def8782fae866857fb174c19104cadc83086b270e3b828a9f2bc2b91caeafcbb",
+      "sha256": "b0646c5d1a354fb669835cb4ffe91ee0e3459212d15b0736c8db0233574a7c91",
+      "frames": 170,
+      "seconds": 17.0,
+      "fps": 10,
+      "dimensions": [
+        1280,
+        720
+      ],
+      "palette_colors": 256,
+      "source_captures": [
+        {
+          "path": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/yoga159/character-items159/capture.json",
+          "sha256": "edd7f22330ef49c557fbcdbd793d6358f5a7611861b0fe2859cce2307c426e95"
+        }
+      ],
+      "source_windows_seconds": [
+        [
+          0,
+          17
+        ]
+      ],
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/review-four.gif.png",
+      "visual_review": "Current asset icons; Mr.Game&Watch selects Metal Blade, saves it, throws/hits Sheik, restores the item and fighter state.",
+      "time_compression": false,
+      "crop_source_pixels": [
+        0,
+        14,
+        1920,
+        1080
+      ],
+      "capture_frames": 170,
+      "source_format": "lossless PNG screenshots with actual capture timestamps"
     },
     {
       "path": "docs/practice-stages/forms.gif",
       "recorded_date": "2026-10-27",
-      "build": "C77",
-      "nro_sha256": "208314512dccf35a2ab4c49a0e407a887e97e8e0265cd4f661af100a8b156458",
-      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime147/collected147/live/peach-battlefield-confirmed/transition.gif",
-      "source_sha256": "568ab5d17a7d3667efdac66fbbee559bc14b2b84e623a3f171ae74c637259114",
-      "sha256": "7619d88efafdb903d074dafa852ee1c63059d592677d9243252ab06346bce1ca",
+      "build": "C90",
+      "nro_sha256": "678041d84f3e4236dbc35d9a6aa6481d7b371e7b394335f36f23c50eb4b91b22",
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/yoga159/stage-forms159",
+      "source_manifest_sha256": "b8256b01bc478fa87263cafbf0e1242f6cf8ff461733764e61895b55921f7af4",
+      "sha256": "5c5600a05569aad34bba5837824dfdce62720604c32317362333a7cae6b6bd38",
       "dimensions": [
         1280,
         720
       ],
-      "source_interval_seconds": [
-        0,
-        10
+      "seconds": 18.0,
+      "frames": 180,
+      "fps": 10,
+      "source_requested_fps": 10,
+      "source_frames": 137,
+      "source_max_interval_seconds": 0.42760823699791217,
+      "processing": "Lossless 1920x1108 PNG frames with actual capture timestamps; remove14px top/bottom letterbox, downscale to1280x720,256color palette. No cuts, overlays or time compression. Slower screenshot intervals during native stage load retained as held frames.",
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/stage-encoded-review.png",
+      "visual_review": "Normal, Omega and Battlefield labels each show only the selected form; A applies Battlefield and native transition finishes on three-platform Peach Castle."
+    },
+    {
+      "path": "docs/feature-walkthroughs/elite-counterpick.gif",
+      "recorded_date": "2026-10-27",
+      "build": "C90 with current companion plugins",
+      "nro_sha256": "678041d84f3e4236dbc35d9a6aa6481d7b371e7b394335f36f23c50eb4b91b22",
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/yoga159-final/run/elite-counterpick159",
+      "source_manifest_sha256": "fa4f6ebd9d9af23b79d2e7f61a5640f4ddcc36bc0f735095873412f553cd47de",
+      "sha256": "15b34d0a7c55c3dd29656cd93c126d60b6d7aa81122b70714f06e53ed777aaee",
+      "dimensions": [
+        400,
+        270
       ],
-      "seconds": 9.99,
-      "frames": 60,
-      "fps": 6,
-      "source_requested_fps": 30,
-      "source_dropped_frames": 3,
-      "processing": "Original pixels; time trim and frame-rate reduction only; 128-color GIF palette. No crop, upscale, stitching, overlays or sped-up loading.",
-      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/main-publish157/stage-accepted",
-      "visual_review": "Menu names Battlefield form with Normal/Omega as alternatives; A applies; native transition ends at three-platform Peach's Castle with Stage ready. C77 predates the separate Mii HUD correction; this clip qualifies stage forms only."
+      "seconds": 12,
+      "frames": 120,
+      "fps": 10,
+      "source_frames": 30,
+      "processing": "Native menu crop at1520,14,400x270 from1920x1108 PNGs, no upscale. Actual screenshot timestamps retained;10fps output holds frames when screenshot capture was slower.256colors, no cuts, no time compression.",
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/readme-gifs158/elite-contact.png",
+      "visual_review": "Scroll from legal pool to Counterpick; On becomes Off, then On. Read-only Pool,Results,Save row shows checks. Does not claim a match outcome.",
+      "elite_plugin_sha256": "584a3699185e984324281f4d8518ea3a03830606a135889cea2daf6ba74f0db2"
     }
   ],
   "screenshots": [

@@ -14,14 +14,9 @@ This works in Training and in lobby practice. In Training the new stage lasts fo
 
 ### Pick a form
 
-**New in [C89](lobby-parity-release.md):** press **Y** on a named stage to choose its form. Normal, Omega and Battlefield are separate choices, and **A** applies the form you chose. The help line names the current form, then the forms Y moves to next:
+Press **Y** on a named stage to cycle **Normal → Omega → Battlefield**; **A** applies the chosen form. The footer shows only the current choice, such as **Form: Omega**.
 
-| Stage has | Help line starts with |
-| --- | --- |
-| All three forms | `Normal \| Y Form: Omega, Battlefield` |
-| Normal and Omega (Battlefield) | `Normal \| Y Form: Omega` |
-| Normal and Battlefield (Final Destination) | `Normal \| Y Form: Battlefield` |
-| Normal only | `Normal \| Y Form` (Y does nothing) |
+Unavailable forms are skipped. Stages with only one form have no **Y Change Form** hint.
 
 Y never applies a stage or changes the rotation order. Change Stage Now and Lobby Stage Rotation keep their own forms.
 

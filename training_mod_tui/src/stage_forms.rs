@@ -63,7 +63,9 @@ impl Form {
             .find(|form| native_forms[*form as usize].is_some()).unwrap_or(self)
     }
 
-    /// Current form, then the Y cycle among slots the recorded row actually has.
+    /// Current form label only. Y Change Form appears when another supported form
+    /// is available to cycle to; unsupported current forms and single-form stages
+    /// omit the Y hint entirely.
     pub(crate) const fn help_line(
         self,
         native_forms: [Option<u32>; 3],
@@ -72,18 +74,21 @@ impl Form {
         let omega = native_forms[Self::Omega as usize].is_some();
         let battlefield = native_forms[Self::Battlefield as usize].is_some();
         match (self, omega, battlefield) {
-            (Self::Normal, true, true) => with_controls!(controls, "Normal | Y Form: Omega, Battlefield | "),
-            (Self::Omega, true, true) => with_controls!(controls, "Omega | Y Form: Battlefield, Normal | "),
-            (Self::Battlefield, true, true) => with_controls!(controls, "Battlefield | Y Form: Normal, Omega | "),
-            (Self::Normal, true, false) => with_controls!(controls, "Normal | Y Form: Omega | "),
-            (Self::Omega, true, false) => with_controls!(controls, "Omega | Y Form: Normal | "),
-            (Self::Battlefield, true, false) => with_controls!(controls, "Battlefield | "),
-            (Self::Normal, false, true) => with_controls!(controls, "Normal | Y Form: Battlefield | "),
-            (Self::Omega, false, true) => with_controls!(controls, "Omega | "),
-            (Self::Battlefield, false, true) => with_controls!(controls, "Battlefield | Y Form: Normal | "),
-            (Self::Normal, false, false) => with_controls!(controls, "Normal | Y Form | "),
-            (Self::Omega, false, false) => with_controls!(controls, "Omega | "),
-            (Self::Battlefield, false, false) => with_controls!(controls, "Battlefield | "),
+            // Normal is always supported. Y available when at least one other form exists.
+            (Self::Normal, true, _) | (Self::Normal, false, true) =>
+                with_controls!(controls, "Form: Normal | Y Change Form | "),
+            (Self::Normal, false, false) =>
+                with_controls!(controls, "Form: Normal | "),
+            // Omega is supported when its slot is Some; Normal is always available as next.
+            (Self::Omega, true, _) =>
+                with_controls!(controls, "Form: Omega | Y Change Form | "),
+            (Self::Omega, false, _) =>
+                with_controls!(controls, "Form: Omega | "),
+            // Battlefield is supported when its slot is Some; Normal is always available as next.
+            (Self::Battlefield, _, true) =>
+                with_controls!(controls, "Form: Battlefield | Y Change Form | "),
+            (Self::Battlefield, _, false) =>
+                with_controls!(controls, "Form: Battlefield | "),
         }
     }
 }
@@ -181,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn help_names_the_supported_cycle_and_keeps_saved_alias() {
+    fn help_shows_active_form_without_listing_cycle_targets() {
         assert_eq!(Form::ALL.map(Form::label), ["Normal", "Omega", "Battlefield"]);
         // Recorded 13.0.5 rows: Smashville 95/96/97, Battlefield 0/1,
         // Final Destination 3/4, Training 308. Slots are native IDs, not offsets.
@@ -196,20 +201,24 @@ mod tests {
                 let line = start.help_line(row, HelpControls::RotationOnly);
                 assert!(line.contains("L/R Page"), "{line}");
                 assert!(line.contains("Next lobby entry only"), "{line}");
-                assert!(!line.contains("Omega /"), "{line}");
-                assert!(!line.contains("Final Destination"), "{line}");
-                assert!(line.starts_with(start.label()), "{line}");
+                assert!(line.starts_with(&format!("Form: {}", start.label())), "{line}");
+                for other in Form::ALL {
+                    if other != start {
+                        assert!(!line.contains(other.label()),
+                            "line for {:?} contains label of {:?}: {line}", start, other);
+                    }
+                }
                 if row[start as usize].is_none() {
-                    assert!(!line.contains("Y Form"), "{line}");
+                    assert!(!line.contains("Y Change Form"), "{line}");
                     continue;
                 }
                 let names = cycle_names(start, row);
                 if names.is_empty() {
-                    assert!(line.contains("Y Form | "), "{line}");
-                    assert!(!line.contains("Y Form:"), "{line}");
+                    // Only one supported form: no Y action.
+                    assert!(!line.contains("Y Change Form"), "{line}");
                 } else {
-                    let listed = format!("Y Form: {}", names.join(", "));
-                    assert!(line.contains(&listed), "{line} missing {listed}");
+                    // Multiple supported forms: Y cycles without listing targets.
+                    assert!(line.contains("Y Change Form"), "{line}");
                 }
             }
         }
@@ -217,7 +226,7 @@ mod tests {
         assert_eq!(cycle_names(Form::Normal, full), ["Omega", "Battlefield"]);
         assert_eq!(
             Form::Normal.help_line(full, HelpControls::TrainingApply),
-            "Normal | Y Form: Omega, Battlefield | A Apply (Training only) | X Rotation | L/R Page | B Back"
+            "Form: Normal | Y Change Form | A Apply (Training only) | X Rotation | L/R Page | B Back"
         );
         assert_eq!(
             HelpControls::LobbyApply.bare(),

@@ -108,7 +108,7 @@ out unchanged apart from its new name. Console testing is pending.
 **Copy a named recording into a slot.** Set **Input Recording → Recording Slot**
 (here **3**), open **Named Library**, highlight a recording and press **Y**.
 
-![Named Library with Duck Hunt dash highlighted; the footer reads "A loads, Y binds to Record Slot 3, B closes."](named-macros/images/record-slot-library.png)
+![Pressing Y on Duck Hunt dash binds it to Record Slot 3 and returns to Input Recording.](named-macros/images/record-slot-bind.gif)
 
 **Save a slot as a named file.** Choose **Input Recording → Save Slot to
 Library**, type a name and confirm with **OK**.

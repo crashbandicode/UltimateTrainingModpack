@@ -10,7 +10,7 @@ Download it from the [plugin's releases](https://git.syntaxbyexample.com/intpa/e
 
 Hold **L + R** and press **D-pad Down** until **Stages + Counterpick** appears. **Up/Down** chooses a row; hold **ZR** and press **Left/Right** to change it. Both features start Off.
 
-![The bottom of Stages + Counterpick, with green checks under Pool, Results and Save.](feature-walkthroughs/elite-status.png)
+![Scrolling to Counterpick and toggling it off and on.](feature-walkthroughs/elite-counterpick.gif)
 
 | Row | What it does |
 | --- | --- |

@@ -57,7 +57,7 @@ viewport crop and pixel-equality check.
 
 ## Record Slot images (run150)
 
-Two stills illustrate [Share a numbered Record Slot](../named-macros.md#share-a-numbered-record-slot).
+An animated bind and a keyboard still illustrate [Share a numbered Record Slot](../named-macros.md#share-a-numbered-record-slot).
 They come from emulator run150 on 2026-10-27, which used the installed NRO with SHA-256
 `9d537cd543c04d380cc616abeed047632c366ddac68aeb57e026e974693cc8ba`. Sources are relative to
 that run's local archive, `collected150/live/`. The run's receipt `RECORDING150.json` records
@@ -68,10 +68,10 @@ everything except its name.
 | Image | Source | Processing |
 | --- | --- | --- |
 | [record-slot-library.png](images/record-slot-library.png) | `bind-record-slot3/transition.gif`, frame at 0.48 s, before Y at 1.06 s | 1280 × 720 native frame, 256 colours |
+| [record-slot-bind.gif](images/record-slot-bind.gif) | `bind-record-slot3/transition.gif`, 0–5 s | 1280 × 720, 10 fps, 256-colour palette; Y binds and returns to Input Recording |
 | [record-slot-keyboard.png](images/record-slot-keyboard.png) | `ui-name-1793118948425029532/b.png`, the native keyboard while naming the export (game paused) | Crop 0, 53, 900, 524 of the 900 × 650 Eden window, which removes only the menu bar, status bar and black letterbox. No scaling |
 
-No GIF was made for these steps. The list returns to the Input Recording page after Y and
-shows no notice while the menu is open. The keyboard pauses the game, so a still shows it
-fully.
+The binding GIF shows the real list-to-menu transition; the receipt establishes
+the copied slot contents. The keyboard pauses the game and is shown as a still.
 
 [Back to the walkthrough](../named-macros.md)
