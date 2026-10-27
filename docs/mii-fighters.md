@@ -20,7 +20,7 @@ Add the class portrait in **Characters → Character Cycles**. When the [cycle](
 
 ![Smash's Mii Fighter editor, opened from Add New.](feature-walkthroughs/mii-editor.png)
 
-The **lobby-parity development branch** enables these pages in Quickplay and Local Wireless waiting practice, including Player/CPU selections and the editor's cosmetic options. A match takes priority; afterward the editor resumes its unfinished screen without saving. Emulator checks covered interrupted cosmetic choices in Quickplay and an unfinished Specials draft across a real Local Wireless match ([validation ledger](plans/lobby-parity.md)). Explicit Cancel leaves without saving.
+**New in [C89](lobby-parity-release.md):** these pages also work in Quickplay and Local Wireless waiting practice. If a match starts, the editor resumes its unfinished screen afterward without saving; Cancel leaves without saving ([validation](plans/lobby-parity.md)).
 
 ## Opponents from your replays
 
@@ -28,8 +28,10 @@ With [replay capture](named-macros.md#turn-on-capture) on, **Save Replay → ent
 
 ## Matching portraits
 
-In Training, Player and CPU HUD portraits follow the selected Mii's face, outfit and colors, rendered by Smash itself. On the **lobby-parity development branch** (C89), Miis with changed headgear also load that equipment for either role and get their own portrait rather than the generic class one; switching between two Miis of the same class reloads normally. Local Wireless waiting practice updates the CPU icon too. The **lobby-parity development branch** adds Quickplay's CPU portrait; the Ready card continues to show the character-select fighter for the real match.
+![Choosing the armored replay Gunner and receiving its matching custom HUD portrait.](feature-walkthroughs/mii-gunner-hud.gif)
 
-![Saved Brawler and Swordfighter in Training, with matching custom portraits beside their damage percentages.](feature-walkthroughs/mii-hud-portraits.png)
+Player and CPU HUD portraits show the selected Mii's face, outfit and colors, rendered by Smash itself. In Local Wireless waiting practice the CPU icon updates too; the Ready card keeps your real-match fighter.
 
-For storage and matching rules, see [How character changes work](character-changes.md#miis).
+**New in [C89](lobby-parity-release.md):** equipped Miis load their headgear for either role and get their own portrait, and switching between two Miis of the same class works. Quickplay waiting practice updates the CPU portrait as well.
+
+[Capture details](feature-walkthroughs/mii-gunner-hud.json). For storage and matching rules, see [How character changes work](character-changes.md#miis).

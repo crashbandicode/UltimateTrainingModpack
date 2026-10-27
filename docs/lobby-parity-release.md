@@ -3,8 +3,9 @@
 C89 builds on C72's waiting-room practice (save/load, recordings, macro previews
 and interrupted Mii editing in Quickplay and Local Wireless waiting) and adds the
 changes below. **Training and waiting-room emulator checks passed with the
-current console plugins. Console acceptance is pending.** This candidate is separate from the earlier
-published enhancements alpha.
+current console plugins. Console acceptance is pending.** C89 is not yet a
+published download; the earlier [enhancements alpha](experimental-release.md)
+does not include these changes.
 
 ## New in C89
 
@@ -17,6 +18,7 @@ published enhancements alpha.
   rank value meanwhile. Other protected configuration changes still refuse safely.
 - **HUD portraits:** equipped Miis get their own portrait instead of the generic
   class one, and the stage no longer blacks out while the portrait renders.
+  [Portraits](mii-fighters.md#matching-portraits)
 - **Setup Library:** name a save-state slot, share the file, and bind it to any
   of the five slots. The list reads names only; a file loads when you pick it.
   [Setup Library](setup-library.md)
@@ -34,27 +36,32 @@ published enhancements alpha.
 | Field | Value |
 | --- | --- |
 | Smash version | 13.0.5 |
-| Branch | `lobby-parity` |
+| Source commit | `c61fdb0` |
 | Full NRO size | 4,231,168 bytes |
 | NRO SHA-256 | `def8782fae866857fb174c19104cadc83086b270e3b828a9f2bc2b91caeafcbb` |
 | Compiled source content SHA-256 | `7e50f98b52897bf1298b3842ca89461984f99b4312206b2bd979179fc3be8f32` |
 
-Sixteen build/validation jobs passed, including full and base Clippy with zero
-warnings, the no-default-features build and the full release. All 707 host tests
-ran fresh on C89 across 21 harnesses: 263 Mii, 113 macro, 176 menu and 155 constants tests.
+## Validation
 
-The final C89 run used all 12 companion plugin binaries from the current Switch,
-plus C89. All 13 initialized. In Training, Player 1 went Mr. Game & Watch → armored
-replay Gunner → default Gunner → armored replay Gunner against Duck Hunt, with
-matching body and HUD portraits and no black stage in 887 captured frames.
-Local Wireless waiting passed delayed CPU selection in both directions, with
-matching portraits and no black stage in 581 frames. Normal exits from both
-modes passed. These are emulator checks, not an Atmosphère/sysmodule or console
-boot qualification. Earlier candidates passed
-the replay preview and Peach's Castle forms (C77), Setup Library and Record Slot
-sharing (a C82-based build), all item icons in Training and Local Wireless waiting (C84), and
-an equipped waiting-room CPU Mii with original-fighter restore (C86). Captures
-are sampled at 30 FPS, not lossless; the final five recordings dropped 43 frames.
+- **Build and tests:** 16 build/validation jobs passed, including full and base
+  Clippy with zero warnings, the no-default-features build and the full release.
+  All 707 host tests ran fresh across 21 harnesses (263 Mii, 113 macro, 176 menu,
+  155 constants).
+- **Emulator, current console plugins:** all 12 companion plugins from the
+  current Switch plus C89; all 13 initialized.
+  - Training: Player 1 went Mr. Game & Watch → armored replay Gunner → default
+    Gunner → armored replay Gunner against Duck Hunt. Body and HUD portrait
+    matched each time; no black stage in 887 frames.
+  - Local Wireless waiting: delayed CPU Mii selection in both directions,
+    matching portraits, no black stage in 581 frames.
+  - Normal exits from both modes.
+- **Earlier candidates:** replay preview and Peach's Castle forms (C77), Setup
+  Library and Record Slot sharing (a C82-based build), all item icons in Training
+  and Local Wireless waiting (C84), and an equipped waiting-room CPU Mii with
+  original-fighter restore (C86).
+- **Limits:** emulator checks only, not an Atmosphère/sysmodule or console boot
+  qualification. Captures are sampled at 30 FPS, not lossless; the final five
+  recordings dropped 43 frames.
 
 ## Console review
 

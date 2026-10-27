@@ -6,6 +6,8 @@ Give Player 1 another fighter's item, such as a Peach turnip, Link's Remote Bomb
 
 Open **Character Extras → Character Item**. Its two pages group the items by the fighter who normally uses them. Highlight one and press **A**; the button flashes to confirm. Use **Up/Down** to move between pages.
 
+**New in [C89](lobby-parity-release.md):** each icon comes from the item's own game assets.
+
 ![Character Item menu with icons rendered from the game assets.](character-items/page-1.png)
 
 [See the second page](character-items/page-2.png).
@@ -28,8 +30,8 @@ Save with **ZL + D-pad Down** and load with **ZL + D-pad Up** (the defaults). A 
 
 ## Where it works
 
-Items such as the Remote Bomb or Pac-Man's fruit need their fighter's data, so that fighter is loaded out of sight. This works in ordinary Training with one CPU and in Local Wireless waiting practice. The **lobby-parity development branch** also enables Quickplay waiting practice; it does not alter items in the real match. Bob-omb, Mr. Saturn and the Banana Peel need no source fighter.
+Items such as the Remote Bomb or Pac-Man's fruit need their fighter's data, so that fighter is loaded out of sight. This works in ordinary Training with one CPU and in Local Wireless waiting practice; C89 adds Quickplay waiting practice. Items in the real match are unchanged. Bob-omb, Mr. Saturn and the Banana Peel need no source fighter.
 
-Emulator checks covered every listed item with save and restore in Training, Remote Bomb in Local Wireless waiting, and an absent-source Daisy Stitch-Face with save/load in Quickplay waiting. See the [parity validation ledger](plans/lobby-parity.md) for remaining branch checks.
+Emulator checks covered every listed item with save and restore in Training, Remote Bomb in Local Wireless waiting, and an absent-source Daisy Stitch-Face with save/load in Quickplay waiting. See the [parity validation ledger](plans/lobby-parity.md) for remaining checks.
 
 To learn how the hidden source fighter works, see [How character changes work](character-changes.md#kirby-hats-and-character-items-a-borrowed-fighter).

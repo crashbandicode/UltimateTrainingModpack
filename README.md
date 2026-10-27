@@ -4,7 +4,7 @@
 
 **UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-full-experimental.20261024.5). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
 
-**New on the lobby-parity branch (unstable C89):** shareable named [practice setups](docs/setup-library.md) and [Record Slots](docs/named-macros.md#share-a-numbered-record-slot), matching HUD portraits for equipped Miis, readable replay previews, separate Normal/Omega/Battlefield [stage forms](docs/practice-stages.md#pick-a-form), and item icons from the game's own assets. Training and lobby emulator checks passed with the current console plugins; console review is next ([release notes](docs/lobby-parity-release.md)).
+**New in source, not yet in a download:** features marked *New* below come from the unstable C89 build. Emulator checks passed; console review is pending ([C89 notes](docs/lobby-parity-release.md)).
 
 [Download this fork from Forgejo](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases). Version 7.1.2 reduces input-display work in Training; see the [performance checks](docs/input-display-performance.md).
 
@@ -12,65 +12,77 @@
 
 ## Features added in this fork
 
-### Solo Popo
-
-Practice with Popo alone, or cycle between Solo Popo and the full Ice Climbers pair. [Choose separate settings for your original fighter, player cycle, and CPU.](docs/solo-popo.md)
-
-![Turning Solo Popo on in Character Extras, then returning to Training.](docs/fighter-hotswap/solo-popo.gif)
-
-### Hot-swap Player 1 and the CPU
-
-Pick a fighter directly from the portrait grid, or build separate player and CPU cycles without leaving practice. [Hot-swap walkthrough and shortcuts.](docs/fighter-hotswap.md)
-
-![Choosing Bowser in the manual character grid and returning to Training.](docs/fighter-hotswap/manual-hotswap.gif)
-
-### Lobby practice
-
-Use the practice tools while waiting for a match; your real match still uses your character-select pick. [Enable Lobby Practice and try a swap.](docs/lobby-practice.md)
-
-![Player and CPU swaps in an emulator's local-wireless waiting room.](docs/lobby-practice/waiting-room.gif)
-
-### Recording and macro import
-
-Save a replay, choose the opponent's captured inputs, and trim a short sequence for the Training CPU to play. [Follow the illustrated recording walkthrough.](docs/named-macros.md) Numbered Record Slots can also be saved to that library or loaded from it ([how](docs/named-macros.md#share-a-numbered-record-slot)).
-
-![The Training CPU playing the opponent's captured P2 Hero inputs.](docs/named-macros/images/playback-p2.gif)
-
-### Named practice setups
-
-Name and share a saved setup, then load it from the library or bind it to one of the five save-state slots. [Save and restore a setup.](docs/setup-library.md)
+### Named practice setups · *New*
 
 ![Moving away from a saved setup, then restoring its spacing.](docs/setup-library/restore.png)
 
+Name a saved setup, share it as a file, and bind it to any of the five save-state slots. [Save and restore a setup.](docs/setup-library.md)
+
+### Record Slots · *New*
+
+![Named Library with a recording highlighted; the footer reads "A loads, Y binds to Record Slot 3, B closes."](docs/named-macros/images/record-slot-library.png)
+
+Copy a named recording into a numbered Record Slot, or save a slot to the library as a shareable file. [Share a Record Slot.](docs/named-macros.md#share-a-numbered-record-slot)
+
+### Custom Mii HUD portraits
+
+![Switching from a green Gunner to the armored replay Gunner, with its matching custom HUD portrait.](docs/feature-walkthroughs/mii-gunner-hud.gif)
+
+Player and CPU Miis show their own face, outfit and colors in the Training HUD. *New:* equipped Miis load their headgear and get a matching portrait ([Mii guide](docs/mii-fighters.md#matching-portraits)).
+
+### Solo Popo
+
+![Turning Solo Popo on in Character Extras, then returning to Training.](docs/fighter-hotswap/solo-popo.gif)
+
+Practice with Popo alone, or cycle between Solo Popo and the full Ice Climbers pair. [Choose separate settings for your original fighter, player cycle, and CPU.](docs/solo-popo.md)
+
+### Hot-swap Player 1 and the CPU
+
+![Choosing Bowser in the manual character grid and returning to Training.](docs/fighter-hotswap/manual-hotswap.gif)
+
+Pick a fighter directly from the portrait grid, or build separate player and CPU cycles without leaving practice. [Hot-swap walkthrough and shortcuts.](docs/fighter-hotswap.md)
+
+### Lobby practice
+
+![Player and CPU swaps in an emulator's local-wireless waiting room.](docs/lobby-practice/waiting-room.gif)
+
+Use the practice tools while waiting for a match; your real match still uses your character-select pick. [Enable Lobby Practice and try a swap.](docs/lobby-practice.md)
+
+### Recording and macro import
+
+![The Training CPU playing the opponent's captured P2 Hero inputs.](docs/named-macros/images/playback-p2.gif)
+
+Save a replay, pick either player's captured inputs, and trim a sequence for the Training CPU to play ([walkthrough](docs/named-macros.md)). *New:* a refused preview says why, and **ZL+Y** moves a mid-action start to a clean lead-in.
+
 ### Practice stages
 
-Change the current stage without backing out, or choose a stage rotation for future lobby visits. [Practice Stages walkthrough.](docs/practice-stages.md)
+![Applying Peach’s Castle in Battlefield form without leaving Training.](docs/practice-stages/forms.gif)
 
-![Paging through Practice Stages, switching between direct selection and lobby rotation, then loading Battlefield.](docs/lobby-practice/stage-menu.gif)
+Change the current stage without backing out, or choose a stage rotation for future lobby visits ([walkthrough](docs/practice-stages.md)). *New:* **Y** picks a stage's Normal, Omega or Battlefield form.
 
 ### Kirby hats
 
-Choose separate hat orders for Player and CPU Kirby, then use a shortcut to equip, cycle, or recover a lost hat. [Kirby hats walkthrough.](docs/kirby-hats.md)
-
 ![Player Kirby equips and uses Mario's and Link's copy abilities.](docs/feature-walkthroughs/kirby-hats.gif)
+
+Choose separate hat orders for Player and CPU Kirby, then use a shortcut to equip, cycle, or recover a lost hat. [Kirby hats walkthrough.](docs/kirby-hats.md)
 
 ### Character items
 
-Give any Player 1 fighter a character item and keep it in a save state, including the selected turnip face. [Character items walkthrough.](docs/character-items.md)
+![Character Item choices with icons from the items’ own game assets.](docs/character-items/page-1.png)
 
-![King Dedede receives Mega Man's Metal Blade, throws it, then restores the saved item.](docs/feature-walkthroughs/character-items.gif)
+Give any Player 1 fighter a character item and keep it in a save state, including the selected turnip face ([walkthrough](docs/character-items.md)). *New:* each menu icon comes from the item's own game assets.
 
 ### Saved Miis and the native editor
 
-Choose saved Miis for either role or create a new fighter in Smash's own editor, with matching Training HUD portraits. With replay capture on, **Save Replay** also keeps an unfamiliar opponent's Mii for Training—[watch discovery and duplicate matching](docs/mii-replay-discovery/README.md), or follow the [Mii selection guide](docs/mii-fighters.md).
-
 ![Choosing a saved Mii Brawler and using its selected neutral special in Training.](docs/feature-walkthroughs/mii-selection.gif)
+
+Choose saved Miis for either role or create one in Smash's own editor ([Mii guide](docs/mii-fighters.md)). With replay capture on, **Save Replay** also keeps an unfamiliar opponent's Mii ([see how](docs/mii-replay-discovery/README.md)).
 
 ### Elite stages and automatic counterpick
 
-The separate Elite Stages plugin can propose the loser's configured counterpick on an accepted rematch when your preferred rules are used. [Set the legal stage pool and counterpicks.](docs/elite-counterpick.md)
-
 ![The Elite Stages plugin page with its compact hook-status table.](docs/feature-walkthroughs/elite-status.png)
+
+The separate Elite Stages plugin can propose the loser's configured counterpick on an accepted rematch when your preferred rules are used. [Set the legal stage pool and counterpicks.](docs/elite-counterpick.md)
 
 [How these features work](docs/character-changes.md) · [Full guide by menu page](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/wiki) · [Experimental release limits](docs/experimental-release.md)
 
@@ -244,7 +256,7 @@ The timing of the CPU option can be influenced by the following settings:
 
 At any time in Training Mode, you can press `Shield + Down Taunt` to save the state of training mode. This will save the position, state, and damage of each fighter, which can then be reverted to at any time with `Shield + Up Taunt`. With the mirroring setting, loading the save state will flip the positions, allowing you to practice your skills facing both directions. Use this instead of the built-in training mode reset!
 
-You can switch Save State slots by using the associated toggle! There are 5 slots you can save, and they are persisted between loads of the game! In the enhancements alpha, you can also save a slot under a name and share it as a file with the [Setup Library](docs/setup-library.md).
+You can switch Save State slots by using the associated toggle! There are 5 slots you can save, and they are persisted between loads of the game! This fork's unstable C89 source can also save a slot under a name and share it as a file with the [Setup Library](docs/setup-library.md).
 
 The following attributes are saved in the save states:
 

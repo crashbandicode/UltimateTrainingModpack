@@ -1,0 +1,25 @@
+{
+  "path": "docs/practice-stages/forms.gif",
+  "recorded_date": "2026-10-27",
+  "build": "C77",
+  "nro_sha256": "208314512dccf35a2ab4c49a0e407a887e97e8e0265cd4f661af100a8b156458",
+  "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime147/collected147/live/peach-battlefield-confirmed/transition.gif",
+  "source_sha256": "568ab5d17a7d3667efdac66fbbee559bc14b2b84e623a3f171ae74c637259114",
+  "sha256": "7619d88efafdb903d074dafa852ee1c63059d592677d9243252ab06346bce1ca",
+  "dimensions": [
+    1280,
+    720
+  ],
+  "source_interval_seconds": [
+    0,
+    10
+  ],
+  "seconds": 9.99,
+  "frames": 60,
+  "fps": 6,
+  "source_requested_fps": 30,
+  "source_dropped_frames": 3,
+  "processing": "Original pixels; time trim and frame-rate reduction only; 128-color GIF palette. No crop, upscale, stitching, overlays or sped-up loading.",
+  "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/main-publish157/stage-accepted",
+  "visual_review": "Menu names Battlefield form with Normal/Omega as alternatives; A applies; native transition ends at three-platform Peach's Castle with Stage ready. C77 predates the separate Mii HUD correction; this clip qualifies stage forms only."
+}

@@ -83,7 +83,7 @@ lobby removes it. Bob-omb, Mr. Saturn and the Banana Peel are ordinary items and
 need no source.
 
 Sources load in ordinary Training with exactly one CPU and in Local Wireless
-waiting practice. The **lobby-parity development branch** also supports Quickplay
+waiting practice. The full experimental build also supports Quickplay
 waiting practice. Lobby Practice must be On. Actual matches and unqualified
 scenes, including arenas, cannot admit these temporary practice sources.
 
@@ -142,7 +142,7 @@ works as usual.
 - Saving an identical Mii again reuses the existing one instead of adding a copy.
 - Leaving without saving discards the draft and creates nothing.
 
-The **lobby-parity development branch** enables Player/CPU selections and Add New
+The full experimental build enables Player/CPU selections and Add New
 in Quickplay and Local Wireless waiting practice. Name, Special Moves, Settings,
 Test and cosmetic pages remain available. Its interruption contract preserves
 the unfinished screen, value and cursor for the same-lobby return; exact cosmetic
@@ -175,5 +175,5 @@ releases its temporary rendering resources before leaving waiting practice.
 Returning to the lobby rebuilds the portrait with the restored fighter.
 
 This covers both Training fighters and the Local Wireless waiting CPU. The
-**lobby-parity development branch** adds the Quickplay waiting CPU. The lobby
+**full experimental build** includes the Quickplay waiting CPU. The lobby
 Ready card keeps the character-select fighter for the real match.

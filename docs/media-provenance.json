@@ -287,7 +287,7 @@
       ],
       "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/mii-replay-guide139/media/review-new",
       "timing_note": "Actual screenshot timestamps mapped to 10 fps output, holding intervening frames; live-match capture is lower-rate than game rendering. No gameplay speed or FPS claim.",
-      "visual_review": "Reviewed decoded first/middle/last and Save Replay confirmation. New green Brawler becomes Replay Brawler 2111; existing red 格斗 1111 leaves the same two-entry list. Native saves unchanged; no console acceptance claim."
+      "visual_review": "Reviewed decoded first/middle/last and Save Replay confirmation. New green Brawler becomes Replay Brawler 2111; existing red \u683c\u6597 1111 leaves the same two-entry list. Native saves unchanged; no console acceptance claim."
     },
     {
       "path": "docs/mii-replay-discovery/mii-discovery-existing.gif",
@@ -332,7 +332,57 @@
       ],
       "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/mii-replay-guide139/media/review-existing",
       "timing_note": "Actual screenshot timestamps mapped to 10 fps output, holding intervening frames; live-match capture is lower-rate than game rendering. No gameplay speed or FPS claim.",
-      "visual_review": "Reviewed decoded first/middle/last and Save Replay confirmation. New green Brawler becomes Replay Brawler 2111; existing red 格斗 1111 leaves the same two-entry list. Native saves unchanged; no console acceptance claim."
+      "visual_review": "Reviewed decoded first/middle/last and Save Replay confirmation. New green Brawler becomes Replay Brawler 2111; existing red \u683c\u6597 1111 leaves the same two-entry list. Native saves unchanged; no console acceptance claim."
+    },
+    {
+      "path": "docs/feature-walkthroughs/mii-gunner-hud.gif",
+      "recorded_date": "2026-10-27",
+      "build": "C89",
+      "nro_sha256": "def8782fae866857fb174c19104cadc83086b270e3b828a9f2bc2b91caeafcbb",
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime156/collected156/live/training-replay156/transition.gif",
+      "source_sha256": "c1ed2f6f2cd110a3575d93ff079321d2cc1ba974ae3485b50630e2da44e44da4",
+      "sha256": "bc221f70e178323bc5cec630663d5beb622522b4e8ede56c083d6907b2330b9a",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "source_interval_seconds": [
+        0,
+        7
+      ],
+      "seconds": 7.0,
+      "frames": 70,
+      "fps": 10,
+      "source_requested_fps": 30,
+      "source_dropped_frames": 10,
+      "processing": "Original pixels; time trim and frame-rate reduction only; 128-color GIF palette. No crop, upscale, stitching, overlays or sped-up loading.",
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/main-publish157/mii-accepted",
+      "visual_review": "Default green Gunner selected Replay Gunner [3332]; menu closes; armored Gunner and its matching custom portrait appear, CPU Duck Hunt unchanged."
+    },
+    {
+      "path": "docs/practice-stages/forms.gif",
+      "recorded_date": "2026-10-27",
+      "build": "C77",
+      "nro_sha256": "208314512dccf35a2ab4c49a0e407a887e97e8e0265cd4f661af100a8b156458",
+      "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime147/collected147/live/peach-battlefield-confirmed/transition.gif",
+      "source_sha256": "568ab5d17a7d3667efdac66fbbee559bc14b2b84e623a3f171ae74c637259114",
+      "sha256": "7619d88efafdb903d074dafa852ee1c63059d592677d9243252ab06346bce1ca",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "source_interval_seconds": [
+        0,
+        10
+      ],
+      "seconds": 9.99,
+      "frames": 60,
+      "fps": 6,
+      "source_requested_fps": 30,
+      "source_dropped_frames": 3,
+      "processing": "Original pixels; time trim and frame-rate reduction only; 128-color GIF palette. No crop, upscale, stitching, overlays or sped-up loading.",
+      "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/main-publish157/stage-accepted",
+      "visual_review": "Menu names Battlefield form with Normal/Omega as alternatives; A applies; native transition ends at three-platform Peach's Castle with Stage ready. C77 predates the separate Mii HUD correction; this clip qualifies stage forms only."
     }
   ],
   "screenshots": [

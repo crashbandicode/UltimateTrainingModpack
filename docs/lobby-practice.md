@@ -2,7 +2,7 @@
 
 Practice while Quickplay or Local Wireless waits for another player. Swap fighters, save a position, replay inputs, or try a different stage. The match itself still uses your character-select pick.
 
-This page describes the **lobby-parity development branch**. Its [22 gameplay checks](plans/lobby-parity.md#required-behavior) are complete in the documented emulator/shared-code scope. Physical-console acceptance is pending.
+The [22 gameplay checks](plans/lobby-parity.md#required-behavior) are complete in the documented emulator/shared-code scope; physical-console acceptance is pending.
 
 ## Turn it on
 

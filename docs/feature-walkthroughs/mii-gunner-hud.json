@@ -1,0 +1,25 @@
+{
+  "path": "docs/feature-walkthroughs/mii-gunner-hud.gif",
+  "recorded_date": "2026-10-27",
+  "build": "C89",
+  "nro_sha256": "def8782fae866857fb174c19104cadc83086b270e3b828a9f2bc2b91caeafcbb",
+  "source_capture": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/runtime156/collected156/live/training-replay156/transition.gif",
+  "source_sha256": "c1ed2f6f2cd110a3575d93ff079321d2cc1ba974ae3485b50630e2da44e44da4",
+  "sha256": "bc221f70e178323bc5cec630663d5beb622522b4e8ede56c083d6907b2330b9a",
+  "dimensions": [
+    1280,
+    720
+  ],
+  "source_interval_seconds": [
+    0,
+    7
+  ],
+  "seconds": 7.0,
+  "frames": 70,
+  "fps": 10,
+  "source_requested_fps": 30,
+  "source_dropped_frames": 10,
+  "processing": "Original pixels; time trim and frame-rate reduction only; 128-color GIF palette. No crop, upscale, stitching, overlays or sped-up loading.",
+  "review": "/home/intpa/smash-training-lobby/artifacts/enhancements/console-practice91/lobby-parity167/main-publish157/mii-accepted",
+  "visual_review": "Default green Gunner selected Replay Gunner [3332]; menu closes; armored Gunner and its matching custom portrait appear, CPU Duck Hunt unchanged."
+}

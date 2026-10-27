@@ -6,15 +6,15 @@ Change the stage you practice on without going back to character select, and cho
 
 Open **Misc Settings → Practice Stages**. It opens at **Change Stage Now**: highlight a stage and press **A**. The menu closes and the stage changes. **L/R** turn the page, and the list also includes **Training** and **Waiting Room**.
 
-![Paging stages, opening lobby rotation, and changing Training to Battlefield.](lobby-practice/stage-menu.gif)
+![Applying Peach’s Castle in Battlefield form and returning to practice.](practice-stages/forms.gif)
 
-*Recorded in ordinary Training: L/R paging, the rotation view, then the full change to Battlefield. The loading pause is kept.*
+*Peach’s Castle, Battlefield form. The full loading transition is kept. [Capture details](practice-stages/SCREENSHOTS.md).*
 
 This works in Training and in lobby practice. In Training the new stage lasts for that session only. In a lobby, **A** also keeps the stage for your later lobby entries.
 
 ### Pick a form
 
-Press **Y** on a named stage to choose its form. Normal, Omega and Battlefield are separate choices, and **A** applies the form you chose. The help line names the current form, then the forms Y moves to next:
+**New in [C89](lobby-parity-release.md):** press **Y** on a named stage to choose its form. Normal, Omega and Battlefield are separate choices, and **A** applies the form you chose. The help line names the current form, then the forms Y moves to next:
 
 | Stage has | Help line starts with |
 | --- | --- |
