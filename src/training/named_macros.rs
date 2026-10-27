@@ -14,7 +14,10 @@ use smash::lib::lua_const::*;
 use smash::phx::{Hash40, Vector2f, Vector3f};
 use training_mod_macros::{InputFrame, Library, MacroRecording, StartState};
 use training_mod_sync::*;
-use training_mod_tui::macro_panel::{Effect, LibraryRow, MacroUi, Pad, View};
+use training_mod_tui::macro_panel::{
+    Effect, LibraryRow, MacroUi, MiiIdentity, NameContext, Pad, View, MACRO_KEYBOARD_TITLE,
+    SETUP_KEYBOARD_TITLE,
+};
 
 use crate::common::consts::{FighterId, MacroSource, MENU};
 use crate::common::input::{Buttons, MappedInputs};
@@ -24,6 +27,42 @@ use crate::training::ui::notifications::notification;
 
 static UI: RwLock<MacroUi> = RwLock::new(MacroUi::new());
 static SUSPENDED: AtomicBool = AtomicBool::new(false);
+static CONFIRMED_NAME: RwLock<Option<NameConfirmation>> = RwLock::new(None);
+static LIST_ACTION: RwLock<Option<String>> = RwLock::new(None);
+/// Record slot captured when the named library or slot export was opened.
+/// Import uses this frozen index. It is not reread from the committed menu.
+static RECORD_SLOT: RwLock<Option<usize>> = RwLock::new(None);
+
+/// Keyboard result for a draft the caller still owns.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NameConfirmation {
+    pub context: NameContext,
+    pub name: String,
+}
+
+pub fn take_confirmed_name() -> Option<NameConfirmation> {
+    lock_write(&CONFIRMED_NAME).take()
+}
+
+/// Y on a library opened through [`open_external_library`].
+pub fn take_list_action() -> Option<String> {
+    lock_write(&LIST_ACTION).take()
+}
+
+static LIST_CHOICE: RwLock<Option<String>> = RwLock::new(None);
+
+/// A on a library opened through [`open_external_library`]. The named-macro
+/// loader never sees that row; the opener owns it.
+pub fn take_list_choice() -> Option<String> {
+    lock_write(&LIST_CHOICE).take()
+}
+
+/// True while the caller-owned name draft for `token` is on the panel, open or
+/// parked across a same-lobby interruption. False once it was confirmed,
+/// cancelled, or discarded by a new lobby.
+pub fn external_name_open(token: u64) -> bool {
+    lock_read(&UI).external_name_token() == Some(token)
+}
 
 pub fn suspended() -> bool { SUSPENDED.load(Ordering::Acquire) }
 pub fn suspend_waiting() {
@@ -153,11 +192,19 @@ fn resume_name() {
     let Some(job) = pending.as_mut().filter(|job| job.phase == NamePhase::Parked) else { return };
     let values = {
         let ui = lock_read(&UI);
-        ui.name_prompt().zip(ui.native_name_cursor()).map(|(name, cursor)| (name.to_owned(), cursor))
+        let title = ui.native_name_title().unwrap_or(MACRO_KEYBOARD_TITLE);
+        ui.name_prompt().zip(ui.native_name_cursor()).map(|(name, cursor)| {
+            (name.to_owned(), cursor, title)
+        })
     };
-    let Some((name, cursor)) = values else { pending.take(); return };
+    let Some((name, cursor, title)) = values else { pending.take(); return };
     let id = NAME_SERIAL.fetch_add(1, Ordering::Relaxed);
-    match crate::native_keyboard::request_inline(id, &name, cursor) {
+    let opened = if job.waiting {
+        crate::native_keyboard::request_inline(id, &name, cursor)
+    } else {
+        crate::native_keyboard::request(id, title, &name)
+    };
+    match opened {
         Ok(()) => {
             job.id = id;
             job.generation = SESSION_GENERATION.load(Ordering::Relaxed);
@@ -294,16 +341,19 @@ fn request_native_name() {
     if suspended() || crate::native_keyboard::busy() || naming_pending() { return; }
     let values = {
         let ui = lock_read(&UI);
-        ui.name_prompt().zip(ui.native_name_cursor()).map(|(name, cursor)| (name.to_owned(), cursor))
+        let title = ui.native_name_title().unwrap_or(MACRO_KEYBOARD_TITLE);
+        ui.name_prompt().zip(ui.native_name_cursor()).map(|(name, cursor)| {
+            (name.to_owned(), cursor, title)
+        })
     };
-    let Some((initial, cursor)) = values else { return };
+    let Some((initial, cursor, title)) = values else { return };
     let id = NAME_SERIAL.fetch_add(1, Ordering::Relaxed);
     let job = NameJob { id, generation: SESSION_GENERATION.load(Ordering::Relaxed),
         replay: crate::replay_capture::panel_visible(), waiting: super::lobby::is_waiting_scene(),
         phase: NamePhase::Active };
     *NAME_JOB.lock().unwrap() = Some(job);
     let result = if job.waiting { crate::native_keyboard::request_inline(id, &initial, cursor) }
-        else { crate::native_keyboard::request(id, "Name macro", &initial) };
+        else { crate::native_keyboard::request(id, title, &initial) };
     if let Err(error) = result {
         NAME_JOB.lock().unwrap().take();
         notify(&error);
@@ -444,10 +494,14 @@ pub fn on_pad(pad: Pad) {
     assign(&menu::MENU_RECEIVED_INPUT, true);
 }
 
-pub fn open_library() {
+pub fn open_library(slot: Option<usize>) {
     if !practice_ready() {
         return;
     }
+    let Some(slot) = slot else {
+        notify("Choose a Record Slot first");
+        return;
+    };
     let listing = match library().list() {
         Ok(listing) => listing,
         Err(err) => {
@@ -464,8 +518,82 @@ pub fn open_library() {
             label: format!("{} · {}", entry.name, fighter_label(entry.fighter_kind)),
         })
         .collect();
-    lock_write(&UI).open_library(rows, skipped);
+    *lock_write(&RECORD_SLOT) = Some(slot);
+    lock_write(&UI).open_library_titled(
+        rows,
+        skipped,
+        "Named Library",
+        Some(format!("Record Slot {}", slot + 1)),
+    );
     assign(&menu::MENU_RECEIVED_INPUT, true);
+}
+
+pub fn export_record_slot(slot: Option<usize>) {
+    if !practice_ready() {
+        return;
+    }
+    let Some(slot) = slot else {
+        notify("Choose a Record Slot first");
+        return;
+    };
+    let (frames, start, mii) = match crate::training::input_record::export_named(slot) {
+        Ok(ready) => ready,
+        Err(message) => {
+            notify(message);
+            return;
+        }
+    };
+    let version = game_version();
+    let effect = lock_write(&UI).offer_save_with_mii(frames, start, false, &version, mii);
+    apply_effect(effect);
+    request_native_name();
+    if panel_visible() {
+        assign(&menu::MENU_RECEIVED_INPUT, true);
+    }
+}
+
+pub fn offer_external_name(token: u64, default_name: &str, summary: &str) {
+    let effect = lock_write(&UI).offer_name(
+        NameContext { token, title: SETUP_KEYBOARD_TITLE },
+        default_name,
+        summary,
+    );
+    apply_effect(effect);
+    request_native_name();
+    if panel_visible() {
+        assign(&menu::MENU_RECEIVED_INPUT, true);
+    }
+}
+
+pub fn open_external_library(
+    rows: Vec<LibraryRow>,
+    skipped: usize,
+    title: impl Into<String>,
+    alternate: Option<String>,
+) {
+    if !practice_ready() {
+        return;
+    }
+    lock_write(&UI).open_library_forward(rows, skipped, title, alternate);
+    assign(&menu::MENU_RECEIVED_INPUT, true);
+}
+
+/// CPU role index shared with save states. The read is the live configuration at record start.
+const CPU_ROLE: usize = 1;
+
+/// Exact CPU identity at recording start. Saved, original, and discovered Miis all come
+/// from `current_mii_configuration`. A Mii with no exact configuration stays [`MiiIdentity::Unknown`].
+pub fn mii_at_lockout(
+    kind: i32,
+) -> (MiiIdentity, Option<training_mod_consts::mii::lifetime::Configuration>) {
+    let observed = crate::character_roster::current_mii_configuration(CPU_ROLE);
+    let observed_kind = observed.as_ref().map(|configuration| configuration.canonical().class.kind());
+    let identity = training_mod_tui::macro_panel::mii_identity(kind, observed_kind);
+    let mii = match identity {
+        MiiIdentity::Exact => observed,
+        MiiIdentity::Ordinary | MiiIdentity::Unknown => None,
+    };
+    (identity, mii)
 }
 
 pub fn open_editor() {
@@ -689,7 +817,13 @@ pub fn clear_session() {
     GENERATION.fetch_add(1, Ordering::Relaxed);
     SESSION_GENERATION.fetch_add(1, Ordering::Relaxed);
     retire_name(suspended());
+    // These are one-shot actions from the departing scene, not suspended
+    // keyboard drafts. A later practice visit must never consume them.
+    *lock_write(&CONFIRMED_NAME) = None;
+    *lock_write(&LIST_ACTION) = None;
+    *lock_write(&LIST_CHOICE) = None;
     if !suspended() {
+        *lock_write(&RECORD_SLOT) = None;
         lock_write(&UI).close_transient();
         crate::replay_capture::close_editor();
     }
@@ -1119,7 +1253,35 @@ fn apply_effect(effect: Effect) {
         Effect::Save(recording) => save_new(*recording),
         Effect::Overwrite { id, recording } => overwrite(id, *recording),
         Effect::Choose(id) => load_id(&id),
+        Effect::BindToSlot { id } => bind_to_slot(&id),
+        Effect::Alternate { id } => *lock_write(&LIST_ACTION) = Some(id),
+        Effect::ForwardChoose { id } => *lock_write(&LIST_CHOICE) = Some(id),
+        Effect::NameConfirmed { context, name } => {
+            *lock_write(&CONFIRMED_NAME) = Some(NameConfirmation { context, name });
+        }
         Effect::NeedCharacter(kind) => request_kind(kind),
+    }
+}
+
+fn bind_to_slot(id: &str) {
+    if !practice_ready() {
+        return;
+    }
+    let Some(slot) = *lock_read(&RECORD_SLOT) else {
+        notify("Choose a Record Slot first");
+        return;
+    };
+    let recording = match library().load(id) {
+        Ok(recording) => recording,
+        Err(err) => {
+            notify(&err.to_string());
+            return;
+        }
+    };
+    let label = format!("Record Slot {}", slot + 1);
+    match crate::training::input_record::import_named_slot(slot, &recording.frames, recording.start, recording.mii) {
+        Ok(()) => notify(&format!("Bound {} to {label}", recording.name)),
+        Err(err) => notify(&err),
     }
 }
 

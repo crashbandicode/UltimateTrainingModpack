@@ -192,6 +192,14 @@ impl Job {
     pub const fn new(owner: usize, request: Request, generation: u64, before_table: usize) -> Self {
         Self { owner, request, generation, before_table, superseded: false, contaminated: false, departed: false, saw_clear: false }
     }
+
+    /// A live HUD update belongs on its service callback. Retirement still
+    /// drains on pipeline/destructor callbacks, even after the event was sent
+    /// and an asynchronous HUD asset update remains pending.
+    pub const fn hud_service_required(self, withheld: bool, assets_pending: bool) -> bool {
+        !self.departed && !self.superseded && !self.contaminated
+            && (withheld || assets_pending)
+    }
 }
 
 /// What `publish_mii_presentation` passes. Absence of a configuration is never an intent.
@@ -566,6 +574,123 @@ pub const fn rejected_deferral(deferred: bool, accepted: bool, owner_current: bo
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PaneRead { pub index: u32, pub part_ready: bool }
 
+/// A portrait event queues native HUD asset work; its return is not a framing
+/// barrier. Run146 caught the Gunner event key alongside the old G&W committed
+/// key at 141b8a0. That binder reads +170 to choose framing. The native loader
+/// commits that key at 1419ff8 and clears its channel state only after the
+/// applier returns (141a830..141a868).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HudAssets {
+    pub committed_key: u64,
+    pub event_dirty: bool,
+    pub channel_busy: bool,
+    pub update_busy: bool,
+}
+
+pub const fn hud_assets_settled(expected_key: u64, current: HudAssets) -> bool {
+    expected_key != 0 && current.committed_key == expected_key
+        && !current.event_dirty && !current.channel_busy && !current.update_busy
+}
+
+/// Where a drained Training render may bind once `hud_assets_settled` holds. The
+/// native source tick (`3308f30`) runs in the scene node's own update (`3725350`),
+/// after the HUD slot loader committed `+0x170` under that node's child traversal
+/// (`3725340`; run151 `hud-order151`, thread 80). A bind there is never later than
+/// the next entry service callback. Only a published hold qualifies: publication,
+/// completion and the helper's return stay on the service callback, and a retiring
+/// flight keeps draining there.
+pub const fn tick_bind_allowed(
+    flight: Job, hold: HudHold, assets_pending: bool, same_thread: bool, training: bool, halted: bool,
+) -> bool {
+    training && same_thread && assets_pending && !halted
+        && matches!(hold, HudHold::Published)
+        && !flight.departed && !flight.superseded && !flight.contaminated
+}
+
+/// After the asset wait the service callback binds unless the bind was refused or the
+/// source tick already bound this pane; it still records the terminal and returns the helper.
+pub const fn service_bind_after_wait(bind_refused: bool, tick_bound: bool) -> bool {
+    !bind_refused && !tick_bound
+}
+
+#[cfg(test)]
+mod hud_asset_tests {
+    use super::{
+        hud_assets_settled, service_bind_after_wait, tick_bind_allowed, HudAssets, HudHold, Job, Ownership, Request,
+    };
+
+    #[test]
+    fn source_tick_binds_only_a_published_live_training_wait_on_its_thread() {
+        let flight = Job::new(0, Request { row: 2, sub: 7 }, 1, 0);
+        let published = HudHold::Published;
+        assert!(tick_bind_allowed(flight, published, true, true, true, false));
+        // No pending asset wait: the service callback completes the drained render itself.
+        assert!(!tick_bind_allowed(flight, published, false, true, true, false));
+        // Another thread, a waiting layout or a halted scene never binds off the service callback.
+        assert!(!tick_bind_allowed(flight, published, true, false, true, false));
+        assert!(!tick_bind_allowed(flight, published, true, true, false, false));
+        assert!(!tick_bind_allowed(flight, published, true, true, true, true));
+        // Publication is service-only: a withheld, superseded or retired hold keeps waiting.
+        for hold in [HudHold::Withheld { generation: 1 }, HudHold::Superseded { generation: 1 }, HudHold::Retired] {
+            assert!(!tick_bind_allowed(flight, hold, true, true, true, false));
+        }
+        // A retiring flight still drains on the service callback and never binds here.
+        for retiring in [Job { departed: true, ..flight }, Job { superseded: true, ..flight }, Job { contaminated: true, ..flight }] {
+            assert!(!tick_bind_allowed(retiring, published, true, true, true, false));
+            assert!(!retiring.hud_service_required(false, true));
+        }
+    }
+
+    #[test]
+    fn a_tick_bound_pane_is_not_bound_again_on_the_service_callback() {
+        assert!(service_bind_after_wait(false, false));
+        assert!(!service_bind_after_wait(false, true));
+        assert!(!service_bind_after_wait(true, false));
+        assert!(!service_bind_after_wait(true, true));
+    }
+
+    #[test]
+    fn gnw_to_gunner_waits_for_key_and_native_applier_completion() {
+        // Run146's observed bind-time keys. Event return leaves the old frame.
+        let gunner = 0xc1004e1257ab1d87;
+        let mut native = HudAssets { committed_key: 0xc1001e1230cd32d8,
+            event_dirty: true, channel_busy: false, update_busy: false };
+        assert!(!hud_assets_settled(gunner, native));
+        native.event_dirty = false;
+        native.channel_busy = true;
+        native.update_busy = true;
+        assert!(!hud_assets_settled(gunner, native));
+        native.committed_key = gunner; // Key write precedes the asset applier.
+        assert!(!hud_assets_settled(gunner, native));
+        native.channel_busy = false;
+        assert!(!hud_assets_settled(gunner, native));
+        native.update_busy = false;
+        assert!(hud_assets_settled(gunner, native));
+    }
+
+    #[test]
+    fn same_class_reload_still_waits_for_pending_native_update() {
+        let key = 0xc1004e1257ab1d87;
+        let native = HudAssets { committed_key: key,
+            event_dirty: true, channel_busy: false, update_busy: false };
+        assert!(!hud_assets_settled(key, native));
+        assert!(!hud_assets_settled(0, HudAssets { event_dirty: false, ..native }));
+    }
+
+    #[test]
+    fn pending_hud_assets_do_not_block_retirement_off_the_service_callback() {
+        for retire in [Ownership::depart, |o: &mut Ownership| o.cancel_owner(0), Ownership::contaminate] {
+            let mut owner = Ownership::new();
+            owner.issue(Job::new(0, Request { row: 2, sub: 7 }, 1, 0)).unwrap();
+            assert!(owner.in_flight.unwrap().hud_service_required(false, true));
+            retire(&mut owner);
+            assert!(!owner.in_flight.unwrap().hud_service_required(false, true));
+            assert!(!owner.in_flight.unwrap().hud_service_required(true, false));
+            assert!(owner.in_flight.is_some(), "native work must still drain");
+        }
+    }
+}
+
 pub const fn after_event_pane(fresh: Option<PaneRead>) -> bool {
     match fresh {
         Some(pane) => pane.part_ready && pane.index < 0x20,
@@ -626,6 +751,165 @@ pub fn template_outcome(template_gate: u8, skipped: bool) -> Result<(), &'static
         return Err("render ran without the scoped skip; helper D assumed templated, re-proof decides");
     }
     Ok(())
+}
+
+/// The batch's request table index (`batch+0xd8+index*8`, eight rows of ten subs); the
+/// pass keeps the index it is rendering at `batch+0x370`.
+pub const fn request_index(request: Request) -> u32 { request.row * 10 + request.sub }
+
+/// What the `32c52e4` inline callback sees. The native batch pass has just read its own
+/// "stage already hidden" latch (`batch+0x358`, in `w9`) and is about to hide every stage
+/// (`core+0x178 = 1` at `32c5380`, per-stage `+0x30/+0x34` counts) for the whole pass,
+/// then set the latch (`32c5c24`). The pass cursor `batch+0x370` still reads 0 on that
+/// first call (the terminal path at `32c55c8` is its only reset); only afterwards does the
+/// advance loop (`32c6ed8..32c6f00`) skip slots whose request `+0xc` is clear, the flag the
+/// `0xa` retarget sets at `3304b48`. Run152 traced the hide store with `x19` the live batch
+/// and `x20` the observer's stage core, and the terminal unhide (`32c5700`) on the same
+/// batch. Both unhides (`32c55c4`, `32c7b7c`) are gated by the latch.
+#[derive(Clone, Copy, Debug)]
+pub struct StageHideView {
+    /// `x19`, the fresh `[base+0x532f758]` holder, and the batch recorded at issue.
+    pub batch: usize, pub fresh_batch: usize, pub issued_batch: usize,
+    /// `w9` as native code loaded it from `batch+0x358`.
+    pub latch: u8,
+    pub armed_request: usize,
+    /// The request table as the pass will scan it.
+    pub activity: BatchActivity,
+}
+
+/// Fold over the eighty request slots (`batch+0xd8+slot*8`) with the pass's own
+/// criterion: a slot is active while its request's `+0xc` is set. The owned slot is
+/// `request_index` of the in-flight request; a null slot is neither owned nor foreign.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BatchActivity {
+    /// Slot whose pointer was folded as owned; activity does not end ownership.
+    pub owned_slot: Option<u32>,
+    /// The request pointer at the owned slot, 0 when absent.
+    pub owned_request: usize,
+    /// Active requests on every other slot.
+    pub foreign_active: u32,
+}
+
+impl BatchActivity {
+    pub fn note(&mut self, slot: u32, owned_slot: u32, request: usize, active: bool) {
+        if slot == owned_slot {
+            self.owned_slot = Some(slot);
+            self.owned_request = request;
+        } else if request != 0 && active {
+            self.foreign_active += 1;
+        }
+    }
+}
+
+/// True only for the pass that renders the owned, uncontaminated request alone, on the
+/// batch it was issued on. The adapter then reports the latch as set in `w9` so native code
+/// takes its own already-hidden branch: no hide, no counts, no latch, and the latch-gated
+/// unhides do nothing. A latch that already reads set has nothing to bypass. Any foreign
+/// active request keeps the native hide for that pass. The cursor is not an input: the
+/// first call hides before it moves. Superseded and departed jobs still execute their
+/// queued render, so their pass qualifies too.
+/// The owned request's activity byte is deliberately NOT an ownership test: native code
+/// clears it at `32c6ecc` before the batch finishes. Run153 caught the subsequent hide
+/// with that byte clear while the issued job, lease and request identity were still live.
+/// Keep the bypass through that drain; a newly active foreign request still refuses it.
+pub fn bypass_stage_hide(v: StageHideView, in_flight: Option<Job>) -> bool {
+    let job = match in_flight { Some(job) => job, None => return false };
+    !job.contaminated
+        && v.latch == 0
+        && v.armed_request != 0
+        && v.activity.owned_slot == Some(request_index(job.request))
+        && v.activity.owned_request == v.armed_request
+        && v.activity.foreign_active == 0
+        && v.batch != 0 && v.batch == v.fresh_batch && v.batch == v.issued_batch
+        && job.request.row < 8 && PORTRAIT_SUBS.contains(&job.request.sub)
+}
+
+#[cfg(test)]
+mod stage_hide_tests {
+    use super::*;
+
+    /// Eighty allocated requests; the owned slot holds `armed`, `foreign` slots are active.
+    fn table(owned_slot: u32, armed: usize, foreign: &[u32]) -> BatchActivity {
+        let mut activity = BatchActivity::default();
+        for slot in 0..80u32 {
+            let request = 0x11_82b5_0000 + slot as usize * 0x200;
+            let (request, active) = if slot == owned_slot { (armed, true) } else { (request, foreign.contains(&slot)) };
+            activity.note(slot, owned_slot, request, active);
+        }
+        activity
+    }
+
+    #[test]
+    fn stage_hide_bypass_only_for_the_owned_pass_of_the_armed_request() {
+        // Run152 values: batch 0x11810a8480, request (2,7) at descriptor 0x1182b5bd80 - 0x180.
+        let job = Job::new(0, Request { row: 2, sub: 7 }, 1, 0);
+        let armed = 0x11_82b5_bc00;
+        assert_eq!(request_index(job.request), 27);
+        let view = StageHideView {
+            batch: 0x11_810a_8480, fresh_batch: 0x11_810a_8480, issued_batch: 0x11_810a_8480,
+            latch: 0, armed_request: armed, activity: table(27, armed, &[]),
+        };
+        assert_eq!(view.activity, BatchActivity { owned_slot: Some(27), owned_request: armed, foreign_active: 0 });
+        assert!(bypass_stage_hide(view, Some(job)));
+        assert!(!bypass_stage_hide(view, None));
+        assert!(!bypass_stage_hide(view, Some(Job { contaminated: true, ..job })));
+        // A superseded or departed render still runs its pass: the bypass still applies.
+        assert!(bypass_stage_hide(view, Some(Job { superseded: true, ..job })));
+        assert!(bypass_stage_hide(view, Some(Job { departed: true, ..job })));
+        for bad in [
+            StageHideView { latch: 1, ..view },
+            StageHideView { armed_request: 0, ..view },
+            StageHideView { fresh_batch: 0x11_8100_0000, ..view },
+            StageHideView { issued_batch: 0, ..view },
+            StageHideView { batch: 0, fresh_batch: 0, issued_batch: 0, ..view },
+            // A native request active on any other slot keeps the native hide for the pass.
+            StageHideView { activity: table(27, armed, &[5]), ..view },
+            StageHideView { activity: table(27, armed, &[0, 79]), ..view },
+            // The owned slot holds another request.
+            StageHideView { activity: table(27, armed + 0x200, &[]), ..view },
+        ] {
+            assert!(!bypass_stage_hide(bad, Some(job)));
+        }
+        assert!(!bypass_stage_hide(view, Some(Job { request: Request { row: 2, sub: 8 }, ..job })));
+        assert!(!bypass_stage_hide(view, Some(Job { request: Request { row: 8, sub: 7 }, ..job })));
+        assert!(!bypass_stage_hide(view, Some(Job { request: Request { row: 2, sub: 4 }, ..job })));
+    }
+
+    #[test]
+    fn stage_hide_bypass_covers_native_completion_until_owned_job_retires() {
+        // Run153: request (2,7) at 0x1201183800 has c/d/e = 0/1/0 when the
+        // hide fires again. Rendering has finished, but the native batch has not drained.
+        let armed = 0x12_0118_3800;
+        let job = Job::new(0, Request { row: 2, sub: 7 }, 7, 0);
+        let mut activity = BatchActivity::default();
+        activity.note(27, 27, armed, false);
+        let view = StageHideView {
+            batch: 0x11_810a_6f80, fresh_batch: 0x11_810a_6f80,
+            issued_batch: 0x11_810a_6f80, latch: 0, armed_request: armed, activity,
+        };
+        assert!(bypass_stage_hide(view, Some(job)));
+        // Retirement or a new native render restores ordinary native behaviour.
+        assert!(!bypass_stage_hide(view, None));
+        assert!(!bypass_stage_hide(StageHideView { armed_request: 0, ..view }, Some(job)));
+        activity.note(0, 27, 0x11_fd5c_2400, true);
+        assert!(!bypass_stage_hide(StageHideView { activity, ..view }, Some(job)));
+    }
+
+    #[test]
+    fn batch_activity_ignores_null_slots_and_counts_every_foreign_active_request() {
+        let armed = 0x11_82b5_bc00;
+        let mut sparse = BatchActivity::default();
+        sparse.note(27, 27, armed, true);
+        sparse.note(3, 27, 0, true);
+        sparse.note(4, 27, 0x11_82b5_0800, false);
+        assert_eq!(sparse, BatchActivity { owned_slot: Some(27), owned_request: armed, foreign_active: 0 });
+        sparse.note(5, 27, 0x11_82b5_0a00, true);
+        sparse.note(70, 27, 0x11_82b5_8c00, true);
+        assert_eq!(sparse.foreign_active, 2);
+        let mut missing = BatchActivity::default();
+        missing.note(27, 27, 0, true);
+        assert_eq!(missing, BatchActivity { owned_slot: Some(27), ..BatchActivity::default() });
+    }
 }
 
 #[cfg(test)]

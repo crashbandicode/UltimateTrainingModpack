@@ -28,6 +28,16 @@
 //! through `379e9c0`, the override the bust bind itself uses; the product's kind icon
 //! assignment replaces it on return. A slot without the part chain or a waiting scene without
 //! the render pipeline is refused once with its words logged.
+//! hud151: after event 0x1d a Training bind waits for the native slot loader to commit the event
+//! key (`1419ff8`) and clear its channels. Run151 `hud-order151` stacks place that loader under the
+//! scene node's child traversal (`3725340`) and the native source tick under the same node's own
+//! update (`3725350`), so `pipeline_after_tick` binds first once the assets settle. The service
+//! callback still publishes, proves, completes and returns the helper.
+//! hud152: the native batch pass hides every stage for the whole portrait render (`32c52e0..
+//! 32c5c24`, `core+0x178`, per-stage counts, its own latch at `batch+0x358`), which natively
+//! runs under loading screens. Run152 traced that store during the owned render. For the owned
+//! pass only, the `32c52e4` inline hook reports the latch as set so native code takes its own
+//! already-hidden branch; the latch-gated unhides then leave the counters untouched.
 use super::mii_hud_portrait_policy as policy;
 use super::mii_backend::Layout;
 use super::{
@@ -48,9 +58,23 @@ use training_mod_consts::mii::lifetime::Configuration;
 /// Verified four-word windows (13.0.5 main). Twenty from mii-hud48, six added by hud54/hud57
 /// (`32c73f0/32c7400/32c7410` hook site, `13bb33c/13bb4a8` HUD record fields, `3304904` batch
 /// teardown), three waiting-pane windows, ten portrait-setup, nine render-preset
-/// and nine owned-pipeline retirement windows. Any mismatch
-/// disables the feature and installs nothing.
-const SITES: [(usize, [u32; 4]); 57] = [
+/// and nine owned-pipeline retirement windows, plus three HUD asset-settlement
+/// windows and six stage-hide windows (`32c52e0` hook site; `32c5c20`, `32c55c4`
+/// and `32c7b7c` latch dependency, `32c6ec0` completion and `32c6ee4` activity, no hooks).
+/// Any mismatch disables the feature and installs nothing.
+const SITES: [(usize, [u32; 4]); 66] = [
+    // Batch stage hide: latch gate (hooked at +4), latch set, both latch-gated unhides,
+    // and the cursor advance that treats a request as active while its `+0xc` is set.
+    (0x32c52e0, [0x394d6269, 0x35004a49, 0xb0010335, 0xf944eea8]),
+    (0x32c5c20, [0x320003e8, 0x390d6268, 0xb9437268, 0x8b284e68]),
+    (0x32c55c4, [0x394d6268, 0xb903727f, 0x3400ca68, 0xb0010334]),
+    (0x32c7b7c, [0x394d6308, 0x340009a8, 0xf0010313, 0xf944ee68]),
+    (0x32c6ee4, [0x8b294e6a, 0xf9406d4a, 0x3940314a, 0x350000aa]),
+    (0x32c6ec0, [0x2a1f03e9, 0xaa1403e8, 0x3800ed09, 0x381fe11f]),
+    // Native HUD framing dependency and loader completion; no hooks at these sites.
+    (0x141b978, [0xf940ba68, 0x92481d09, 0xd2f8200a, 0x12800001]),
+    (0x1419ff0, [0xf9400189, 0x91058268, 0xf9000109, 0xa940a989]),
+    (0x141a858, [0xb980a668, 0x71004d1f, 0x540000c2, 0x8b080a68]),
     // Native source tick/select and reset. Only our drained waiting bootstrap
     // may enter cmd0; native code owns every descriptor destruction/free.
     (0x3308ef0, [0xf81e0ff3, 0xa9017bfd, 0x910043fd, 0xaa0003f3]),
@@ -162,6 +186,10 @@ static ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Two native tick hooks return after this one load outside a departure. Kept
 /// separate from ACTIVE so a departed in-flight render can still be retired.
 static RETIRE_PIPELINE: AtomicBool = AtomicBool::new(false);
+/// A Training job is waiting for native HUD assets after its event, so the
+/// after-tick hook may bind once they settle. Recomputed by `sync_pending` and
+/// at every `hud_key` change; otherwise one atomic load per tick.
+static TICK_BIND: AtomicBool = AtomicBool::new(false);
 /// Jobs plus in-flight renders. Zero means `service` returns after one atomic load.
 static PENDING: AtomicUsize = AtomicUsize::new(0);
 static ARMED_REQUEST: AtomicUsize = AtomicUsize::new(0);
@@ -171,6 +199,8 @@ static HOOK_HITS: AtomicU32 = AtomicU32::new(0);
 static HOOK_SKIPS: AtomicU32 = AtomicU32::new(0);
 static CAMERA_OVERRIDES: AtomicU32 = AtomicU32::new(0);
 static DRAW_OVERRIDES: AtomicU32 = AtomicU32::new(0);
+/// Owned render passes that took the native already-hidden branch at `32c52e4`.
+static HIDE_SKIPS: AtomicU32 = AtomicU32::new(0);
 static STATE: Mutex<State> = Mutex::new(State::new());
 
 /// The helper D mirrors the exact proof reads; captured before issue and after the drain.
@@ -216,7 +246,7 @@ struct Job {
     request: Option<policy::Request>, before: Option<Mirrors>, next: Option<Pending>,
     /// Issue-time numeric identities (compared, never dereferenced): `S'`, the batch object,
     /// and the hook counters before this job's render.
-    source: usize, batch: usize, hits: u32, skips: u32, camera: u32, draw: u32,
+    source: usize, batch: usize, hits: u32, skips: u32, camera: u32, draw: u32, hides: u32,
     /// Last logged admission deferral, so each distinct reason is traced once per job.
     deferral: &'static str,
     /// Service callbacks spent before the render is issued. Setup waits always
@@ -228,6 +258,15 @@ struct Job {
     /// HUD event withheld until this generation's exact render, or already published.
     /// Scene exit retires it. This is not an entry pointer or a lease.
     hud: policy::HudHold,
+    /// The event's value-only key while native HUD assets/framing settle.
+    /// Keep the drained render and helper lease until this barrier completes.
+    hud_key: Option<u64>,
+    hud_waits: u16,
+    hud_bind_refused: bool,
+    /// The service thread that published the event; the source tick binds only there.
+    hud_thread: usize,
+    /// The pane was bound on the source tick: the service callback completes without a second bind.
+    tick_bound: bool,
 }
 
 struct State {
@@ -254,6 +293,7 @@ impl State {
             self.jobs.iter().flatten().count() + usize::from(self.own.in_flight.is_some()),
             Ordering::Release,
         );
+        TICK_BIND.store(self.jobs.iter().flatten().any(|job| job.hud_key.is_some()), Ordering::Release);
     }
 }
 
@@ -271,11 +311,12 @@ fn new_job(p: Pending, owner: usize) -> Job {
         stage: Stage::Requested,
         holder: Holder { category: HOLDER_CATEGORY, id: owner as u64 | (p.generation << 8) },
         lease: None, helper: u32::MAX, helper_entry: 0, request: None, before: None, next: None,
-        source: 0, batch: 0, hits: 0, skips: 0, camera: 0, draw: 0, deferral: "", pipeline_waits: 0,
+        source: 0, batch: 0, hits: 0, skips: 0, camera: 0, draw: 0, hides: 0, deferral: "", pipeline_waits: 0,
         hud: policy::HudHold::start(
             if p.defer_hud { policy::HudRefresh::DeferUntilPortrait } else { policy::HudRefresh::Now },
             p.generation,
         ),
+        hud_key: None, hud_waits: 0, hud_bind_refused: false, hud_thread: 0, tick_bound: false,
     }
 }
 
@@ -312,7 +353,7 @@ pub(super) unsafe fn init(base: usize) {
             return;
         }
     }
-    skyline::install_hooks!(template_skip, portrait_camera, portrait_draw, pipeline_before_tick, pipeline_after_tick);
+    skyline::install_hooks!(template_skip, portrait_camera, portrait_draw, pipeline_before_tick, pipeline_after_tick, stage_hide_skip);
     ACTIVE.store(true, Ordering::Release);
     trace!("[MiiPortrait] armed: helper-rendered portrait, scoped template skip at +0x32c7404, channels {:?}", sources::PORTRAIT_CHANNELS);
 }
@@ -932,6 +973,91 @@ unsafe fn pipeline_after_tick(ctx: &mut InlineCtx) {
     if RETIRE_PIPELINE.load(Ordering::Acquire) {
         finish_pipeline_retirement(BASE.load(Ordering::Acquire), ctx.registers[19].x() as *const u8);
     }
+    if TICK_BIND.load(Ordering::Acquire) {
+        tick_bind(BASE.load(Ordering::Acquire), ctx.registers[19].x() as usize);
+    }
+}
+
+/// From `pipeline_after_tick` (`3308f30`: the tick's dispatcher `3304f80` and its optional
+/// callback have returned). Run151 `hud-order151`: the HUD slot loader that commits `+0x170`
+/// runs under the scene node's child traversal (`3725340`, returns `3725344`) and the native
+/// source tick (`22d27ac`) under that node's own update (`3725350`, returns `3725354`), one
+/// `3725030` frame on thread 80. Binding here is never later than the next entry service
+/// callback and may precede the present that otherwise shows the stock class face.
+/// Pane bind only: no publication, completion, lease release or refusal bookkeeping. The next
+/// service callback re-proves, records the terminal and returns the helper exactly as before;
+/// a bind that fails here is left for it to repeat and refuse.
+unsafe fn tick_bind(base: usize, ticked_source: usize) {
+    if base == 0 || !ACTIVE.load(Ordering::Acquire) {
+        return;
+    }
+    let thread = skyline::nn::os::GetCurrentThread() as usize;
+    let (owner, job, flight) = {
+        let s = STATE.lock().unwrap();
+        let candidate = s.own.in_flight
+            .and_then(|flight| s.jobs[flight.owner].map(|job| (flight.owner, job, flight)))
+            .filter(|(_, job, flight)| {
+                job.stage == Stage::Issued && !job.tick_bound
+                    && policy::tick_bind_allowed(*flight, job.hud, job.hud_key.is_some(),
+                        job.hud_thread == thread, job.layout == Layout::Training, s.halted)
+            });
+        let Some(candidate) = candidate else {
+            TICK_BIND.store(false, Ordering::Release);
+            return;
+        };
+        candidate
+    };
+    let Some(key) = job.hud_key else { return; };
+    let root = base as *const u8;
+    // This tick must belong to the S' and batch the render was issued on. Every
+    // identity-change outcome stays with the service callback.
+    let Some(source) = pointer_chain(root, &SOURCE) else { return; };
+    let Some(batch) = pointer_chain(root, &BATCH) else { return; };
+    if source as usize != ticked_source || (job.source, job.batch) != (source as usize, batch as usize) {
+        return;
+    }
+    if !scene_writable() || !owner_valid(&job) || !hud_assets_ready(base, &job, key) {
+        return;
+    }
+    let Some(req) = request_at(batch, flight.request.row, flight.request.sub) else { return; };
+    let queue = policy::Queue { count: read(source, 0x134), word: read(source, 0x138) };
+    let same_target = read::<u32>(source, 0x2e0) == flight.request.row && read::<u32>(source, 0x2e4) == flight.request.sub;
+    let words = request_words(Some(req));
+    let table = table_at(base, policy::table_index(flight.request.row)).unwrap_or(0);
+    let descriptor = req as usize + 0x180;
+    // Peek exactly as drain_tick does; ownership is consumed only on the service callback.
+    let prospective = {
+        let mut own = STATE.lock().unwrap().own;
+        own.complete(policy::Completion { queue, table, descriptor }, words, same_target)
+    };
+    let policy::Outcome::Bind { owner: bound_owner, index } = prospective else { return; };
+    if bound_owner != owner || after_render_proof(&job).is_err() || !framing_proved(&job) {
+        return;
+    }
+    match bind_target(base, &job, index, descriptor) {
+        Ok(slot) => {
+            let mut s = STATE.lock().unwrap();
+            let mut recorded = false;
+            if let Some(current) = s.jobs[owner].as_mut() {
+                if current.generation == job.generation && current.stage == Stage::Issued && current.hud_key == Some(key) {
+                    current.hud_key = None;
+                    current.tick_bound = true;
+                    recorded = true;
+                }
+            }
+            if recorded {
+                s.own.bound(owner, policy::Binding { request: flight.request, descriptor });
+            }
+            s.sync_pending();
+            trace!("[MiiPortrait] owner={} bound on the source tick after HUD assets settled index=0x{:x} slot={} request=({},{}) descriptor=0x{:x} recorded={}",
+                job.physical, index, slot, flight.request.row, flight.request.sub, descriptor, recorded);
+        }
+        Err(reason) => {
+            // The service callback repeats the bind and owns the refusal.
+            TICK_BIND.store(false, Ordering::Release);
+            trace!("[MiiPortrait] owner={} source-tick bind left to the service callback: {}", job.physical, reason);
+        }
+    }
 }
 
 /// Admission and issue, all words fresh, nothing retained. Returns Err silently on every
@@ -1010,6 +1136,7 @@ unsafe fn try_issue(base: usize, owner: usize, job: &Job, c: Configuration) -> R
         current.skips = HOOK_SKIPS.load(Ordering::Acquire);
         current.camera = CAMERA_OVERRIDES.load(Ordering::Acquire);
         current.draw = DRAW_OVERRIDES.load(Ordering::Acquire);
+        current.hides = HIDE_SKIPS.load(Ordering::Acquire);
     }
     arm(req as usize, job.helper_entry, h, request.sub);
     issue(base, source as *mut u8, h, request.sub);
@@ -1089,7 +1216,11 @@ unsafe fn drain_tick(base: usize, svc: Option<ServiceCallback>) {
         disarm();
         trace!("[MiiPortrait] owner={} issue-time source/batch identity changed; render will not bind", job.owner);
     }
-    let withheld = STATE.lock().unwrap().jobs[job.owner].is_some_and(|adapter| adapter.hud.is_withheld());
+    let withheld = {
+        let state = STATE.lock().unwrap();
+        state.jobs[job.owner].zip(state.own.in_flight).is_some_and(|(adapter, flight)|
+            flight.hud_service_required(adapter.hud.is_withheld(), adapter.hud_key.is_some()))
+    };
     if withheld && svc.is_none() {
         // Same 650010 callback family owns this functor. A pipeline tick or destructor
         // must not publish the withheld event, and must not consume the drained render.
@@ -1102,6 +1233,45 @@ unsafe fn drain_tick(base: usize, svc: Option<ServiceCallback>) {
         Some(req) => (request_words(Some(req)), table_at(base, policy::table_index(job.request.row)).unwrap_or(0), req as usize + 0x180),
         None => (policy::RequestWords::default(), 0, 0),
     };
+    // Peek without consuming ownership. A drained, proved Training render must
+    // let the event's asynchronous asset update finish before 141b8a0 reads the
+    // framing key. Keep the same in-flight job so supersede/departure/teardown
+    // continue using the existing retirement protocol throughout this wait.
+    let prospective = {
+        let mut own = STATE.lock().unwrap().own;
+        own.complete(policy::Completion { queue, table, descriptor }, words, same_target)
+    };
+    if let policy::Outcome::Bind { owner, .. } = prospective {
+        let current = STATE.lock().unwrap().jobs[owner];
+        if let Some(current) = current.filter(|j| j.layout == Layout::Training
+            && j.stage == Stage::Issued && owner_valid(j))
+        {
+            if current.hud.is_withheld() && after_render_proof(&current).is_ok()
+                && framing_proved(&current)
+            {
+                deliver_exact_hud(base, &current, svc);
+                return;
+            }
+            if let Some(key) = current.hud_key {
+                if hud_assets_ready(base, &current, key) {
+                    let mut s = STATE.lock().unwrap();
+                    if let Some(j) = s.jobs[owner].as_mut() { j.hud_key = None; }
+                    s.sync_pending();
+                } else if current.hud_waits < 1200 {
+                    if let Some(j) = STATE.lock().unwrap().jobs[owner].as_mut() { j.hud_waits += 1; }
+                    return;
+                } else {
+                    trace!("[MiiPortrait] owner={} native HUD assets did not settle; exact texture left unbound", owner);
+                    let mut s = STATE.lock().unwrap();
+                    if let Some(j) = s.jobs[owner].as_mut() {
+                        j.hud_key = None;
+                        j.hud_bind_refused = true;
+                    }
+                    s.sync_pending();
+                }
+            }
+        }
+    }
     let outcome = {
         let mut s = STATE.lock().unwrap();
         let outcome = s.own.complete(policy::Completion { queue, table, descriptor }, words, same_target);
@@ -1148,9 +1318,13 @@ unsafe fn drain_tick(base: usize, svc: Option<ServiceCallback>) {
                         finish_job(base, svc, owner, policy::HudTerminal::Refusal, "render framing unavailable");
                         return;
                     }
-                    // Event 0x1d, then a new pane read, then the bind. The issue-time index
-                    // was taken before this event and is not reused.
-                    let bind = if current.hud.is_withheld() {
+                    // Training has observed native asset completion after event 0x1d.
+                    // Waiting publishes here. Both bind through a fresh pane read;
+                    // the issue-time index predates the event and is never reused.
+                    // A pane the source tick already bound is not bound twice.
+                    let bind = if !policy::service_bind_after_wait(current.hud_bind_refused, current.tick_bound) {
+                        false
+                    } else if current.hud.is_withheld() {
                         deliver_exact_hud(base, &current, svc)
                     } else {
                         true
@@ -1214,11 +1388,12 @@ unsafe fn finish_job(base: usize, svc: Option<ServiceCallback>, owner: usize, te
             }
             _ => (None, None),
         };
-        trace!("[MiiPortrait] owner={} after render helper={} reason=\"{}\" parked={:?} exact={:?} mirrors_before={:?} mirrors_after={:?} equal={} hook_hits={} hook_skips={} camera={} draw={}",
+        trace!("[MiiPortrait] owner={} after render helper={} reason=\"{}\" parked={:?} exact={:?} mirrors_before={:?} mirrors_after={:?} equal={} hook_hits={} hook_skips={} camera={} draw={} hide_skips={}",
             owner, job.helper, reason, parked, exact, job.before, after, job.before == after,
             HOOK_HITS.load(Ordering::Relaxed), HOOK_SKIPS.load(Ordering::Relaxed),
             CAMERA_OVERRIDES.load(Ordering::Relaxed).wrapping_sub(job.camera),
-            DRAW_OVERRIDES.load(Ordering::Relaxed).wrapping_sub(job.draw));
+            DRAW_OVERRIDES.load(Ordering::Relaxed).wrapping_sub(job.draw),
+            HIDE_SKIPS.load(Ordering::Relaxed).wrapping_sub(job.hides));
     }
     if let Some(lease) = job.lease {
         // Discard/supersession also ends a native render. Returning the helper without
@@ -1265,7 +1440,26 @@ fn withheld_wait_expired(owner: usize, job: &Job) -> bool {
     current.pipeline_waits >= 1200
 }
 
-/// Refresh and bind stay on this callback. The pane is read after the event returns.
+fn framing_proved(job: &Job) -> bool {
+    let renders = HOOK_HITS.load(Ordering::Acquire).wrapping_sub(job.hits);
+    CAMERA_OVERRIDES.load(Ordering::Acquire).wrapping_sub(job.camera) == renders
+        && DRAW_OVERRIDES.load(Ordering::Acquire).wrapping_sub(job.draw) == renders
+}
+
+/// Read under the same live-owner/slot proof as the binder. Native owns the
+/// loader: this is observation only, never a forced key/state write or delay.
+unsafe fn hud_assets_ready(base: usize, job: &Job, key: u64) -> bool {
+    let Ok((_, slot)) = slot_of_owner(base, job.physical) else { return false; };
+    policy::hud_assets_settled(key, policy::HudAssets {
+        committed_key: read(slot, 0x170),
+        event_dirty: read::<u8>(slot, 0x140) != 0,
+        channel_busy: read::<[u32; 19]>(slot, 0x68).iter().any(|&state| state != 0),
+        update_busy: read::<u32>(slot, 0xb8) != 0,
+    })
+}
+
+/// Publish only on the native service callback. Training's native event queues
+/// its framing/asset change; a later callback binds after observing completion.
 unsafe fn deliver_exact_hud(base: usize, job: &Job, svc: Option<ServiceCallback>) -> bool {
     let (next, step) = job.hud.on_proof(job.generation, true, svc.is_some());
     if step != policy::HudStep::RefreshRereadBind {
@@ -1276,6 +1470,19 @@ unsafe fn deliver_exact_hud(base: usize, job: &Job, svc: Option<ServiceCallback>
     paint_hud(job.entry, job.physical, job.kind);
     if let Some(current) = STATE.lock().unwrap().jobs[job.logical as usize].as_mut() {
         current.hud = next;
+    }
+    if job.layout == Layout::Training {
+        let key = slot_of_owner(base, job.physical).ok().map(|(_, slot)| read::<u64>(slot, 0x120))
+            .filter(|key| key >> 56 == 0xc1 && key & 0xffffffffff != 0);
+        let mut s = STATE.lock().unwrap();
+        if let Some(current) = s.jobs[job.logical as usize].as_mut() {
+            current.hud_key = key;
+            current.hud_bind_refused = key.is_none();
+            current.hud_thread = skyline::nn::os::GetCurrentThread() as usize;
+            current.tick_bound = false;
+        }
+        s.sync_pending();
+        return false;
     }
     let fresh = match pane_state(base, job) {
         Ok((index, part_ready)) => Some(policy::PaneRead { index, part_ready }),
@@ -1785,5 +1992,67 @@ unsafe fn template_skip(ctx: &mut InlineCtx) {
     if policy::skip_template(view, state.own.in_flight) {
         ctx.registers[9].set_x(0);
         HOOK_SKIPS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// main+0x32c52e4: `cbnz w9, 32c5c2c` right after `ldrb w9, [x19, #0x358]`, the batch's own
+/// "stage already hidden" latch at the start of its render pass (`x19` is the batch). On a
+/// pass's first call the cursor `+0x370` still reads 0: the pass hides first and only then
+/// skips slots whose request `+0xc` is clear (`32c6ed8..`), so the cursor is not consulted
+/// here. For the owned pass only, with no foreign request active in the table, w9 := 1 so
+/// the relocated branch takes the native already-hidden path: the `core+0x178` store at
+/// `32c5380`, the per-stage `+0x30/+0x34` counting and the latch store at `32c5c24` do not
+/// run, and the latch-gated unhides at `32c55c4` and `32c7b7c` then do nothing. Nothing
+/// native is written here or later, and every other pass, including native construction
+/// renders, is untouched. Fast path: one atomic load; the table scan runs only on a
+/// latch-clear call while a render is armed.
+/// Run152 traced the hide store on thread 80 with `x19` the live batch and `x20` the
+/// observer's stage core (`live/trace-status-1793128934098879564.json`) and the terminal
+/// unhide at `32c5700` on the same batch (`live/trace-status-1793129030690427911.json`).
+/// Run153 proved the request's active byte clears before this pass ends. The live issued
+/// job and lease retain ownership through that drain, including callbacks after rendering.
+#[skyline::hook(offset = 0x32c52e4, inline)]
+unsafe fn stage_hide_skip(ctx: &mut InlineCtx) {
+    let armed = ARMED_REQUEST.load(Ordering::Acquire);
+    if armed == 0 || !scene_writable() {
+        return;
+    }
+    // The latch native code just loaded. A set latch has nothing to bypass, and this keeps
+    // the table scan off passes whose native hide already ran.
+    let latch = ctx.registers[9].x() as u8;
+    if latch != 0 {
+        return;
+    }
+    let base = BASE.load(Ordering::Acquire);
+    let batch = ctx.registers[19].x() as usize;
+    if base == 0 || !aligned(batch as *const u8) {
+        return;
+    }
+    let fresh_batch = pointer_chain(base as *const u8, &BATCH).map_or(0, |b| b as usize);
+    // Same thread as the service callback; try_lock only fails closed.
+    let Ok(state) = STATE.try_lock() else { return; };
+    let Some(flight) = state.own.in_flight else { return; };
+    let issued_batch = state.jobs.get(flight.owner).copied().flatten()
+        .filter(|job| job.stage == Stage::Issued && job.lease.is_some())
+        .map_or(0, |job| job.batch);
+    if batch != fresh_batch || batch != issued_batch { return; }
+    // The pass's own activity criterion over the whole table, on the batch native code is
+    // executing with: eighty pointer reads plus one byte per foreign allocated request. Bypassed passes keep the
+    // latch clear, so later callbacks recheck activity rather than trusting a stale scan.
+    let owned_slot = policy::request_index(flight.request);
+    let mut activity = policy::BatchActivity::default();
+    for slot in 0..80u32 {
+        let request = read::<*const u8>(batch as *const u8, 0xd8 + slot as usize * 8);
+        let (request, active) = if aligned(request) {
+            (request as usize, slot != owned_slot && read::<u8>(request, 0xc) != 0)
+        } else {
+            (0, false)
+        };
+        activity.note(slot, owned_slot, request, active);
+    }
+    let view = policy::StageHideView { batch, fresh_batch, issued_batch, latch, armed_request: armed, activity };
+    if policy::bypass_stage_hide(view, Some(flight)) {
+        ctx.registers[9].set_x(1);
+        HIDE_SKIPS.fetch_add(1, Ordering::Relaxed);
     }
 }

@@ -118,9 +118,32 @@ pub fn clip_help(view: &ClipView, coarse: &str, chord: &str, pace: i32) -> ClipH
     let notice = if view.clean_start {
         String::new()
     } else {
-        format!("This start cannot be saved. Press {chord}+Y.")
+        format!("Mid-action start: press {chord}+Y for lead-in, then X to preview.")
     };
+    if let Some(error) = &view.error {
+        let [primary, follow] = feedback_lines(error);
+        return ClipHelp { primary, follow, controls, notice };
+    }
     ClipHelp { primary, follow, controls, notice }
+}
+
+/// Keep failures in the wide editor strip. The ordinary notification pane
+/// shrinks long text to fit one narrow line, making preview refusals unreadable.
+fn feedback_lines(message: &str) -> [String; 2] {
+    const WIDTH: usize = 72;
+    let mut lines = [String::new(), String::new()];
+    let mut row = 0;
+    for word in message.split_whitespace() {
+        if !lines[row].is_empty() && lines[row].chars().count() + 1 + word.chars().count() > WIDTH {
+            if row == 1 { lines[1].push_str("..."); break; }
+            row = 1;
+        }
+        if !lines[row].is_empty() { lines[row].push(' '); }
+        let remaining = WIDTH.saturating_sub(lines[row].chars().count());
+        lines[row].extend(word.chars().take(remaining));
+        if word.chars().count() > remaining { lines[row].push_str("..."); }
+    }
+    lines
 }
 
 /// Own the closing press independently of the draw clock. The native adapter polls
@@ -188,6 +211,7 @@ pub struct ClipView {
     pub quantized: bool,
     pub truncated: bool,
     pub source_name: String,
+    pub error: Option<String>,
 }
 
 pub struct ClipEditor {
@@ -202,6 +226,7 @@ pub struct ClipEditor {
     source_name: String,
     previous_name: String,
     open_guard: OpenInputGuard,
+    error: Option<String>,
 }
 
 fn prepare(mut session: ReplaySession) -> Option<ReplaySession> {
@@ -219,7 +244,7 @@ impl ClipEditor {
         Ok(Self { session, previous: None, previous_selected: false, track: 0, window,
             handle: Handle::Playhead, playing: false, clean_statuses,
             source_name: "Latest Vault capture".into(), previous_name: "Previous Vault capture".into(),
-            open_guard })
+            open_guard, error: None })
     }
 
     /// Physical A edge gate for the native adapter; see `OpenInputGuard`.
@@ -261,6 +286,7 @@ impl ClipEditor {
     pub fn track(&self) -> &ReplayTrack { &self.session.tracks[self.track] }
     pub fn sample(&self) -> ReplayFrame { self.track().frames[self.window.cursor() as usize] }
     pub fn pause(&mut self) { self.playing = false; }
+    pub fn report_error(&mut self, message: String) { self.error = Some(message); }
 
     pub fn view(&self) -> ClipView {
         let track = self.track();
@@ -270,7 +296,7 @@ impl ClipEditor {
             previous_selected: self.previous_selected, previous_available: self.previous.is_some(),
             clean_start: self.clean_statuses.contains(&track.frames[self.window.start() as usize].start.status),
             quantized: track.quantized_analog, truncated: self.session.truncated,
-            source_name: self.source_name.clone() }
+            source_name: self.source_name.clone(), error: self.error.clone() }
     }
 
     /// Report actual input consumption, relative to the selected range. Drawing
@@ -311,6 +337,13 @@ impl ClipEditor {
     }
 
     pub fn on_action(&mut self, action: ClipAction) -> ClipEffect {
+        self.error = None;
+        let effect = self.apply_action(action);
+        if let ClipEffect::Error(message) = &effect { self.report_error(message.clone()); }
+        effect
+    }
+
+    fn apply_action(&mut self, action: ClipAction) -> ClipEffect {
         match action {
             ClipAction::SelectIn | ClipAction::SelectOut => {
                 self.pause();
@@ -582,8 +615,16 @@ mod tests {
         assert!(matches!(e.on_action(ClipAction::TogglePlay), ClipEffect::Error(_)));
         assert!(!e.view().playing);
         assert_eq!(e.view().start, 4);
+        let feedback = clip_help(&e.view(), "ZL/ZR", "ZL", 0);
+        assert!(feedback.primary.contains("mid-action"));
+        assert!(!feedback.follow.is_empty());
+        assert!(feedback.primary.chars().count() <= 75 && feedback.follow.chars().count() <= 75);
+        assert!(feedback.notice.contains("ZL+Y") && feedback.notice.contains("X to preview"));
         e.on_action(ClipAction::UseLeadIn);
         assert_eq!(e.view().start, 3);
+        assert!(e.view().error.is_none());
+        let ClipEffect::Preview(preview) = e.on_action(ClipAction::TogglePlay) else { panic!() };
+        assert_eq!(preview.frames.iter().map(|f| f.buttons).collect::<Vec<_>>(), (3..10).collect::<Vec<_>>());
         let ClipEffect::Export(recording) = e.on_action(ClipAction::Confirm) else { panic!() };
         assert_eq!(recording.frames.iter().map(|f| f.buttons).collect::<Vec<_>>(), (3..10).collect::<Vec<_>>());
     }

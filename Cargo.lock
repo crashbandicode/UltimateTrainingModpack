@@ -904,6 +904,7 @@ dependencies = [
  "skyline",
  "skyline_smash",
  "toml",
+ "training_mod_macros",
  "training_mod_mii",
  "training_mod_sync",
  "training_mod_tui",

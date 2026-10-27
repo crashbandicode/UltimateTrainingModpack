@@ -26,6 +26,7 @@ pub mod options;
 pub use options::*;
 pub mod files;
 pub use files::*;
+pub mod practice_setup;
 pub mod config;
 pub use config::*;
 
@@ -772,7 +773,14 @@ pub unsafe fn create_app<'a>() -> App<'a> {
         OnOff::to_submenu(
         "Named Library",
         "named_macro_library",
-        "Open the named macro list. A loads the highlighted recording.",
+        "Open the named macro list. A loads the highlighted recording. Y copies it into the current Record Slot when it is 600 frames or fewer.",
+        ToggleSingle,
+        false,
+        ),
+        OnOff::to_submenu(
+        "Save Slot to Library",
+        "named_macro_export_slot",
+        "Name the current Record Slot and save it in the named library. The slot must already contain a recording.",
         ToggleSingle,
         false,
         ),
@@ -936,6 +944,22 @@ pub unsafe fn create_app<'a>() -> App<'a> {
         "buff_state",
         "Buff(s) to be applied to the respective fighters when loading a save state",
         ToggleMultiple,
+        false,
+        ),
+        // These ids are actions, not stored menu fields. A is intercepted
+        // before the toggle page opens. Unknown keys are ignored on load.
+        OnOff::to_submenu(
+        "Save Setup to Library",
+        "setup_library_save",
+        "Name the selected Save State Slot and store both fighters as a portable setup file.",
+        ToggleSingle,
+        false,
+        ),
+        OnOff::to_submenu(
+        "Setup Library",
+        "setup_library_open",
+        "Open saved setups. A binds the highlighted setup to the selected slot and restores it when the stage, fighters and exact Miis match. Y only binds.",
+        ToggleSingle,
         false,
         ),
     ];

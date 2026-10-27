@@ -50,8 +50,11 @@ controllers.
 ## Crop
 
 Press **L** for the start or **R** for the end, then hold **Left** or **Right**;
-the step speeds up the longer you hold. Hold **ZL** or **ZR** to start fast. If
-the editor shows **Needs ZL+Y lead-in**, press **ZL+Y**.
+the step speeds up the longer you hold. Hold **ZL** or **ZR** to start fast.
+
+If In lands mid-action, the editor shows **Needs ZL+Y lead-in**. X will not
+preview it. Press **ZL+Y** to move In back to the last idle or falling start,
+then press **X**.
 
 ![The In point moving along the capture.](named-macros/images/crop.gif)
 
@@ -60,7 +63,8 @@ the editor shows **Needs ZL+Y lead-in**, press **ZL+Y**.
 Wait for the fighter to finish loading, close the editor, and save a Training
 setup with **ZL + D-pad Down**. Reopen the capture and press **X** to play the
 crop from that setup; **Y** restarts. A setup saved with a different CPU will
-not preview.
+not preview. When X refuses, the reason appears in the editor's wide help strip,
+not in a small notification.
 
 Both clips use **In 0 / Out 449**, the match opening above. They start from a
 Training setup, so positions, hits and timing differ from the match.
@@ -95,6 +99,32 @@ To record by hand instead, keep **Named Library** as the source and press
 **Input Record** (default **ZR + D-pad Down**) to start and again to finish, then
 name it. The clips on this page show replay exports, not hand recording.
 
+## Share a numbered Record Slot
+
+The five numbered **Record Slots** can go in and out of the named library. In an
+emulator check, a 51-frame recording was copied into Record Slot 3 and saved back
+out unchanged apart from its new name. Console testing is pending.
+
+**Copy a named recording into a slot.** Set **Input Recording → Recording Slot**
+(here **3**), open **Named Library**, highlight a recording and press **Y**.
+
+![Named Library with Duck Hunt dash highlighted; the footer reads "A loads, Y binds to Record Slot 3, B closes."](named-macros/images/record-slot-library.png)
+
+**Save a slot as a named file.** Choose **Input Recording → Save Slot to
+Library**, type a name and confirm with **OK**.
+
+![The system keyboard with the name "Slot Three Verified" typed in.](named-macros/images/record-slot-keyboard.png)
+
+- Y copies recordings of 600 frames or fewer. A longer one is refused and the
+  slot keeps what it had; play it from the named library instead.
+- An empty slot is refused: **Record into this slot first**.
+- A Mii Fighter recording keeps that Mii's exact look from when recording
+  started. If the game did not report the look at that moment, saving is
+  refused. Record the slot again.
+
+To save the whole fighter setup instead of inputs, see
+[Setup Library](setup-library.md).
+
 ## Placement
 
 **Input Recording → Edit Placement** moves where a loaded macro starts,
@@ -110,6 +140,7 @@ in the same game session. See the [Vault steps](reference/named-macros.md#vault-
 ## More
 
 - [Reference](reference/named-macros.md): all controls, placement and files
+- [Setup Library](setup-library.md): named, shareable save-state setups
 - <a name="capture-a-match-optional"></a>[Capture and file format](reference/named-macros.md#capture-a-match-optional)
 - <a name="replay-window-controls"></a>[Replay Window controls](reference/named-macros.md#replay-window-controls)
 - <a name="direct-file-import"></a>[Direct file import](reference/named-macros.md#direct-file-import)

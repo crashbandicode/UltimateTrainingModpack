@@ -35,6 +35,7 @@ pub(super) struct Prepared {
     descriptor: [u8; 0x70],
     configuration: Configuration,
     player_epoch: u64,
+    hat_change: bool,
 }
 pub(super) fn origins_captured() -> bool {
     super::mii_ordinary_player::helper_origin_captured()
@@ -90,11 +91,13 @@ pub(super) fn configuration(role: usize, kind: u32) -> Result<Configuration, &'s
         .ok_or("Captured helper hat tokens are unavailable")?;
     policy::helper_configuration(c, hats)
 }
-/// The immutable captured hats choose an eligible callback before any INSTALL or
-/// appearance row getter. The selected live row is still rechecked by prepare().
+/// Captured origin hats are the before-value. Shared reload policy admits an
+/// equal hat on every layout and a changed hat on Training. The live row,
+/// fingerprints, and lease are still rechecked by prepare().
 pub(super) fn slot_eligible(slot: u32, c: Configuration) -> bool {
-    super::mii_backend::current().and_then(|l|l.helper(slot as usize)).is_some_and(|ordinal|
-        super::mii_ordinary_cpu::helper_origin_hats().is_some_and(|hats|hats[ordinal]==c.tokens().hat))
+    let Some(layout) = super::mii_backend::current() else { return false };
+    let Some(hats) = super::mii_ordinary_cpu::helper_origin_hats() else { return false };
+    policy::helper_slot_admission(layout, slot as usize, hats, c.tokens().hat)
 }
 pub(super) unsafe fn prepare(
     entry: usize,
@@ -122,10 +125,15 @@ pub(super) unsafe fn prepare(
         slot as usize,
         None,
     )?;
-    check(
-        c.tokens().hat == before.scalars.e.hat,
-        "helper unqualified hat change",
-    )?;
+    if !policy::supported_kind(c.canonical().class as u32) {
+        return Err("Mii class not qualified");
+    }
+    // The helper's own physical slot. Training is 2/3; waiting is 5/6.
+    let hat_change = policy::headgear_reload(
+        before.layout, slot as usize, before.scalars.e.hat, c.tokens().hat)?;
+    if hat_change && !provenance::cpu_headgear_fingerprints() {
+        return Err("helper headgear fingerprint mismatch");
+    }
     let descriptor = policy::staged_descriptor_in(before.layout,slot as usize, before.descriptor, Some(c))
         .ok_or("helper selector unavailable")?;
     Ok(Prepared {
@@ -133,6 +141,7 @@ pub(super) unsafe fn prepare(
         descriptor,
         configuration: c,
         player_epoch: mii_saved_alpha::current_generation(0),
+        hat_change,
     })
 }
 /// Source STATE held, no G/registry lock. Failure retains the load and never calls native INSTALL.
@@ -195,7 +204,10 @@ fn target(t: &Track) -> PublicationTarget<'_> {
         payload: Some(t.data.configuration),
         scalars: Scalars::saved(t.data.configuration),
         source: Some(t.source),
-        hat_change: false,
+        hat_change: t.data.hat_change,
+        // Saved helper payload always targets the slot record. This publisher
+        // does not restore; the pre-request mirror is not the write address.
+        original_index: t.data.before.index,
     }
 }
 pub(super) unsafe fn install(source: SourceToken) -> bool {

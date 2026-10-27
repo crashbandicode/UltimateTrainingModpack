@@ -55,4 +55,23 @@ is not a screenshot of the later eight-input preview or export. All earlier
 images were preserved byte-for-byte when later ones were added, using the same
 viewport crop and pixel-equality check.
 
+## Record Slot images (run150)
+
+Two stills illustrate [Share a numbered Record Slot](../named-macros.md#share-a-numbered-record-slot).
+They come from emulator run150 on 2026-10-27, which used the installed NRO with SHA-256
+`9d537cd543c04d380cc616abeed047632c366ddac68aeb57e026e974693cc8ba`. Sources are relative to
+that run's local archive, `collected150/live/`. The run's receipt `RECORDING150.json` records
+the result. Y put the 51-frame `Duck Hunt dash` into Record Slot 3 while the menu stayed open.
+Exporting that slot as `Slot Three Verified` produced a file that matches the source in
+everything except its name.
+
+| Image | Source | Processing |
+| --- | --- | --- |
+| [record-slot-library.png](images/record-slot-library.png) | `bind-record-slot3/transition.gif`, frame at 0.48 s, before Y at 1.06 s | 1280 × 720 native frame, 256 colours |
+| [record-slot-keyboard.png](images/record-slot-keyboard.png) | `ui-name-1793118948425029532/b.png`, the native keyboard while naming the export (game paused) | Crop 0, 53, 900, 524 of the 900 × 650 Eden window, which removes only the menu bar, status bar and black letterbox. No scaling |
+
+No GIF was made for these steps. The list returns to the Input Recording page after Y and
+shows no notice while the menu is open. The keyboard pauses the game, so a still shows it
+fully.
+
 [Back to the walkthrough](../named-macros.md)

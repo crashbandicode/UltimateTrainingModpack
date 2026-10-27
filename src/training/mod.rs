@@ -55,6 +55,7 @@ pub(crate) fn recording_or_playback() -> bool {
 mod mash;
 mod reset;
 pub mod save_states;
+pub mod setup_library;
 mod shield_tilt;
 
 /// An explicit menu disable cancels the old sequence once. Ordinary trigger
@@ -99,6 +100,7 @@ pub fn clear_session_state() {
     reset::clear_session_state();
     ui::notifications::clear_all_notifications();
     named_macros::clear_session();
+    setup_library::clear_session();
     crate::replay_preview::clear_session();
     unsafe {
         input_record::stop_playback();
@@ -303,6 +305,7 @@ fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) 
         combo::once_per_frame(module_accessor);
         if practice::role(module_accessor).is_some() {
             named_macros::service_character();
+            if practice::role(module_accessor) == Some(0) { setup_library::service(); }
             if !practice::enabled() { return; }
             hitbox_visualizer::once_per_frame(module_accessor);
             save_states::save_states(module_accessor);

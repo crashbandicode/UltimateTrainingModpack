@@ -476,10 +476,10 @@ pub unsafe fn draw(root: &Pane, view: &ClipView, status: &str) {
     saved.label(root, 11, [0.0, -449.0, WIDTH], &help.follow, WHITE);
     saved.label(root, 13, [0.0, -484.0, WIDTH], &help.controls, MUTED);
     let needs_clean_start = !help.notice.is_empty();
-    let notice = if !status.is_empty() {
-        status.to_owned()
-    } else if needs_clean_start {
+    let notice = if needs_clean_start {
         help.notice
+    } else if !status.is_empty() {
+        status.to_owned()
     } else if view.playing {
         "Y restarts the preview from the saved setup.".to_owned()
     } else {

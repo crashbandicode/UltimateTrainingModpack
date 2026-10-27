@@ -466,7 +466,18 @@ pub(super) unsafe fn publish(track:&super::Track, selected:usize) -> Result<(),&
         && super::epoch()==track.ticket.epoch,"phase ticket/epoch changed")?;
     let record=values::record_address(b,b).map_err(|_|"record changed")?;
     let scalars=track.publish.map_or(track.origin_scalars,Scalars::saved);
-    check(scalars.e.hat==now.scalars.e.hat,"unqualified hat change")?;
+    if scalars.e.hat!=now.scalars.e.hat {
+        training_mod_consts::mii::ordinary_cpu::HatPublication {
+            layout:now.layout,owner:b.owner,source:false,opt_in:true,
+            initialized:rd::<u8>(selected,0x4c)&1!=0,
+            fingerprints:cpu_headgear_fingerprints(),
+            before:now.scalars.e.hat,target:scalars.e.hat,
+            // Player binding stays on its captured row across publication.
+            // current_locked proves its owner/index mirrors and b == before.binding.
+            destination_index:b.record_index,original_index:track.before.binding.record_index,
+            descriptor:&track.descriptor,payload:track.publish,
+        }.validate()?;
+    }
     let registry=final_registry(helpers,Some(track.token))?;
     // No fallible operation or native callback after this point.
     if track.publish.is_some() {

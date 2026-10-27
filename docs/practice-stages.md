@@ -12,7 +12,18 @@ Open **Misc Settings → Practice Stages**. It opens at **Change Stage Now**: hi
 
 This works in Training and in lobby practice. In Training the new stage lasts for that session only. In a lobby, **A** also keeps the stage for your later lobby entries.
 
-Press **Y** on a named stage to cycle its form (Normal, Ω / Final Destination or Battlefield) where the game has one. The help line shows the current form.
+### Pick a form
+
+Press **Y** on a named stage to choose its form. Normal, Omega and Battlefield are separate choices, and **A** applies the form you chose. The help line names the current form, then the forms Y moves to next:
+
+| Stage has | Help line starts with |
+| --- | --- |
+| All three forms | `Normal \| Y Form: Omega, Battlefield` |
+| Normal and Omega (Battlefield) | `Normal \| Y Form: Omega` |
+| Normal and Battlefield (Final Destination) | `Normal \| Y Form: Battlefield` |
+| Normal only | `Normal \| Y Form` (Y does nothing) |
+
+Y never applies a stage or changes the rotation order. Change Stage Now and Lobby Stage Rotation keep their own forms.
 
 ## Rotate stages between lobby visits
 

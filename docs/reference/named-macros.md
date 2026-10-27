@@ -26,6 +26,25 @@ buttons and sticks, a start-state summary and placement metadata. There is no
 five-slot limit, and the selected ID persists across restarts. A macro is an
 input sequence, not a full simulation save state.
 
+### Numbered Record Slots
+
+*Emulator check, run150: a 51-frame named recording was put into Record Slot 3 with Y.
+The slot was then exported as `slot-three-verified.json`. Its schema version, game version,
+start state, placement and frames match the source file; only the name differs. That run
+did not repeat numbered-slot playback, which an earlier emulator run covered. Nobody has
+checked the 600-frame refusal or the exact-Mii refusal in a running game yet. Console
+testing is pending.*
+
+| Action | Rule |
+| --- | --- |
+| **Save Slot to Library** | Exports the current Record Slot as it was captured when that recording locked in: its frames, its own facing, and its start state. A slot with no recording since launch is refused: `Record into this slot first` |
+| **Named Library → Y** | Copies the highlighted file into the current Record Slot (footer `Y binds to Record Slot N`). 1–600 frames replace that slot. An empty file or one longer than 600 frames is refused, and nothing changes. Nothing is cut short |
+| Exact Mii | A Mii Fighter slot stores the CPU's exact Mii from when recording started. If that was unavailable, export refuses with `Exact Mii was not available when recording started. Record this slot again.` Builds without the Mii alpha features always refuse a Mii slot |
+
+Each slot keeps its own facing. Playing one slot does not change the facing
+used by the others. Named playback from the library still allows up to 36,000
+frames.
+
 ## Placement
 
 After loading a macro and restoring a Training state, open **Edit Placement**.
@@ -107,15 +126,20 @@ does not need it. It observes the CPU while the native replay runs.
 | **L** / **R** | Select the In / Out handle |
 | **Left / Right** | Move the selected handle. Holding speeds up from one frame to three minutes of replay per second; a diagonal still moves the handle |
 | Hold **ZL** or **ZR** (Z on GameCube) | Start moving at the fast rate |
-| **X** | Play the selection from the saved setup, or stop and restore it |
+| **X** | Play the selection from the saved setup, or stop and restore it. A refusal is written in the editor's help strip |
 | **Y** | Restart from the saved setup |
 | **ZL + X** | Switch latest / previous capture if Vault looped (Z as modifier on GameCube) |
-| **ZL + Y** | Include the previous clean-start lead-in |
+| **ZL + Y** | Move In back to the previous idle or falling start. A mid-action In needs this before X or A |
 | **A** | Name and save with the system keyboard; cancelling keeps the crop |
 | **B** | Close; an already-started fighter install finishes |
 
 - The crop is `[In, Out)`: it includes In, excludes Out and holds at least one
   input. Handles cannot cross. An unsupported start is rejected without moving In.
+- A mid-action In shows `Needs ZL+Y lead-in` and the line
+  `Mid-action start: press ZL+Y for lead-in, then X to preview.` Preview and
+  save refusals go in the editor's two-line help strip, not in the narrow
+  notification. If a running preview stops on an error, its status reads
+  `Preview stopped. Fix the issue above, then press X.`
 - During a fighter load, P1 input is isolated and the CPU must settle to grounded
   idle. Before previewing, save a setup with the current pair of fighters; after
   choosing a different CPU, close the editor, save a new setup and reopen.

@@ -1,5 +1,6 @@
-use std::fs;
+use std::{fmt, fs};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::*;
@@ -556,4 +557,192 @@ fn exact_mii_library_restart_and_save_as_preserve_configuration() {
     assert_eq!(final_copy, copy);
     assert_eq!(final_copy.playback_target().unwrap().configuration(), Some(configuration));
     assert_eq!(reopened.load(&id).unwrap(), rec);
+}
+
+// ---- Generic store: a second record type must get its own schema set, size
+// ---- cap, validation, summary and error type without touching the macro rules.
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct Note {
+    schema_version: u32,
+    name: String,
+    body: String,
+}
+
+impl Record for Note {
+    type Error = MacroError;
+    type Summary = (String, String);
+    const SCHEMA_VERSIONS: &'static [u32] = &[7];
+    const MAX_FILE_BYTES: u64 = 256;
+
+    fn validate(&self) -> Result<(), MacroError> {
+        if self.schema_version != 7 {
+            return Err(MacroError::UnsupportedVersion { found: self.schema_version });
+        }
+        if self.name.trim().is_empty() {
+            return Err(MacroError::InvalidName("is empty"));
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn summary(&self, id: &str) -> (String, String) {
+        (id.to_owned(), self.body.clone())
+    }
+}
+
+fn note(name: &str, body: &str) -> Note {
+    Note { schema_version: 7, name: name.to_owned(), body: body.to_owned() }
+}
+
+#[test]
+fn generic_store_takes_schema_set_size_cap_and_summary_from_the_record() {
+    let tmp = TempDir::new();
+    let store: Store<Note> = Store::new(tmp.path());
+    let id = store.save_new(&note("Shield drop", "ledge")).unwrap();
+    assert_eq!(id, "shield-drop");
+    assert_eq!(store.load(&id).unwrap(), note("Shield drop", "ledge"));
+    assert_eq!(store.save_new(&note("shield DROP", "again")).unwrap(), "shield-drop-2");
+    assert_eq!(store.save_new(&note("Aerial", "first")).unwrap(), "aerial");
+    assert!(matches!(store.save_new(&note("  ", "x")), Err(MacroError::InvalidName(_))));
+
+    // Macro schema 1 is valid for `Library` but not for this record type.
+    fs::write(tmp.path().join("old.json"), br#"{"schema_version":1,"name":"Old","body":""}"#).unwrap();
+    assert!(matches!(store.load("old"), Err(MacroError::UnsupportedVersion { found: 1 })));
+    // 257 bytes is over this record's cap and far under the macro cap.
+    fs::write(tmp.path().join("big.json"), vec![b' '; 257]).unwrap();
+    assert!(matches!(store.load("big"), Err(MacroError::FileTooLarge { bytes: 257, max: 256 })));
+
+    let listing = store.list().unwrap();
+    assert_eq!(
+        listing.entries,
+        vec![
+            ("aerial".to_owned(), "first".to_owned()),
+            ("shield-drop".to_owned(), "ledge".to_owned()),
+            ("shield-drop-2".to_owned(), "again".to_owned()),
+        ],
+        "sorted by lowercase name, then id"
+    );
+    let mut skipped: Vec<&str> = listing.skipped.iter().map(|s| s.file.as_str()).collect();
+    skipped.sort_unstable();
+    assert_eq!(skipped, ["big.json", "old.json"]);
+    assert_eq!(
+        file_names(tmp.path()),
+        ["aerial.json", "big.json", "old.json", "shield-drop-2.json", "shield-drop.json"],
+        "no temp or backup left and nothing deleted"
+    );
+}
+
+#[derive(Debug)]
+enum MemoError {
+    Store(MacroError),
+    TooShort,
+}
+
+impl From<MacroError> for MemoError {
+    fn from(err: MacroError) -> Self {
+        Self::Store(err)
+    }
+}
+
+impl fmt::Display for MemoError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Store(err) => write!(f, "{err}"),
+            Self::TooShort => f.write_str("memo body is too short"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct Memo {
+    schema_version: u32,
+    name: String,
+    body: String,
+}
+
+impl Record for Memo {
+    type Error = MemoError;
+    type Summary = String;
+    const SCHEMA_VERSIONS: &'static [u32] = &[1];
+    const MAX_FILE_BYTES: u64 = 1024;
+
+    fn validate(&self) -> Result<(), MemoError> {
+        if !Self::SCHEMA_VERSIONS.contains(&self.schema_version) {
+            return Err(MacroError::UnsupportedVersion { found: self.schema_version }.into());
+        }
+        if self.body.len() < 3 {
+            return Err(MemoError::TooShort);
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn summary(&self, _id: &str) -> String {
+        self.name.clone()
+    }
+}
+
+#[test]
+fn record_error_type_carries_both_store_and_record_failures() {
+    let tmp = TempDir::new();
+    let store: Store<Memo> = Store::new(tmp.path());
+    let short = Memo { schema_version: 1, name: "Memo".to_owned(), body: "no".to_owned() };
+    assert!(matches!(store.save_new(&short), Err(MemoError::TooShort)));
+    assert!(file_names(tmp.path()).is_empty(), "an invalid record writes nothing");
+
+    let good = Memo { body: "fine".to_owned(), ..short.clone() };
+    let id = store.save_new(&good).unwrap();
+    assert_eq!(id, "memo");
+    assert_eq!(store.load(&id).unwrap(), good);
+    assert!(matches!(
+        store.load("missing"),
+        Err(MemoError::Store(MacroError::NotFound(ref missing))) if missing == "missing"
+    ));
+    assert!(matches!(store.load("../x"), Err(MemoError::Store(MacroError::InvalidId(_)))));
+
+    fs::write(
+        tmp.path().join("short.json"),
+        br#"{"schema_version":1,"name":"Short","body":"no"}"#,
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("future.json"),
+        br#"{"schema_version":9,"name":"Future","body":"later"}"#,
+    )
+    .unwrap();
+    let listing = store.list().unwrap();
+    assert_eq!(listing.entries, vec!["Memo".to_owned()]);
+    let reason = |file: &str| listing.skipped.iter().find(|s| s.file == file).unwrap().reason.clone();
+    assert_eq!(reason("short.json"), "memo body is too short");
+    assert!(reason("future.json").contains("unsupported schema version 9"), "{}", reason("future.json"));
+
+    // A failed overwrite through the generic path still keeps the old file.
+    let path = tmp.path().join("memo.json");
+    let before = fs::read(&path).unwrap();
+    fs::create_dir(tmp.path().join("memo.json.tmp")).unwrap();
+    assert!(matches!(store.overwrite(&id, &good), Err(MemoError::Store(MacroError::Io(_)))));
+    assert_eq!(fs::read(&path).unwrap(), before);
+    assert!(matches!(store.overwrite("ghost", &good), Err(MemoError::Store(MacroError::NotFound(_)))));
+}
+
+#[test]
+fn library_is_the_macro_instantiation_of_the_generic_store() {
+    let tmp = TempDir::new();
+    let generic: Store<MacroRecording> = Store::new(tmp.path());
+    let id = generic.save_new(&recording("Same")).unwrap();
+    let library: Library = generic.clone();
+    assert_eq!(library.dir(), tmp.path());
+    assert_eq!(library.load(&id).unwrap(), recording("Same"));
+    assert_eq!(
+        library.list().unwrap().entries[0],
+        MacroEntry { id, name: "Same".to_owned(), fighter_kind: 8, costume: 2, frame_count: 8 }
+    );
+    assert!(format!("{library:?}").starts_with("Store {"));
 }

@@ -64,7 +64,10 @@ fn origin() -> [u8;0x70] {
 }
 fn publication(d: &[u8;0x70], before:u16, target:u16, payload:Option<Configuration>) -> HatPublication<'_> {
     HatPublication { layout:Layout::Training, owner:1, source:false, opt_in:true,
-        initialized:false, fingerprints:true, before, target, descriptor:d, payload }
+        initialized:false, fingerprints:true, before, target,
+        destination_index:u16::from_le_bytes(d[0x46..0x48].try_into().unwrap()),
+        original_index:0,
+        descriptor:d, payload }
 }
 
 #[test]
@@ -86,7 +89,7 @@ fn captured_replay_import_and_menu_request_reach_qualified_training_headgear_rou
     assert_eq!(choice.slot_id, None); // imported preset is not a native save slot
     let target = catalog.configuration(choice).unwrap();
     assert_eq!(target, c);
-    assert_eq!(cpu::cpu_hat_route(Layout::Training, 0, target.tokens().hat), Ok(true));
+    assert_eq!(cpu::cpu_hat_route(Layout::Training, 1, 0, target.tokens().hat), Ok(true));
     let d = cpu::staged_descriptor(origin(), Some(target));
     assert_eq!(publication(&d, 0, 125, Some(target)).validate(), Ok(()));
 }
@@ -114,7 +117,7 @@ fn same_class_changed_hat_always_selects_fresh_owner_in_both_directions() {
     for (before, after) in [(hatless(),replay()), (replay(),hatless()),
         (replay(),other()), (other(),replay())] {
         assert!(!cpu::retained_same_class_candidate(before, after));
-        assert_eq!(cpu::cpu_hat_route(Layout::Training, before.tokens().hat, after.tokens().hat), Ok(true));
+        assert_eq!(cpu::cpu_hat_route(Layout::Training, 1, before.tokens().hat, after.tokens().hat), Ok(true));
         let d = cpu::staged_descriptor(origin(), Some(after));
         let phase = publication(&d, before.tokens().hat, after.tokens().hat, Some(after));
         assert!(phase.validate().is_ok());
@@ -124,7 +127,7 @@ fn same_class_changed_hat_always_selects_fresh_owner_in_both_directions() {
     let same_hat = Configuration::from_observed(MiiClass::Gunner, Tokens { colour:1, ..c.tokens() },
         *c.charinfo(), REPLAY_ROWS).unwrap();
     assert!(cpu::retained_same_class_candidate(c, same_hat));
-    assert_eq!(cpu::cpu_hat_route(Layout::Training, 125, 125), Ok(false));
+    assert_eq!(cpu::cpu_hat_route(Layout::Training, 1, 125, 125), Ok(false));
 }
 
 #[test]
@@ -133,7 +136,7 @@ fn return_to_ordinary_origin_needs_no_payload_and_retains_native_record_pair() {
     let original = origin();
     let returned = cpu::staged_descriptor(original, None);
     assert_eq!(returned, original);
-    assert_eq!(cpu::cpu_hat_route(Layout::Training, c.tokens().hat, 0), Ok(true));
+    assert_eq!(cpu::cpu_hat_route(Layout::Training, 1, c.tokens().hat, 0), Ok(true));
     assert!(publication(&returned, 125, 0, None).validate().is_ok());
     let record = ordinary_player::retained_record([0xa5;0x68], Some(c));
     assert_eq!(ordinary_player::retained_record(record, None), record);
@@ -153,11 +156,8 @@ fn publication_refuses_missing_opt_in_wrong_role_layout_source_latch_and_fingerp
     let valid = publication(&d, 0, 125, Some(c));
     for invalid in [
         HatPublication { opt_in:false, ..valid },
-        HatPublication { owner:0, ..valid },
         HatPublication { owner:2, ..valid },
         HatPublication { owner:3, ..valid },
-        HatPublication { layout:Layout::Ldn, owner:4, ..valid },
-        HatPublication { layout:Layout::Quickplay, owner:4, ..valid },
         HatPublication { layout:Layout::Ldn, ..valid },
         HatPublication { layout:Layout::Quickplay, ..valid },
         HatPublication { source:true, ..valid },
@@ -172,17 +172,77 @@ fn publication_refuses_missing_opt_in_wrong_role_layout_source_latch_and_fingerp
         let mut bad = d; bad[offset] ^= 1;
         assert!(HatPublication { descriptor:&bad, ..valid }.validate().is_err());
     }
-    // Neither layout nor helper policy is globally relaxed by this CPU opt-in.
+    // Player0 uses its own index 0. The CPU descriptor's index 1 does not transfer.
+    let mut player_row = d;
+    player_row[0x46..0x48].copy_from_slice(&0u16.to_le_bytes());
+    assert!(HatPublication { owner:0, destination_index:0, original_index:0, descriptor:&player_row, ..valid }.validate().is_ok());
+    assert!(HatPublication { owner:0, ..valid }.validate().is_err());
+    let mut helper_row = d;
+    helper_row[0x46..0x48].copy_from_slice(&2u16.to_le_bytes());
+    assert!(HatPublication { owner:2, source:true, destination_index:2, descriptor:&helper_row, ..valid }.validate().is_ok());
+    assert!(HatPublication { owner:1, source:true, descriptor:&helper_row, ..valid }.validate().is_err());
+    // Waiting admits the physical CPU and the present helpers. A Training-only
+    // slot still cannot act as the waiting CPU or helper.
     for layout in [Layout::Ldn,Layout::Quickplay] {
-        assert_eq!(cpu::cpu_hat_route(layout, 0, 125), Err("CPU unchanged hat required"));
-        assert_eq!(cpu::cpu_hat_route(layout, 125, 0), Err("CPU unchanged hat required"));
-        assert_eq!(cpu::cpu_hat_route(layout, 125, 125), Ok(false));
+        assert_eq!(cpu::cpu_hat_route(layout, 4, 0, 125), Ok(true));
+        assert_eq!(cpu::cpu_hat_route(layout, 1, 0, 125), Err("CPU unchanged hat required"));
+        assert_eq!(cpu::cpu_hat_route(layout, 4, 125, 125), Ok(false));
+        assert_eq!(cpu::headgear_reload(layout, 0, 0, 125), Ok(true));
+        assert_eq!(cpu::headgear_reload(layout, 5, 0, 125), Ok(true));
+        assert_eq!(cpu::headgear_reload(layout, 6, 125, 0), Ok(true));
+        assert_eq!(cpu::headgear_reload(layout, 2, 0, 125), Err("headgear row is not on this layout"));
     }
-    assert!(cpu::helper_configuration(c, [0,0]).is_err());
+    assert_eq!(cpu::helper_configuration(c, [0,0]), Ok(c));
     assert_eq!(cpu::helper_configuration(c, [0,125]), Ok(c));
     let equal = HatPublication { before:125, opt_in:false, fingerprints:false, ..valid };
     assert!(equal.validate().is_ok());
     assert!(HatPublication { opt_in:true, ..equal }.validate().is_err());
+}
+
+#[test]
+fn saved_row_uses_the_written_selector_and_origin_restore_uses_its_own_index() {
+    let c = replay();
+    // (layout, physical owner, immutable origin index, selector destination)
+    let rows = [
+        (Layout::Training, 1usize, 0u16, 1u16),
+        (Layout::Ldn, 4, 26, 4),
+        (Layout::Quickplay, 4, 26, 4),
+        (Layout::Ldn, 5, 27, 5),
+        (Layout::Quickplay, 5, 27, 5),
+        (Layout::Ldn, 6, 28, 6),
+        (Layout::Quickplay, 6, 28, 6),
+    ];
+    for (layout, owner, origin_index, destination) in rows {
+        let mut origin = [0u8; 0x70];
+        origin[0x46..0x48].copy_from_slice(&origin_index.to_le_bytes());
+        let frozen = origin;
+        let saved = cpu::staged_descriptor_in(layout, owner, origin, Some(c)).unwrap();
+        let saved_index = u16::from_le_bytes(saved[0x46..0x48].try_into().unwrap());
+        assert_eq!(saved_index, destination);
+        assert_eq!(origin, frozen);
+        assert_ne!(origin_index, destination);
+        assert!(cpu::saved_payload_routes_to_destination(saved_index, destination));
+        assert!(!cpu::saved_payload_routes_to_destination(origin_index, destination));
+        let saved_pub = HatPublication {
+            layout, owner: owner as u32, source: layout.helper(owner).is_some(),
+            opt_in: true, initialized: false, fingerprints: true,
+            before: 0, target: c.tokens().hat,
+            destination_index: destination, original_index: origin_index,
+            descriptor: &saved, payload: Some(c),
+        };
+        assert!(saved_pub.validate().is_ok());
+        // Same hat and kind as the saved row. Only +0x46 is the origin index.
+        let mut origin_index_on_saved = saved;
+        origin_index_on_saved[0x46..0x48].copy_from_slice(&origin_index.to_le_bytes());
+        assert!(HatPublication { descriptor: &origin_index_on_saved, ..saved_pub }.validate().is_err());
+        let restore = HatPublication {
+            before: c.tokens().hat, target: 0, payload: None, descriptor: &origin, ..saved_pub
+        };
+        assert!(restore.validate().is_ok());
+        let mut saved_as_origin = saved;
+        saved_as_origin[0x4a..0x4c].copy_from_slice(&0u16.to_le_bytes());
+        assert!(HatPublication { descriptor: &saved_as_origin, ..restore }.validate().is_err());
+    }
 }
 
 #[test]
@@ -277,10 +337,33 @@ fn source_wiring_validates_before_publication_and_preserves_native_completion() 
     // These other writer families retain their own hat-equality constraints.
     assert!(include_str!("../src/ordinary_player.rs").contains("same-class hat changed"));
     let native=include_str!("../../src/mii_ordinary_native.rs");
-    assert!(native.contains("unqualified hat change"));
+    let player_publish=native.split("pub(super) unsafe fn publish(").nth(1).unwrap()
+        .split("pub(super) unsafe fn completed").next().unwrap();
+    assert!(player_publish.find("HatPublication").unwrap() < player_publish.find("scalars.write").unwrap());
+    assert!(player_publish.contains(".validate()?;"));
+    assert!(!player_publish.contains("0x1a8"));
     let scalars=native.split("pub(crate) unsafe fn write(self,e:usize,d:usize)").nth(1).unwrap()
         .split("struct Protected").next().unwrap();
     assert!(scalars.contains("wr(e,0x1ac,self.e.hat)"));
     assert!(!scalars.contains("wr(d,0x76"));
-    assert!(include_str!("../../src/mii_managed_helper.rs").contains("hat_change: false"));
+    let helper=include_str!("../../src/mii_managed_helper.rs");
+    assert!(helper.contains("policy::headgear_reload("));
+    assert!(!helper.contains("hat_change: false"));
+}
+#[test]
+fn idle_cpu_preflight_recaptures_native_rank_before_exact_transaction_checks() {
+    // Runtime wiring matters: menu-open recapture alone misses AI changes while
+    // waiting practice continues behind the menu. Policy's native_rank_tests
+    // execute the accepted deltas and reject all unrelated descriptor changes.
+    let cpu = include_str!("../../src/mii_ordinary_cpu.rs");
+    let refresh = cpu.split("unsafe fn refresh_idle_metadata(").nth(1).unwrap()
+        .split("unsafe fn begin(").next().unwrap();
+    assert!(refresh.contains("ordinary_cpu::recapture_rank("));
+    assert!(refresh.contains("native::same_owned(&now,&comparison,retained || active_present)"));
+    assert!(refresh.contains("state.reservation!=reservation || epoch()!=generation"));
+    assert!(refresh.contains("owner.expected==expected && owner.live==live"));
+    assert!(refresh.contains("expected.descriptor=comparison.descriptor"));
+    let begin = cpu.split("unsafe fn begin(").nth(1).unwrap();
+    assert!(begin.find("let expected=refresh_idle_metadata(").unwrap()
+        < begin.find("native::same_owned(&now,&expected,retained || active.is_some())").unwrap());
 }

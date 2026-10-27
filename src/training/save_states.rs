@@ -94,6 +94,12 @@ pub struct SavedState {
     pub steve_state: Option<steve::SteveState>,
     #[serde(default, deserialize_with = "training_mod_consts::character_items::deserialize_saved_item")]
     pub held_item: Option<training_mod_consts::character_items::HeldItemSnapshot>,
+    /// Capture provenance belongs to the saved slot, never to a later live fighter.
+    /// Old numbered-slot files remain readable; resave to attach this metadata.
+    #[serde(default)]
+    pub saved_stage: Option<i32>,
+    #[serde(default)]
+    pub mii: Option<training_mod_consts::mii::lifetime::Configuration>,
 }
 
 #[macro_export]
@@ -108,6 +114,8 @@ macro_rules! default_save_state {
             state: NoAction,
             fighter_kind: -1,
             held_item: None,
+            saved_stage: None,
+            mii: None,
             charge: ChargeState {
                 int_x: None,
                 int_y: None,
@@ -185,6 +193,9 @@ pub fn cancel_pending() {
     }
     QUICK_RESET_ACTIVE.store(false, Ordering::Release);
     end_preview_restore();
+    // A queued library bind never survives practice retirement; nor does its pin.
+    PENDING_BIND.lock().take();
+    end_library_restore();
 }
 
 static QUICK_RESET_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -242,6 +253,129 @@ static PREVIEW_SLOT: AtomicUsize = AtomicUsize::new(usize::MAX);
 
 pub fn end_preview_restore() {
     PREVIEW_SLOT.store(usize::MAX, Ordering::Relaxed);
+}
+
+// A setup-library load pins the slot it was bound to, like a preview, but keeps
+// the user's ordinary mirroring, damage, item, charge and partner handling.
+static LIBRARY_SLOT: AtomicUsize = AtomicUsize::new(usize::MAX);
+static PENDING_BIND: Mutex<Option<SlotBind>> = Mutex::new(None);
+
+/// Value-only slot write queued by the setup library. It is consumed on the
+/// game thread inside [`save_states`] before the selected slot is borrowed and
+/// never carries a native pointer or object id.
+#[derive(Clone)]
+pub struct SlotBind {
+    pub slot: usize,
+    pub player: SavedState,
+    pub cpu: SavedState,
+    /// Restore through the ordinary death/rebirth machinery after binding.
+    pub restore: bool,
+    pub name: String,
+}
+
+pub fn end_library_restore() {
+    LIBRARY_SLOT.store(usize::MAX, Ordering::Relaxed);
+}
+
+pub fn quick_reset_active() -> bool {
+    QUICK_RESET_ACTIVE.load(Ordering::Acquire)
+}
+
+pub fn bind_pending() -> bool {
+    PENDING_BIND.lock().is_some()
+}
+
+/// Copies of both halves of a numbered slot, when both have been saved.
+pub fn slot_pair(slot: usize) -> Option<(SavedState, SavedState)> {
+    if slot >= NUM_SAVE_STATE_SLOTS {
+        return None;
+    }
+    let slots = SAVE_STATE_SLOTS.lock();
+    let (player, cpu) = (slots.player[slot], slots.cpu[slot]);
+    (player.fighter_kind >= 0 && cpu.fighter_kind >= 0).then_some((player, cpu))
+}
+
+/// Queue one bind. The caller has already admitted the values; the slot is
+/// written only by the game thread, once practice is idle.
+pub fn queue_bind(bind: SlotBind) -> Result<(), &'static str> {
+    if bind.slot >= NUM_SAVE_STATE_SLOTS {
+        return Err("Choose a Save State Slot first");
+    }
+    let mut pending = PENDING_BIND.lock();
+    if pending.is_some() {
+        return Err("A setup is already being applied");
+    }
+    *pending = Some(bind);
+    Ok(())
+}
+
+/// Game thread only, from `save_states()` for P1 before any slot borrow. Waits
+/// for the menu and panels to close, then either writes the slot or drops the
+/// bind with a notice when practice became busy meanwhile.
+unsafe fn consume_pending_bind() {
+    if PENDING_BIND.lock().is_none() {
+        return;
+    }
+    if read(&crate::common::menu::QUICK_MENU_ACTIVE) || crate::training::named_macros::panel_visible() {
+        return;
+    }
+    let Some(bind) = PENDING_BIND.lock().take() else { return; };
+    if QUICK_RESET_ACTIVE.load(Ordering::Acquire)
+        || is_loading()
+        || crate::training::recording_or_playback()
+        || crate::replay_preview::occupied()
+    {
+        notifications::notification(
+            "Setup Library".to_owned(),
+            "Practice is busy; setup not applied".to_owned(),
+            180,
+        );
+        return;
+    }
+    if bind.restore {
+        if let Err(message) = super::setup_library::restore_bind_matches(&bind) {
+            notifications::notification("Setup Library".to_owned(), message, 180);
+            return;
+        }
+    }
+    let slots_copy = {
+        let mut slots = SAVE_STATE_SLOTS.lock();
+        slots.player[bind.slot] = SavedState { state: NoAction, ..bind.player };
+        slots.cpu[bind.slot] = SavedState { state: NoAction, ..bind.cpu };
+        *slots
+    };
+    save_to_file(slots_copy);
+    crate::logging::diagnostic(format_args!(
+        "[PracticeSave] library_bound slot={} restore={} player_kind=0x{:x} cpu_kind=0x{:x}",
+        bind.slot, bind.restore, bind.player.fighter_kind, bind.cpu.fighter_kind
+    ));
+    let slot_label = format!("Slot {}", bind.slot + 1);
+    if !bind.restore {
+        notifications::notification(
+            "Setup Library".to_owned(),
+            format!("Bound {} to {slot_label}", bind.name),
+            180,
+        );
+        return;
+    }
+    if read(&MENU).save_state_enable == OnOff::OFF {
+        notifications::notification(
+            "Setup Library".to_owned(),
+            format!("Bound {} to {slot_label}; enable save states to load", bind.name),
+            180,
+        );
+        return;
+    }
+    input_record::stop_playback();
+    LIBRARY_SLOT.store(bind.slot, Ordering::Relaxed);
+    MIRROR_STATE = should_mirror();
+    save_state_player(bind.slot).state = KillPlayer;
+    save_state_cpu(bind.slot).state = KillPlayer;
+    notifications::notification(
+        "Setup Library".to_owned(),
+        format!("Loading {} into {slot_label}", bind.name),
+        180,
+    );
 }
 
 pub unsafe fn request_preview_restore() -> Result<(), &'static str> {
@@ -359,6 +493,10 @@ unsafe fn get_slot() -> usize {
     let preview = PREVIEW_SLOT.load(Ordering::Relaxed);
     if preview != usize::MAX {
         return preview;
+    }
+    let library = LIBRARY_SLOT.load(Ordering::Relaxed);
+    if library != usize::MAX {
+        return library;
     }
     let random_slot = read(&MENU).randomize_slots.get_random();
     if random_slot != SaveStateSlot::empty() {
@@ -562,12 +700,22 @@ pub unsafe fn on_death(fighter_kind: i32, module_accessor: &mut app::BattleObjec
 pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor) {
     let Some(role) = super::practice::role(module_accessor) else { return; };
     observe_quick_reset(module_accessor, role);
+    // A queued setup-library bind is a slot write, not a load: consume it once
+    // per frame, before any slot borrow, even while save states are disabled.
+    if role == 0 && super::practice::acquire() { consume_pending_bind(); }
     let quick_reset = QUICK_RESET_ACTIVE.load(Ordering::Acquire);
     if !quick_reset && read(&MENU).save_state_enable == OnOff::OFF { return; }
     // Ordinary Training may contain extra CPUs. They are neither P1 nor the
     // selected practice CPU and must not overwrite P1's saved state.
     if !super::practice::acquire() { return; }
     let selected_slot = get_slot();
+    if LIBRARY_SLOT.load(Ordering::Relaxed) == selected_slot
+        && save_state_player(selected_slot).state == NoAction
+        && save_state_cpu(selected_slot).state == NoAction
+    {
+        // The library-triggered restore finished; ordinary slot selection resumes.
+        end_library_restore();
+    }
     let status = StatusModule::status_kind(module_accessor);
     let is_cpu = role == 1;
     let save_state = if is_cpu {
@@ -973,6 +1121,8 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
             else { Some(crate::character_items::snapshot(module_accessor)) };
         // Perform fighter specific saving actions
         save_state.steve_state = steve::save_steve_state(module_accessor);
+        save_state.saved_stage = Some(stage_id());
+        save_state.mii = crate::character_roster::current_mii_configuration(role);
         crate::logging::diagnostic(format_args!(
             "[PracticeSave] snapshot_saved slot={} cpu={} kind=0x{:x} x={} y={} damage={}",
             selected_slot, is_cpu, fighter_kind, save_state.x, save_state.y, save_state.percent

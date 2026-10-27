@@ -1,26 +1,9 @@
-use serde::{Deserialize, Serialize};
 use smash::app::{self, lua_bind::*};
 use smash::lib::lua_const::*;
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
-pub struct SteveState {
-    pub mat_g1: i32,
-    pub mat_wood: i32,
-    pub mat_stone: i32,
-    pub mat_iron: i32,
-    pub mat_gold: i32,
-    pub mat_redstone: i32,
-    pub mat_diamond: i32,
-    pub sword_mat: char,
-    // is actually FighterPickelMaterialKind, but char is same size and works
-    pub sword_durability: f32,
-    pub axe_mat: char,
-    pub axe_durability: f32,
-    pub pick_mat: char,
-    pub pick_durability: f32,
-    pub shovel_mat: char,
-    pub shovel_durability: f32,
-}
+// The plain saved values are defined once, portably, in
+// `training_mod_consts::practice_setup`; the native save/load stays here.
+pub use training_mod_consts::practice_setup::SteveState;
 
 fn is_steve(module_accessor: &mut app::BattleObjectModuleAccessor) -> bool {
     let fighter_id;

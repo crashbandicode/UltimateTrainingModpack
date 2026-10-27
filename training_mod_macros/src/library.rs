@@ -1,8 +1,13 @@
-//! Directory-backed macro library: one compact JSON file per macro, named
+//! Directory-backed record library: one compact JSON file per entry, named
 //! `<id>.json`, in a caller-chosen directory. There is no entry-count limit.
 //!
+//! [`Store`] is generic over the stored [`Record`]. [`Library`] is its
+//! named-macro instantiation and keeps the original API; the portable practice
+//! setup in `training_mod_consts` is a second instantiation that reuses the id,
+//! size, version and atomic-write rules below instead of copying them.
+//!
 //! * Ids are stable and path-safe (`[a-z0-9_-]`, at most [`MAX_ID_CHARS`]). The
-//!   id is the file stem; it never changes when the macro is overwritten.
+//!   id is the file stem; it never changes when the record is overwritten.
 //! * Updates write `<id>.json.tmp`, sync it, then rename it over the target, so
 //!   a reader or an interrupted write never sees a partial file. Where rename
 //!   cannot replace an existing file (FAT on Horizon is the concern), the old
@@ -12,24 +17,52 @@
 
 use std::{
     ffi::OsString,
-    fs,
+    fmt, fs,
     io::{self, Write},
+    marker::PhantomData,
     path::{Path, PathBuf},
 };
 
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::recording::{MacroError, MacroRecording, SCHEMA_VERSION, MII_SCHEMA_VERSION};
+use crate::recording::{MacroError, MacroRecording, MII_SCHEMA_VERSION, SCHEMA_VERSION};
 
 /// Longest id accepted, in characters.
 pub const MAX_ID_CHARS: usize = 48;
-/// Largest file read: 8 MiB. A worst-case `MAX_FRAMES` macro is about 3 MB as
+/// Largest macro file read: 8 MiB. A worst-case `MAX_FRAMES` macro is about 3 MB as
 /// written here and about 5 MB pretty-printed, so hand-edited files still load
-/// while anything far larger is rejected before it is read.
+/// while anything far larger is rejected before it is read. Other record types
+/// set their own bound through [`Record::MAX_FILE_BYTES`].
 pub const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
 
 const SLUG_CHARS: usize = 40;
 const MAX_SUFFIX: u32 = 9_999;
+
+/// A value type a [`Store`] keeps as one JSON file per entry.
+///
+/// The store owns ids, atomic replacement, size bounds and the
+/// version-versus-corruption distinction. The record owns its own validation,
+/// including rejecting a `schema_version` outside [`Record::SCHEMA_VERSIONS`]:
+/// the store's header check only classifies files that do not parse at all.
+pub trait Record: Serialize + DeserializeOwned {
+    /// Error reported by a store of this record. The store's own failures
+    /// (`MacroError`: I/O, id, size, parse, version) must convert into it.
+    type Error: From<MacroError> + fmt::Display;
+    /// Listing row built from one validated record.
+    type Summary;
+    /// Schema versions this reader accepts. A file whose `schema_version`
+    /// header is readable but outside this set is reported as
+    /// `UnsupportedVersion` rather than as corruption.
+    const SCHEMA_VERSIONS: &'static [u32];
+    /// Largest file `load` and `list` will read.
+    const MAX_FILE_BYTES: u64;
+    /// Everything the store requires before it writes or accepts a file.
+    fn validate(&self) -> Result<(), Self::Error>;
+    /// Display name: its slug seeds new ids and it orders listings.
+    fn name(&self) -> &str;
+    /// Listing row for the record stored under `id`.
+    fn summary(&self, id: &str) -> Self::Summary;
+}
 
 /// Summary of one loadable macro, enough to fill a selection dropdown.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,38 +81,96 @@ pub struct SkippedFile {
     pub reason: String,
 }
 
-/// Result of scanning the library: good entries plus the files that were skipped.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Listing {
-    /// Sorted by name (case-insensitive), then id.
-    pub entries: Vec<MacroEntry>,
+/// Result of scanning a store: good entries plus the files that were skipped.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Listing<S = MacroEntry> {
+    /// Sorted by record name (case-insensitive), then id.
+    pub entries: Vec<S>,
     pub skipped: Vec<SkippedFile>,
 }
 
-/// A macro library rooted at a caller-supplied directory.
-#[derive(Clone, Debug)]
-pub struct Library {
-    dir: PathBuf,
+// Not derived: a derive would demand `S: Default`, which summaries do not have.
+#[allow(clippy::derivable_impls)]
+impl<S> Default for Listing<S> {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            skipped: Vec::new(),
+        }
+    }
 }
 
-impl Library {
+/// A record store rooted at a caller-supplied directory.
+pub struct Store<R> {
+    dir: PathBuf,
+    record: PhantomData<fn() -> R>,
+}
+
+/// The named-macro library: the original API, now on the generic store.
+pub type Library = Store<MacroRecording>;
+
+impl<R> Clone for Store<R> {
+    fn clone(&self) -> Self {
+        Self {
+            dir: self.dir.clone(),
+            record: PhantomData,
+        }
+    }
+}
+
+impl<R> fmt::Debug for Store<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Store").field("dir", &self.dir).finish()
+    }
+}
+
+impl Record for MacroRecording {
+    type Error = MacroError;
+    type Summary = MacroEntry;
+    const SCHEMA_VERSIONS: &'static [u32] = &[SCHEMA_VERSION, MII_SCHEMA_VERSION];
+    const MAX_FILE_BYTES: u64 = MAX_FILE_BYTES;
+
+    fn validate(&self) -> Result<(), MacroError> {
+        MacroRecording::validate(self)
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn summary(&self, id: &str) -> MacroEntry {
+        MacroEntry {
+            id: id.to_owned(),
+            name: self.name.clone(),
+            fighter_kind: self.start.fighter_kind,
+            costume: self.start.costume,
+            frame_count: self.frames.len(),
+        }
+    }
+}
+
+impl<R: Record> Store<R> {
     /// Does no I/O; the directory is created by the first save.
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        Self { dir: dir.into() }
+        Self {
+            dir: dir.into(),
+            record: PhantomData,
+        }
     }
 
     pub fn dir(&self) -> &Path {
         &self.dir
     }
 
-    /// Lists every valid macro. A missing directory is an empty library.
+    /// Lists every valid record. A missing directory is an empty store.
     /// Corrupt or invalid files are reported in `skipped` and left untouched.
-    pub fn list(&self) -> Result<Listing, MacroError> {
+    /// Files are decoded one at a time; only each summary is retained.
+    pub fn list(&self) -> Result<Listing<R::Summary>, R::Error> {
         let mut listing = Listing::default();
         let read_dir = match fs::read_dir(&self.dir) {
             Ok(read_dir) => read_dir,
             Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(listing),
-            Err(err) => return Err(err.into()),
+            Err(err) => return Err(lift::<R>(err.into())),
         };
         let mut names = Vec::new();
         for item in read_dir {
@@ -96,62 +187,66 @@ impl Library {
         }
         self.restore_orphaned_backups(&mut names);
         names.sort();
+        let mut entries: Vec<(String, String, R::Summary)> = Vec::new();
         for name in names {
             let Some(id) = name.strip_suffix(".json") else {
                 continue;
             };
-            let result = check_id(id).and_then(|()| read_file(&self.file(id, "json")));
+            let result = check_id(id)
+                .and_then(|()| read_bounded(&self.file(id, "json"), R::MAX_FILE_BYTES))
+                .map_err(lift::<R>)
+                .and_then(|data| decode::<R>(&data));
             match result {
-                Ok(rec) => listing.entries.push(MacroEntry {
-                    id: id.to_owned(),
-                    name: rec.name,
-                    fighter_kind: rec.start.fighter_kind,
-                    costume: rec.start.costume,
-                    frame_count: rec.frames.len(),
-                }),
+                Ok(rec) => entries.push((rec.name().to_lowercase(), id.to_owned(), rec.summary(id))),
                 Err(err) => listing.skipped.push(SkippedFile {
                     file: name.clone(),
                     reason: err.to_string(),
                 }),
             }
         }
-        listing
-            .entries
-            .sort_by(|a, b| (a.name.to_lowercase(), &a.id).cmp(&(b.name.to_lowercase(), &b.id)));
+        entries.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+        listing.entries = entries.into_iter().map(|(_, _, summary)| summary).collect();
         Ok(listing)
     }
 
-    /// Loads and fully validates the macro with this id.
-    pub fn load(&self, id: &str) -> Result<MacroRecording, MacroError> {
-        check_id(id)?;
-        read_file(&self.file(id, "json")).map_err(|err| match err {
-            MacroError::Io(io) if io.kind() == io::ErrorKind::NotFound => {
-                MacroError::NotFound(id.to_owned())
-            }
-            other => other,
-        })
+    /// Loads and fully validates the record with this id.
+    pub fn load(&self, id: &str) -> Result<R, R::Error> {
+        check_id(id).map_err(lift::<R>)?;
+        let data = read_bounded(&self.file(id, "json"), R::MAX_FILE_BYTES)
+            .map_err(|err| match err {
+                MacroError::Io(inner) if inner.kind() == io::ErrorKind::NotFound => {
+                    MacroError::NotFound(id.to_owned())
+                }
+                other => other,
+            })
+            .map_err(lift::<R>)?;
+        decode::<R>(&data)
     }
 
     /// Saves as a brand-new file and returns its id. The id comes from the
     /// name (`my-drill`, then `my-drill-2`, ...) and never matches an existing
     /// file, good or corrupt, so nothing already on disk can be replaced.
-    pub fn save_new(&self, rec: &MacroRecording) -> Result<String, MacroError> {
+    pub fn save_new(&self, rec: &R) -> Result<String, R::Error> {
         let bytes = encode(rec)?;
-        fs::create_dir_all(&self.dir)?;
-        let id = self.free_id(&rec.name)?;
-        self.write_atomic(&id, &bytes)?;
+        fs::create_dir_all(&self.dir).map_err(|err| lift::<R>(err.into()))?;
+        let id = self.free_id(rec.name()).map_err(lift::<R>)?;
+        self.write_atomic(&id, &bytes).map_err(lift::<R>)?;
         Ok(id)
     }
 
-    /// Replaces the existing macro `id` with `rec`. The file must already
+    /// Replaces the existing record `id` with `rec`. The file must already
     /// exist; on any failure the previous contents are left intact.
-    pub fn overwrite(&self, id: &str, rec: &MacroRecording) -> Result<(), MacroError> {
-        check_id(id)?;
+    pub fn overwrite(&self, id: &str, rec: &R) -> Result<(), R::Error> {
+        check_id(id).map_err(lift::<R>)?;
         let bytes = encode(rec)?;
-        if !self.file(id, "json").try_exists()? {
-            return Err(MacroError::NotFound(id.to_owned()));
+        let exists = self
+            .file(id, "json")
+            .try_exists()
+            .map_err(|err| lift::<R>(err.into()))?;
+        if !exists {
+            return Err(lift::<R>(MacroError::NotFound(id.to_owned())));
         }
-        self.write_atomic(id, &bytes)
+        self.write_atomic(id, &bytes).map_err(lift::<R>)
     }
 
     fn file(&self, id: &str, extension: &str) -> PathBuf {
@@ -200,24 +295,27 @@ impl Library {
     }
 }
 
-fn encode(rec: &MacroRecording) -> Result<Vec<u8>, MacroError> {
+/// Lift a store failure into the record's error type.
+fn lift<R: Record>(err: MacroError) -> R::Error {
+    err.into()
+}
+
+fn encode<R: Record>(rec: &R) -> Result<Vec<u8>, R::Error> {
     rec.validate()?;
-    Ok(serde_json::to_vec(rec)?)
+    serde_json::to_vec(rec).map_err(|err| lift::<R>(err.into()))
 }
 
-fn read_file(path: &Path) -> Result<MacroRecording, MacroError> {
+/// Reads a whole file after checking its size against `max`.
+fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>, MacroError> {
     let bytes = fs::metadata(path)?.len();
-    if bytes > MAX_FILE_BYTES {
-        return Err(MacroError::FileTooLarge {
-            bytes,
-            max: MAX_FILE_BYTES,
-        });
+    if bytes > max {
+        return Err(MacroError::FileTooLarge { bytes, max });
     }
-    decode(&fs::read(path)?)
+    Ok(fs::read(path)?)
 }
 
-fn decode(data: &[u8]) -> Result<MacroRecording, MacroError> {
-    match serde_json::from_slice::<MacroRecording>(data) {
+fn decode<R: Record>(data: &[u8]) -> Result<R, R::Error> {
+    match serde_json::from_slice::<R>(data) {
         Ok(rec) => {
             rec.validate()?;
             Ok(rec)
@@ -230,12 +328,12 @@ fn decode(data: &[u8]) -> Result<MacroRecording, MacroError> {
                 schema_version: u32,
             }
             match serde_json::from_slice::<Header>(data) {
-                Ok(header) if !matches!(header.schema_version, SCHEMA_VERSION | MII_SCHEMA_VERSION) => {
-                    Err(MacroError::UnsupportedVersion {
+                Ok(header) if !R::SCHEMA_VERSIONS.contains(&header.schema_version) => {
+                    Err(lift::<R>(MacroError::UnsupportedVersion {
                         found: header.schema_version,
-                    })
+                    }))
                 }
-                _ => Err(err.into()),
+                _ => Err(lift::<R>(err.into())),
             }
         }
     }

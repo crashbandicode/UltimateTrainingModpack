@@ -21,7 +21,12 @@ acceptance is pending. User controls are in [Practice Stages](practice-stages.md
   selection saves its stage/form for later entries. A form edit does not reorder
   stages, submit a request by itself, or advance a rotation cursor.
 - On a highlighted named stage, **Y Form** cycles the supported Normal/Omega/
-  Battlefield forms. The help line shows that stage's current form. L/R paging
+  Battlefield forms as three separate choices. The help line names the current
+  form (`Normal`, `Omega` or `Battlefield`), then the rest of that row's Y order,
+  for example `Omega | Y Form: Battlefield, Normal`. A form the row lacks is
+  skipped. An emulator check (C77, Training) showed this wording for all three
+  Peach's Castle forms; two-form and Normal-only rows and the console are
+  unchecked. L/R paging
   preserves the draft and ranks; All has no form and cannot submit a Direct action.
   Cancelling a Direct draft leaves the saved direct stage/form unchanged.
 
@@ -32,7 +37,7 @@ The recorded 13.0.5 stage table has 364 rows at `0x454a7e8`, stride 72.
 from base ID plus table form to native ID. Resource lookup uses that resolved
 ID's `+0x18` package hash; it does not use universal `base + form` arithmetic.
 
-| Base identity | Normal | Omega / Final Destination | Battlefield |
+| Base identity | Normal | Omega | Battlefield |
 | --- | ---: | ---: | ---: |
 | Battlefield | 0 | 1 | unavailable |
 | Final Destination | 3 | unavailable | 4 |

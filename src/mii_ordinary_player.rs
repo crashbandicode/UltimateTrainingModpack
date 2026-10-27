@@ -90,6 +90,19 @@ pub(super) fn helper_origin_captured()->bool {
     let s=STATE.lock().unwrap();
     !s.capture && s.track.is_none() && s.owner.as_ref().is_some_and(|o|o.origin.binding.epoch==epoch())
 }
+/// Settled loaded configuration for this Player entry. Original, saved and
+/// discovered captures all live in `active` after they are the loaded body.
+/// A transaction, a non-Mii, or a configuration whose class is not the loaded
+/// descriptor kind returns None.
+pub(super) fn current_configuration()->Option<Configuration> {
+    let s=STATE.lock().unwrap();
+    if !s.menu_valid || s.capture || s.track.is_some() || s.request.is_some() {return None;}
+    let owner=s.owner.as_ref().filter(|o|
+        o.origin.binding.epoch==epoch() && o.origin.layout.logical(o.origin.binding.owner)==Some(0))?;
+    let configuration=owner.active?;
+    (configuration.canonical().class as u32==descriptor_kind(&owner.expected.descriptor))
+        .then_some(configuration)
+}
 pub(super) fn player_context()->Option<(PlayerOrigin,PlayerLive)> {
     let s=STATE.lock().unwrap();
     if !s.menu_valid || s.capture || s.track.is_some() || s.request.is_some() {return None;}
@@ -124,6 +137,23 @@ pub(super) fn menu_close(context:MenuContext,action:Action)->bool {
         drop(s);note("menu-close request refused: ordinary active configuration changed or out of scope");
     }
     true
+}
+fn admit_hat(layout:super::mii_backend::Layout,owner:usize,before:u16,target:Configuration)
+    ->Result<(),&'static str> {
+    if !training_mod_consts::mii::ordinary_cpu::supported_kind(target.canonical().class as u32) {
+        return Err("Mii class not qualified");
+    }
+    let changed=training_mod_consts::mii::ordinary_cpu::headgear_reload(
+        layout,owner,before,target.tokens().hat)?;
+    if changed && !unsafe { native::cpu_headgear_fingerprints() } {
+        return Err("Player headgear fingerprint mismatch");
+    }
+    Ok(())
+}
+fn stage_saved(origin:&native::Snapshot,target:Configuration)->[u8;0x70] {
+    let mut descriptor=training_mod_consts::mii::ordinary_player::staged_descriptor(origin.descriptor,Some(target));
+    descriptor[0x46..0x48].copy_from_slice(&origin.binding.record_index.to_le_bytes());
+    descriptor
 }
 fn clear_request(request:Request) {
     let mut s=STATE.lock().unwrap();
@@ -364,12 +394,9 @@ unsafe fn begin(entry:*mut u8)->bool {
             mii_cycle::Target::Saved(choice)=>{
                 let target=catalog.configuration(choice)
                     .ok_or("selected saved configuration unavailable")?;
-                if target.tokens().hat!=origin.scalars.e.hat {
-                    return Err("unchanged native hat required");
-                }
+                admit_hat(origin.layout,origin.binding.owner as usize,origin.scalars.e.hat,target)?;
                 native::target_rows(target)?;
-                Ok((step.target.publish(origin_saved,Some(target))?,training_mod_consts::mii::ordinary_player::staged_descriptor(
-                    origin.descriptor,Some(target))))
+                Ok((step.target.publish(origin_saved,Some(target))?,stage_saved(&origin,target)))
             }
             mii_cycle::Target::Fighter(kind)=>{
                 let forms=restore.map_or_else(||requested_forms_at(&menu,Role::Player,kind,step.cursor),|v|v.forms);
@@ -380,7 +407,7 @@ unsafe fn begin(entry:*mut u8)->bool {
                 }
                 descriptor[0x28..0x2c].copy_from_slice(&forms.actor_count.to_le_bytes());
                 descriptor[0x43]=0;
-                descriptor[0x46..0x48].copy_from_slice(&0u16.to_le_bytes());
+                descriptor[0x46..0x48].copy_from_slice(&origin.binding.record_index.to_le_bytes());
                 Ok((step.target.publish(origin_saved,None)?,descriptor))
             }
         }
@@ -393,8 +420,9 @@ unsafe fn begin(entry:*mut u8)->bool {
                 canonical:c.canonical(),slot_id:None,source:training_mod_consts::mii::selection::Source::Preference})}
             else {mii_cycle::Target::Fighter(value.fighter.kind())}};
         let result=if original {qualify(step)} else if let Some(c)=value.configuration {
-            if c.tokens().hat!=origin.scalars.e.hat {Err("remembered Player hat differs")}
-            else {native::target_rows(c).map(|_|(Some(c),training_mod_consts::mii::ordinary_player::staged_descriptor(origin.descriptor,Some(c))))}
+            admit_hat(origin.layout,origin.binding.owner as usize,origin.scalars.e.hat,c)
+                .and_then(|_|native::target_rows(c))
+                .map(|_|(Some(c),stage_saved(&origin,c)))
         } else {qualify(step)};
         match result {Ok(value)=>Some((step,value)),Err(reason)=>{clear_request(request);note(reason);return false;}}
     } else if request.refresh_partners() {
@@ -483,14 +511,20 @@ unsafe fn begin(entry:*mut u8)->bool {
         }
         return false;
     }
-    let same_class=match (active,publish) {
+    // A changed hat cannot reuse the retained O resource key. Skip same-class
+    // and let publish() take the fresh-O constructor. Equal hats keep the proof.
+    let hat_change=match (active,publish) {
+        (Some(before),Some(after))=>before.tokens().hat!=after.tokens().hat,
+        _=>false,
+    };
+    let same_class=if hat_change {None} else {match (active,publish) {
         (Some(before),Some(after)) if before.canonical().class==after.canonical().class=>
             match native::prepare_same_class(current,before,after) {
                 Ok(proof)=>Some(proof),
                 Err(reason)=>{clear_request(request);note(reason);return false;}
             },
         _=>None,
-    };
+    }};
     if !permitted(){return false;}
     let Some(token)=INSTALL.try_begin(true) else{return false;};
     // The preflight predates INSTALL ownership; freeze all foreign bytes/provenance anew.

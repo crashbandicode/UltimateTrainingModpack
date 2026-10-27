@@ -27,6 +27,99 @@ pub enum Pad {
     Extra,
 }
 
+/// Native keyboard header for a numbered or named CPU recording.
+pub const MACRO_KEYBOARD_TITLE: &str = "Name macro";
+/// Native keyboard header for a setup draft. Callers may pass another literal.
+pub const SETUP_KEYBOARD_TITLE: &str = "Name setup";
+
+/// Caller-owned naming session. The TUI stores the token and keyboard title, not the payload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NameContext {
+    pub token: u64,
+    pub title: &'static str,
+}
+
+/// Whether a recording may be saved as schema 1, with an exact Mii, or not at all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MiiIdentity {
+    /// Fighter is not a Mii. Schema 1 is the right file.
+    Ordinary,
+    /// Exact configuration from record start, and its class matches the fighter.
+    Exact,
+    /// Mii fighter whose exact configuration was missing or belonged to another class.
+    Unknown,
+}
+
+/// `observed_kind` is `configuration.canonical().class.kind()` when a configuration
+/// was actually read. The source (saved, original, or discovered) is not a separate case.
+pub fn mii_identity(fighter_kind: i32, observed_kind: Option<u32>) -> MiiIdentity {
+    let Some(class) = training_mod_mii::inventory::MiiClass::from_kind(fighter_kind as u32) else {
+        return MiiIdentity::Ordinary;
+    };
+    match observed_kind {
+        Some(kind) if kind == class.kind() => MiiIdentity::Exact,
+        _ => MiiIdentity::Unknown,
+    }
+}
+
+pub fn export_mii_refusal(identity: MiiIdentity) -> Option<&'static str> {
+    match identity {
+        MiiIdentity::Unknown => Some(
+            "Exact Mii was not available when recording started. Record this slot again.",
+        ),
+        MiiIdentity::Ordinary | MiiIdentity::Exact => None,
+    }
+}
+
+/// Numbered CPU slots hold this many frames. Longer named files stay playable.
+pub const NUMBERED_SLOT_FRAMES: usize = 600;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SlotAdmit {
+    Ready,
+    Empty,
+    OverLimit { frames: usize, limit: usize },
+}
+
+/// Full copy, or the original length left untouched. Never a shortened vec.
+pub fn copy_numbered_frames(frames: &[InputFrame]) -> Result<Vec<InputFrame>, SlotAdmit> {
+    match admit_numbered(frames.len()) {
+        SlotAdmit::Ready => Ok(frames.to_vec()),
+        other => Err(other),
+    }
+}
+
+pub fn admit_numbered(frame_count: usize) -> SlotAdmit {
+    if frame_count == 0 {
+        SlotAdmit::Empty
+    } else if frame_count > NUMBERED_SLOT_FRAMES {
+        SlotAdmit::OverLimit { frames: frame_count, limit: NUMBERED_SLOT_FRAMES }
+    } else {
+        SlotAdmit::Ready
+    }
+}
+
+/// `slot` is the captured facing/status. `None` keeps the shared recorder value
+/// and does not park it. A captured slot parks the shared pair so playback can
+/// restore it instead of leaving the imported facing behind.
+pub fn engage_slot_origin(
+    shared: (f32, i32),
+    parked: Option<(f32, i32)>,
+    slot: Option<(f32, i32)>,
+) -> ((f32, i32), Option<(f32, i32)>) {
+    match slot {
+        Some(origin) => (origin, parked.or(Some(shared))),
+        None => (shared, parked),
+    }
+}
+
+pub fn release_slot_origin(shared: (f32, i32), parked: Option<(f32, i32)>) -> ((f32, i32), Option<(f32, i32)>) {
+    match parked {
+        Some(saved) => (saved, None),
+        None => (shared, None),
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Effect {
     None,
@@ -37,6 +130,15 @@ pub enum Effect {
         recording: Box<MacroRecording>,
     },
     Choose(String),
+    /// Y on the named CPU library. A remains [`Effect::Choose`].
+    BindToSlot { id: String },
+    /// Y on a caller-titled library. The runtime owns the meaning of the row.
+    Alternate { id: String },
+    /// A on a caller-titled library opened with [`MacroUi::open_library_forward`].
+    /// The runtime owns the row; the named-macro loader never sees it.
+    ForwardChoose { id: String },
+    /// Keyboard confirmed for a payload the runtime still owns.
+    NameConfirmed { context: NameContext, name: String },
     NeedCharacter(i32),
 }
 
@@ -78,17 +180,30 @@ struct Loaded {
     recording: MacroRecording,
 }
 
+// NameDraft is already boxed and only one draft is active. Keep the exact Mii
+// value inline rather than adding a second allocation to every macro name edit.
+#[allow(clippy::large_enum_variant)]
+enum NameBody {
+    Macro {
+        frames: Vec<InputFrame>,
+        start: StartState,
+        placement: Placement,
+        version: String,
+        mii: Option<training_mod_mii::lifetime::Configuration>,
+    },
+    /// Name and caret only. The setup or other draft stays with the caller.
+    External { token: u64, summary: String, title: &'static str },
+}
+
 struct NameDraft {
     name: String,
     /// Native caret in UTF-16 units; independent of the terminal grid selection.
     native_cursor: usize,
     page: usize,
     cursor: usize,
-    frames: Vec<InputFrame>,
-    start: StartState,
-    placement: Placement,
-    version: String,
-    mii: Option<training_mod_mii::lifetime::Configuration>,
+    body: NameBody,
+    /// Header passed to the system keyboard, including after a draft is resumed.
+    keyboard_title: &'static str,
 }
 
 struct PlaceDraft {
@@ -102,6 +217,11 @@ struct LibraryPage {
     rows: Vec<LibraryRow>,
     skipped: usize,
     cursor: usize,
+    title: String,
+    /// Y label. Absent means Y does nothing.
+    alternate: Option<String>,
+    /// True copies into a numbered CPU slot. False reports [`Effect::Alternate`].
+    binds_slot: bool,
 }
 
 enum Screen {
@@ -206,6 +326,25 @@ impl MacroUi {
         match &self.screen { Screen::Save(draft) => Some(draft.native_cursor), _ => None }
     }
 
+    /// Header for the open name draft. Unchanged by caret checkpoints and practice invalidation.
+    pub fn native_name_title(&self) -> Option<&'static str> {
+        match &self.screen {
+            Screen::Save(draft) => Some(draft.keyboard_title),
+            _ => None,
+        }
+    }
+
+    /// Token of the caller-owned name draft on screen, open or parked.
+    pub fn external_name_token(&self) -> Option<u64> {
+        match &self.screen {
+            Screen::Save(draft) => match draft.body {
+                NameBody::External { token, .. } => Some(token),
+                NameBody::Macro { .. } => None,
+            },
+            _ => None,
+        }
+    }
+
     /// Checkpoint an unfinished native edit, without confirmation or any I/O
     /// effect. Empty/whitespace drafts are valid; final save validation is separate.
     /// Rejected text/caret leaves the entire existing draft untouched.
@@ -225,10 +364,16 @@ impl MacroUi {
 
     pub fn native_name_view(&self) -> Option<View> {
         let Screen::Save(draft) = &self.screen else { return None };
-        Some(View { title: "Save Recording".into(), selected: 0,
-            labels: vec!["Name and save".into()],
-            footer: format!("{} · {}f · {:.2}s\nA: system keyboard   Y: placement   B: return",
-                shown_name(&draft.name), draft.frames.len(), draft.frames.len() as f32 / 60.0) })
+        let footer = match &draft.body {
+            NameBody::Macro { frames, .. } => format!(
+                "{} · {}f · {:.2}s\nA: system keyboard   Y: placement   B: return",
+                shown_name(&draft.name), frames.len(), frames.len() as f32 / 60.0),
+            NameBody::External { summary, .. } => format!(
+                "{} · {summary}\nA: system keyboard   B: return",
+                shown_name(&draft.name)),
+        };
+        Some(View { title: draft.keyboard_title.into(), selected: 0,
+            labels: vec!["Name and save".into()], footer })
     }
 
     /// Validation failure leaves the full draft available for correction/retry.
@@ -247,15 +392,19 @@ impl MacroUi {
             Screen::Closed => return None,
             Screen::Save(draft) => {
                 fill_keys(&mut labels, name_keys(draft.page));
+                let detail = match &draft.body {
+                    NameBody::Macro { frames, start, .. } => format!(
+                        "Fighter {} · {}f · {:.2}s. A confirms, B cancels, Y deletes.",
+                        start.fighter_kind, frames.len(), frames.len() as f32 / 60.0),
+                    NameBody::External { summary, .. } => format!(
+                        "{summary}. A confirms, B cancels, Y deletes."),
+                };
                 (
-                    "Save Recording".to_owned(),
+                    draft.keyboard_title.to_owned(),
                     format!(
-                        "Name: {}    page {}/2\nFighter {} · {}f · {:.2}s. A confirms, B cancels, Y deletes.",
+                        "Name: {}    page {}/2\n{detail}",
                         shown_name(&draft.name),
                         draft.page + 1,
-                        draft.start.fighter_kind,
-                        draft.frames.len(),
-                        draft.frames.len() as f32 / 60.0
                     ),
                     draft.cursor,
                 )
@@ -286,10 +435,15 @@ impl MacroUi {
                     .get(page.cursor)
                     .map(|row| row.label.as_str())
                     .unwrap_or("No recordings");
+                let action = match (&page.alternate, page.binds_slot) {
+                    (Some(label), true) => format!("A loads, Y binds to {label}, B closes."),
+                    (Some(label), false) => format!("A loads, Y {label}, B closes."),
+                    (None, _) => "A loads, B closes.".to_owned(),
+                };
                 (
-                    "Named Library".to_owned(),
+                    page.title.clone(),
                     format!(
-                        "{selected_label}\npage {}/{pages}  skipped {}    A loads, B closes.",
+                        "{selected_label}\npage {}/{pages}  skipped {}    {action}",
                         page.cursor / PAGE + 1,
                         page.skipped
                     ),
@@ -319,28 +473,114 @@ impl MacroUi {
         if frames.is_empty() || start.fighter_kind < 0 {
             return Effect::Notify("Recording was empty".to_owned());
         }
-        self.playback_on = false;
-        self.held_save = None;
-        self.screen = Screen::Save(Box::new(NameDraft {
+        self.offer_save_with_mii(frames, start, false, version, None)
+    }
+
+    /// Same dialog as [`Self::offer_save`], retaining an exact Mii captured with the take.
+    pub fn offer_save_with_mii(
+        &mut self,
+        mut frames: Vec<InputFrame>,
+        start: StartState,
+        crop: bool,
+        version: &str,
+        mii: Option<training_mod_mii::lifetime::Configuration>,
+    ) -> Effect {
+        if crop {
+            crop_neutral_tail(&mut frames);
+        }
+        if frames.is_empty() || start.fighter_kind < 0 {
+            return Effect::Notify("Recording was empty".to_owned());
+        }
+        self.open_name(NameDraft {
             name: "Recording".to_owned(),
             native_cursor: "Recording".encode_utf16().count(),
             page: 0,
             cursor: 31,
-            frames,
-            start,
-            placement: Placement::default(),
-            version: clip_version(version),
-            mii: None,
-        }));
+            body: NameBody::Macro {
+                frames,
+                start,
+                placement: Placement::default(),
+                version: clip_version(version),
+                mii,
+            },
+            keyboard_title: MACRO_KEYBOARD_TITLE,
+        });
         Effect::None
     }
 
+    /// Opens the keyboard for a caller-owned draft. No macro frames are invented.
+    pub fn offer_name(&mut self, context: NameContext, default_name: &str, summary: &str) -> Effect {
+        if default_name.chars().count() > MAX_NAME_CHARS || default_name.chars().any(char::is_control) {
+            return Effect::Notify(MacroError::InvalidName("is too long").to_string());
+        }
+        if context.title.is_empty() || context.title.chars().any(char::is_control) {
+            return Effect::Notify("Keyboard title is empty".to_owned());
+        }
+        self.open_name(NameDraft {
+            name: default_name.to_owned(),
+            native_cursor: default_name.encode_utf16().count(),
+            page: 0,
+            cursor: 31,
+            body: NameBody::External {
+                token: context.token,
+                summary: summary.to_owned(),
+                title: context.title,
+            },
+            keyboard_title: context.title,
+        });
+        Effect::None
+    }
+
+    fn open_name(&mut self, draft: NameDraft) {
+        self.playback_on = false;
+        self.held_save = None;
+        self.screen = Screen::Save(Box::new(draft));
+    }
+
     pub fn open_library(&mut self, rows: Vec<LibraryRow>, skipped: usize) {
+        self.open_library_titled(rows, skipped, "Named Library", None);
+    }
+
+    /// `alternate` is the Record Slot label, for example "Record Slot 2".
+    /// `None` leaves Y inert. Y emits [`Effect::BindToSlot`].
+    pub fn open_library_titled(
+        &mut self,
+        rows: Vec<LibraryRow>,
+        skipped: usize,
+        title: impl Into<String>,
+        alternate: Option<String>,
+    ) {
+        self.open_listed(rows, skipped, title.into(), alternate, true);
+    }
+
+    /// Same list as [`Self::open_library_titled`]. Y emits [`Effect::Alternate`]
+    /// and the footer uses `alternate` as the action words after "Y".
+    pub fn open_library_forward(
+        &mut self,
+        rows: Vec<LibraryRow>,
+        skipped: usize,
+        title: impl Into<String>,
+        alternate: Option<String>,
+    ) {
+        self.open_listed(rows, skipped, title.into(), alternate, false);
+    }
+
+    fn open_listed(
+        &mut self,
+        rows: Vec<LibraryRow>,
+        skipped: usize,
+        title: String,
+        alternate: Option<String>,
+        binds_slot: bool,
+    ) {
         self.playback_on = false;
         self.screen = Screen::Library(Box::new(LibraryPage {
             rows,
             skipped,
             cursor: 0,
+            title,
+            alternate,
+            binds_slot,
         }));
     }
 
@@ -537,11 +777,14 @@ impl MacroUi {
             native_cursor: recording.name.encode_utf16().count(),
             page: 0,
             cursor: 31,
-            frames: recording.frames.clone(),
-            start: recording.start,
-            placement: recording.placement,
-            version: recording.game_version.clone(),
-            mii: recording.mii,
+            body: NameBody::Macro {
+                frames: recording.frames.clone(),
+                start: recording.start,
+                placement: recording.placement,
+                version: recording.game_version.clone(),
+                mii: recording.mii,
+            },
+            keyboard_title: MACRO_KEYBOARD_TITLE,
         }));
         self.playback_on = false;
     }
@@ -626,10 +869,15 @@ impl MacroUi {
             }
             Screen::Library(page) => {
                 let id = page.rows.get(page.cursor).map(|row| row.id.clone());
+                let forward = !page.binds_slot;
                 match id {
                     Some(id) => {
                         self.screen = Screen::Closed;
-                        Effect::Choose(id)
+                        if forward {
+                            Effect::ForwardChoose { id }
+                        } else {
+                            Effect::Choose(id)
+                        }
                     }
                     None => Effect::Notify("No recordings saved yet".to_owned()),
                 }
@@ -725,17 +973,39 @@ impl MacroUi {
     fn extra(&mut self) -> Effect {
         if matches!(self.screen, Screen::Save(_)) {
             self.pop_char();
+            return Effect::None;
         }
-        Effect::None
+        let Screen::Library(page) = &self.screen else { return Effect::None };
+        if page.alternate.is_none() {
+            return Effect::None;
+        }
+        let binds_slot = page.binds_slot;
+        let id = page.rows.get(page.cursor).map(|row| row.id.clone());
+        match id {
+            Some(id) => {
+                self.screen = Screen::Closed;
+                if binds_slot {
+                    Effect::BindToSlot { id }
+                } else {
+                    Effect::Alternate { id }
+                }
+            }
+            None => Effect::Notify("No recordings saved yet".to_owned()),
+        }
     }
 
     fn toggle_draft_momentum(&mut self) {
         if let Screen::Save(draft) = &mut self.screen {
-            draft.placement.momentum = flip(draft.placement.momentum);
+            if let NameBody::Macro { placement, .. } = &mut draft.body {
+                placement.momentum = flip(placement.momentum);
+            }
         }
     }
 
     fn open_place_from_save(&mut self) -> Effect {
+        if matches!(&self.screen, Screen::Save(draft) if matches!(draft.body, NameBody::External { .. })) {
+            return Effect::None;
+        }
         if self.anchor.is_none() {
             return Effect::Notify("Restore a Training state before editing placement".into());
         }
@@ -744,7 +1014,11 @@ impl MacroUi {
             self.screen = screen;
             return Effect::None;
         };
-        let working = draft.placement;
+        let NameBody::Macro { placement, .. } = &draft.body else {
+            self.screen = Screen::Save(draft);
+            return Effect::None;
+        };
+        let working = *placement;
         self.held_save = Some(draft);
         self.screen = Screen::Place(Box::new(PlaceDraft {
             working,
@@ -755,15 +1029,34 @@ impl MacroUi {
     }
 
     fn finish_save(&mut self) -> Effect {
+        let external = match &self.screen {
+            Screen::Save(draft) => match draft.body {
+                NameBody::External { token, title, .. } => Some((token, title, draft.name.clone())),
+                NameBody::Macro { .. } => None,
+            },
+            _ => return Effect::None,
+        };
+        if let Some((token, title, raw)) = external {
+            let name = raw.trim();
+            if let Err(err) = external_name(name) {
+                return Effect::Notify(err.to_string());
+            }
+            let name = name.to_owned();
+            self.screen = Screen::Closed;
+            return Effect::NameConfirmed { context: NameContext { token, title }, name };
+        }
         let (name, version, start, frames, placement, mii) = match &self.screen {
-            Screen::Save(draft) => (
-                draft.name.clone(),
-                draft.version.clone(),
-                draft.start,
-                draft.frames.clone(),
-                draft.placement,
-                draft.mii,
-            ),
+            Screen::Save(draft) => match &draft.body {
+                NameBody::Macro { frames, start, placement, version, mii } => (
+                    draft.name.clone(),
+                    version.clone(),
+                    *start,
+                    frames.clone(),
+                    *placement,
+                    *mii,
+                ),
+                NameBody::External { .. } => return Effect::None,
+            },
             _ => return Effect::None,
         };
         let built = MacroRecording::new(name.trim(), version, start, frames);
@@ -830,11 +1123,14 @@ impl MacroUi {
             native_cursor: source.recording.name.encode_utf16().count(),
             page: 0,
             cursor: 31,
-            frames: source.recording.frames.clone(),
-            start: source.recording.start,
-            placement,
-            version: source.recording.game_version.clone(),
-            mii: source.recording.mii,
+            body: NameBody::Macro {
+                frames: source.recording.frames.clone(),
+                start: source.recording.start,
+                placement,
+                version: source.recording.game_version.clone(),
+                mii: source.recording.mii,
+            },
+            keyboard_title: MACRO_KEYBOARD_TITLE,
         };
         self.held_save = None;
         self.screen = Screen::Save(Box::new(draft));
@@ -861,7 +1157,9 @@ impl MacroUi {
             self.screen = Screen::Closed;
             return Effect::None;
         };
-        held.placement = placement;
+        if let NameBody::Macro { placement: saved, .. } = &mut held.body {
+            *saved = placement;
+        }
         self.screen = Screen::Save(held);
         Effect::None
     }
@@ -877,6 +1175,20 @@ impl Default for MacroUi {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn external_name(name: &str) -> Result<(), MacroError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(MacroError::InvalidName("is empty"));
+    }
+    if name.chars().any(char::is_control) {
+        return Err(MacroError::InvalidName("contains control characters"));
+    }
+    if name.chars().count() > MAX_NAME_CHARS {
+        return Err(MacroError::InvalidName("is too long"));
+    }
+    Ok(())
 }
 
 fn nudge(cursor: usize, d_row: i32, d_col: i32) -> usize {
@@ -1631,6 +1943,128 @@ mod tests {
         ui.observe_exact_cpu(Some(0x48), Some(configuration), false);
         assert!(ui.playback_allowed());
         assert_eq!(ui.claim_character_request(), None);
+    }
+
+    #[test]
+    fn numbered_slot_copy_rejects_over_limit_without_truncation() {
+        let mut over = vec![InputFrame::default(); NUMBERED_SLOT_FRAMES + 1];
+        over[0].buttons = 1;
+        let rejected = copy_numbered_frames(&over);
+        assert_eq!(rejected, Err(SlotAdmit::OverLimit { frames: 601, limit: NUMBERED_SLOT_FRAMES }));
+        assert_eq!(over.len(), 601);
+        assert_eq!(over[0].buttons, 1);
+        assert_eq!(copy_numbered_frames(&[]), Err(SlotAdmit::Empty));
+        let full = vec![InputFrame::default(); NUMBERED_SLOT_FRAMES];
+        let copied = copy_numbered_frames(&full).unwrap();
+        assert_eq!(copied.len(), NUMBERED_SLOT_FRAMES);
+        assert_eq!(copied, full);
+    }
+
+    #[test]
+    fn slot_facing_parks_only_a_captured_slot() {
+        let shared = (1.0, 7);
+        let (active, parked) = engage_slot_origin(shared, None, Some((-1.0, 4)));
+        assert_eq!(active, (-1.0, 4));
+        assert_eq!(parked, Some(shared));
+        let (restored, parked) = release_slot_origin(active, parked);
+        assert_eq!(restored, shared);
+        assert_eq!(parked, None);
+        let (active, parked) = engage_slot_origin((-1.0, 4), Some(shared), Some((1.0, 9)));
+        assert_eq!(active, (1.0, 9));
+        assert_eq!(parked, Some(shared));
+        let (active, parked) = engage_slot_origin(shared, None, None);
+        assert_eq!(active, shared);
+        assert_eq!(parked, None);
+    }
+
+    #[test]
+    fn library_y_binds_only_when_the_slot_label_is_set() {
+        let rows = vec![LibraryRow { id: "fox".into(), label: "Fox drill".into() }];
+        let mut plain = MacroUi::new();
+        plain.open_library(rows.clone(), 0);
+        assert_eq!(plain.view().unwrap().title, "Named Library");
+        assert!(plain.view().unwrap().footer.contains("A loads, B closes."));
+        assert!(matches!(plain.on_pad(Pad::Extra), Effect::None));
+        assert!(plain.is_open());
+
+        let mut labeled = MacroUi::new();
+        labeled.open_library_titled(rows, 0, "Named Library", Some("Record Slot 3".into()));
+        let footer = labeled.view().unwrap().footer;
+        assert!(footer.contains("Y binds to Record Slot 3"), "{footer}");
+        let Effect::BindToSlot { id } = labeled.on_pad(Pad::Extra) else { panic!("expected bind") };
+        assert_eq!(id, "fox");
+        assert!(!labeled.is_open());
+    }
+
+    #[test]
+    fn external_name_confirms_without_a_macro_payload() {
+        let mut ui = MacroUi::new();
+        assert!(matches!(
+            ui.offer_name(NameContext { token: 9, title: SETUP_KEYBOARD_TITLE }, "Setup", "Fox vs Marth"),
+            Effect::None
+        ));
+        assert_eq!(ui.name_prompt(), Some("Setup"));
+        assert_eq!(ui.native_name_title(), Some(SETUP_KEYBOARD_TITLE));
+        assert!(ui.checkpoint_native_name("Slot draft", 4));
+        ui.invalidate_practice_context();
+        assert_eq!(ui.name_prompt(), Some("Slot draft"));
+        assert_eq!(ui.native_name_title(), Some(SETUP_KEYBOARD_TITLE));
+        assert_eq!(ui.native_name_cursor(), Some(4));
+        assert!(matches!(ui.native_name_placement(), Effect::None));
+        assert_eq!(ui.name_prompt(), Some("Slot draft"));
+        assert!(matches!(ui.confirm_native_name("   ".into()), Effect::Notify(_)));
+        assert_eq!(ui.name_prompt(), Some("   "));
+        let Effect::NameConfirmed { context, name } = ui.confirm_native_name("  Morning setup  ".into()) else {
+            panic!("expected name confirmation");
+        };
+        assert_eq!(context.token, 9);
+        assert_eq!(context.title, SETUP_KEYBOARD_TITLE);
+        assert_eq!(name, "Morning setup");
+        assert!(ui.name_prompt().is_none());
+        assert!(ui.native_name_title().is_none());
+    }
+
+    #[test]
+    fn keyboard_title_stays_with_the_draft_kind() {
+        let mut ui = MacroUi::new();
+        let effect = ui.offer_save(frames(), start(), false, "13.0.5");
+        assert!(matches!(effect, Effect::None));
+        assert_eq!(ui.native_name_title(), Some(MACRO_KEYBOARD_TITLE));
+        assert!(ui.checkpoint_native_name("Kept macro", 4));
+        ui.invalidate_practice_context();
+        assert_eq!(ui.native_name_title(), Some(MACRO_KEYBOARD_TITLE));
+        assert_eq!(ui.name_prompt(), Some("Kept macro"));
+
+        let effect = ui.offer_name(
+            NameContext { token: 3, title: SETUP_KEYBOARD_TITLE },
+            "Setup",
+            "Slot 2",
+        );
+        assert!(matches!(effect, Effect::None));
+        assert_eq!(ui.native_name_title(), Some(SETUP_KEYBOARD_TITLE));
+        assert_ne!(ui.native_name_title(), Some(MACRO_KEYBOARD_TITLE));
+    }
+
+    #[test]
+    fn mii_identity_keeps_exact_class_and_refuses_unknown() {
+        use training_mod_mii::inventory::MiiClass;
+        let classes = [MiiClass::Brawler, MiiClass::Swordfighter, MiiClass::Gunner];
+        for class in classes {
+            assert_eq!(mii_identity(class.kind() as i32, Some(class.kind())), MiiIdentity::Exact);
+            assert_eq!(mii_identity(class.kind() as i32, None), MiiIdentity::Unknown);
+        }
+        assert_eq!(
+            mii_identity(MiiClass::Brawler.kind() as i32, Some(MiiClass::Gunner.kind())),
+            MiiIdentity::Unknown
+        );
+        assert_eq!(mii_identity(0x07, None), MiiIdentity::Ordinary);
+        assert_eq!(mii_identity(0x07, Some(MiiClass::Brawler.kind())), MiiIdentity::Ordinary);
+        assert_eq!(mii_identity(-1, Some(MiiClass::Brawler.kind())), MiiIdentity::Ordinary);
+        assert_eq!(export_mii_refusal(MiiIdentity::Unknown), Some(
+            "Exact Mii was not available when recording started. Record this slot again."
+        ));
+        assert_eq!(export_mii_refusal(MiiIdentity::Ordinary), None);
+        assert_eq!(export_mii_refusal(MiiIdentity::Exact), None);
     }
 
 }

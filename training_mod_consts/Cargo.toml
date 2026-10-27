@@ -20,6 +20,9 @@ anyhow = "1.0.72"
 rand = { git = "https://github.com/skyline-rs/rand" }
 training_mod_sync = { path = "../training_mod_sync" }
 training_mod_tui = { path = "../training_mod_tui" }
+# Portable record store shared with the named-macro library (no cycle: the
+# macros crate depends only on training_mod_mii and the match-data module).
+training_mod_macros = { path = "../training_mod_macros" }
 
 [features]
 # Exposed only when the root native P1 driver is built.

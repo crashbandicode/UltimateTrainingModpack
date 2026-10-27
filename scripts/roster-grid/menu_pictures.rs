@@ -1,4 +1,4 @@
-//! Existing menu chips plus root-sourced, numbered Character Item photographs.
+//! Existing menu chips plus numbered Character Item icons from owned game assets.
 use crate::*;
 use nx_layout_toolbox::bntx::BntxFile;
 
@@ -20,27 +20,52 @@ const ALIASES: &[(&str, &str)] = &[
     ("p1_cpu_control", "mash_state"),
     ("p1_cpu_level", "clatter_strength"),
     ("named_macro_library", "recording_slot"),
+    ("named_macro_export_slot", "save_state_slot"),
     ("named_macro_placement", "save_state_save"),
     ("named_macro_replay", "input_playback"),
+    ("setup_library_save", "save_state_save"),
+    ("setup_library_open", "save_state_load"),
+    ("training_stage_rotation", "stage_hazards"),
     ("macro_source", "input_record"),
 ];
 
-pub struct Asset { width: f32, height: f32 }
+/// `texture` names the BNTX texture the item pane binds; identical icons share one.
+pub struct Asset { texture: String, width: f32, height: f32 }
 
 pub fn import_textures(bntx: &mut BntxFile, roster_assets: &Path) -> Result<Vec<Asset>> {
     let assets = roster_assets.parent().and_then(Path::parent)
         .ok_or("roster assets parent")?.join("item-icons/assets");
+    // Byte-identical PNGs decode to identical pixels, so each distinct file is
+    // imported once under its first index's name and later indices reuse it.
+    let mut imported: Vec<(Vec<u8>, String)> = Vec::new();
     let mut result = Vec::new();
     for index in 0..38 {
-        let name = format!("character_item_{index:02}");
-        import_png_file(bntx, &name, &assets.join(format!("icon-{index:02}.png")),
-            &ImportOptions {
-                texture_format: ImportTextureFormat::Bc7,
-                ..Default::default()
-            })?;
+        let path = assets.join(format!("icon-{index:02}.png"));
+        let bytes = std::fs::read(&path)?;
+        let name = match imported.iter().find(|(seen, _)| *seen == bytes) {
+            Some((_, name)) => name.clone(),
+            None => {
+                let name = format!("character_item_{index:02}");
+                import_png_file(bntx, &name, &path,
+                    &ImportOptions {
+                        texture_format: ImportTextureFormat::Bc7,
+                        ..Default::default()
+                    })?;
+                imported.push((bytes, name.clone()));
+                name
+            }
+        };
         let texture = &bntx.textures[bntx.texture_index_by_name(&name).ok_or("item texture")?];
         let scale = (64. / texture.width as f32).min(64. / texture.height as f32);
-        result.push(Asset { width: texture.width as f32 * scale, height: texture.height as f32 * scale });
+        result.push(Asset { width: texture.width as f32 * scale, height: texture.height as f32 * scale,
+            texture: name });
+    }
+    // A shared index never gets its own texture, so a stale per-index one cannot be bound.
+    for (index, asset) in result.iter().enumerate() {
+        let own = format!("character_item_{index:02}");
+        if asset.texture != own && bntx.texture_index_by_name(&own).is_some() {
+            return Err(format!("unexpected duplicate texture {own}").into());
+        }
     }
     Ok(result)
 }
@@ -65,7 +90,7 @@ pub fn append(layout: &mut BFLYT, assets: &[Asset], bntx: &BntxFile) -> Result<V
         .ok_or("native item picture")?.material_index as usize].clone();
     if native_material.texture_maps.len() != 1 { return Err("item UV texture count".into()); }
     let mut pictures: Vec<_> = assets.iter().enumerate().map(|(index, asset)|
-        (format!("item_icon_{index:02}"), format!("character_item_{index:02}"), asset.width, asset.height)
+        (format!("item_icon_{index:02}"), asset.texture.clone(), asset.width, asset.height)
     ).collect();
     // These launchers are mounted dynamically, so the static submenu inventory
     // does not include them. Reuse the class portraits already in the archive.
@@ -78,17 +103,27 @@ pub fn append(layout: &mut BFLYT, assets: &[Asset], bntx: &BntxFile) -> Result<V
         let scale = (64. / t.width as f32).min(64. / t.height as f32);
         pictures.push((pane.into(), texture.into(), t.width as f32 * scale, t.height as f32 * scale));
     }
+    // Pictures sharing a texture share its texture-list entry; without repeats the
+    // list, its order and every material index are exactly one entry per picture.
+    let mut slots: Vec<(String, usize)> = Vec::new();
     for (index, (name, texture, width, height)) in pictures.iter().enumerate() {
+        let slot = match slots.iter().find(|(seen, _)| seen == texture) {
+            Some(&(_, slot)) => slot,
+            None => {
+                slots.push((texture.clone(), layout.textures.len()));
+                layout.textures.push(texture.clone());
+                layout.textures.len() - 1
+            }
+        };
         let mut material = native_material.clone();
         material.name = format!("item_picture_{index:02}");
-        material.texture_maps[0].index = i16::try_from(layout.textures.len())?;
+        material.texture_maps[0].index = i16::try_from(slot)?;
         material.white_color = color(255, 255, 255, 255);
         material.black_color = color(0, 0, 0, 0);
         material.flags_untrusted = false;
         material.original_section_size = None;
         let material_index = u16::try_from(layout.materials.len())?;
         layout.materials.push(material);
-        layout.textures.push(texture.clone());
         let mut pane = picture(name,
             native_item.translate.x, native_item.translate.y,
             *width, *height, material_index, color(255, 255, 255, 255));
@@ -123,11 +158,20 @@ pub fn append(layout: &mut BFLYT, assets: &[Asset], bntx: &BntxFile) -> Result<V
             assert_eq!(transform.scale, Vec2 { x: 1., y: 1. });
         }
     }
+    // Each distinct texture is listed once, in first-use order.
+    let mut distinct: Vec<&String> = Vec::new();
+    for (_, texture, _, _) in &pictures {
+        if !distinct.contains(&texture) { distinct.push(texture); }
+    }
+    assert_eq!(parsed.textures[old_textures..].iter().collect::<Vec<_>>(), distinct);
+    let mut item_textures: Vec<&str> = assets.iter().map(|asset| asset.texture.as_str()).collect();
+    item_textures.sort_unstable();
+    item_textures.dedup();
     let mut restored = parsed;
     restored.find_pane_mut("Icon").unwrap().children.truncate(original_children);
     restored.materials.truncate(old_materials);
     restored.textures.truncate(old_textures);
     assert_eq!(write_bflyt(&restored)?, write_bflyt(&original)?);
-    Ok(json!({"item_pictures":assets.len(), "mii_portraits":3, "aliases":ALIASES,
-        "original_button_restored_byte_exact":true}))
+    Ok(json!({"item_pictures":assets.len(), "item_textures":item_textures.len(), "mii_portraits":3,
+        "aliases":ALIASES, "original_button_restored_byte_exact":true}))
 }

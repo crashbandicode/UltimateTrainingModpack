@@ -1,575 +1,2122 @@
 {
-  "description": "Actual game captures from existing item acceptance sessions; no generated artwork. Original game art belongs to its respective owners.",
+  "description": "Owned-game assets only: native item_0 UI icons where they exist; otherwise renders of the item's own model/textures. No generated artwork, no fighter portraits.",
+  "provenance": {
+    "capture_receipt": {
+      "file": "CAPTURE150.json",
+      "sha256": "c4d82e3d877fefac08d056319aeb48b5c917831f446308de1b9489d91ebade06"
+    },
+    "capture_manifest_sha256": "5237496c394fe33d6dfa3282318afc0f76e11fc757e71c871a0bd5baddae772b",
+    "render_plan_sha256": "0ea53002a4fab716e3c13210b853fedb5e4c448238913e03a4ee9eee6a85448b",
+    "render_unit": "item-icons147-render-1793117963.service",
+    "native_decoder": {
+      "path": "stage-names-decode",
+      "sha256": "56b4e9ad242d79c7454358d0c5b0fdc98f09a1441a9ee0199da59a9046f84db8"
+    },
+    "tools_sha256": {
+      "run_pipeline.py": "a963c7c6c9559e620806c20c4ab970776015a32651e594f48d8392cfcdece597",
+      "render_item.py": "dc0b8b2b25cfc38e2c2cff2378ce95de59b0f46baf041a3a0f76ed9ff83c12ca",
+      "decode_nutexb.py": "ce91eca66e0fe3afa480edf64b794c3f7a559c35abf2051af29d6cbe9aa2bf03",
+      "plan_tune.py": "c3720b214cef8c4e7058d618be5551990907013d860fea8698c67f7f455f3332"
+    },
+    "size": "64x64 RGBA (pane is aspect-fit to 64x64; visual parity with the previous 96 px icons is unreviewed)",
+    "private": "Raw captures, decoded textures and pre-fit renders are kept outside the repo."
+  },
   "icons": [
     {
       "index": 0,
-      "label": "Grenade Egg",
+      "label": "Banjo & Kazooie: Grenade Egg",
       "filename": "icon-00.png",
-      "sha256": "9a9d967216dc1684ac35ee6039aabc13c1c1042099360bb676298511e125e59e",
-      "source_capture": "plan5-matrix-01/item-00/held.png",
-      "source_sha256": "d92da7639e137d1536bb7afd02eeafae9fd03f576f34dd940d2eebbdd7092980",
-      "crop": [
-        352,
-        399,
-        432,
-        479
+      "sha256": "3d32ba4b3b6aaaa2f796dfbf1eedcf5aea9f342d89e50ea1323831bcc17a1065",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/buddybomb/model/body/c00/def_buddybomb_001_col.nutexb",
+          "sha256": "431692c4938882438b18bd44ccf3e661a924eb122b3019b083ffdda8d0276aef"
+        },
+        {
+          "arc_path": "item/buddybomb/model/body/c00/model.numatb",
+          "sha256": "f5bd985dc0e1498c7434e5a1739fcc34ca3ed42bdeabc104432140a90cd097d2"
+        },
+        {
+          "arc_path": "item/buddybomb/model/body/c00/model.numdlb",
+          "sha256": "52e19b1ac08980037b6615934c22bc8d9a4521a8b529b45e24d0d8713c428003"
+        },
+        {
+          "arc_path": "item/buddybomb/model/body/c00/model.numshb",
+          "sha256": "c85386d269c0e56048206a19fde37d2ccbfd56126b198e55f2b964a41b321f01"
+        },
+        {
+          "arc_path": "item/buddybomb/model/body/c00/model.nusktb",
+          "sha256": "be117be1d0f76c5b8e09750e0826540a785e32a5a533206ca60e7ede3b72e411"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/buddybomb/model/body/c00",
+        "--textures",
+        "$WORK/textures/buddybomb",
+        "--out",
+        "$WORK/raw/icon-00.png",
+        "--report",
+        "$WORK/reports/icon-00.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 1,
-      "label": "Mechakoopa",
+      "label": "Bowser Jr.: Mechakoopa",
       "filename": "icon-01.png",
-      "sha256": "c734ff0f7fe752b27bd340600eca83b8da745af811ba2c60ee9f86215d1db9e9",
-      "source_capture": "plan5-matrix-01/item-01/held.png",
-      "source_sha256": "12aaf038d5c4741011466ac59f9042083b897dd5870beecb344b3de24ab1b653",
-      "crop": [
-        309,
-        340,
-        432,
-        493
+      "sha256": "90f5a8f7482ae7cdb5c583b7d349f52de90d5a7eab7507bbe5ed993aea73b735",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/mechakoopa/model/body/c00/mecha_koopa_eye_0_col.nutexb",
+          "sha256": "65581b8ac2f965f88ca2e8978b2fe50fe53041480dd633c1c04fb8ac3665c69b"
+        },
+        {
+          "arc_path": "item/mechakoopa/model/body/c00/metal_mechakoopa_001_col.nutexb",
+          "sha256": "586a230ca49379bfed0eb67415b00584f9be25442ca9f158a593cd2e4ab20516"
+        },
+        {
+          "arc_path": "item/mechakoopa/model/body/c00/model.nuanmb",
+          "sha256": "5678b5effb7addfb67b76b127d14c5d06356ff6def4527676f4b287b6f349805"
+        },
+        {
+          "arc_path": "item/mechakoopa/model/body/c00/model.numatb",
+          "sha256": "3300717ebff3b5ff0001901428082d056946a76cb39b21a14226690729f06a41"
+        },
+        {
+          "arc_path": "item/mechakoopa/model/body/c00/model.numdlb",
+          "sha256": "442971bd244dcd5e42828d1b2e2d0f484660587548bae13347a7a438c40858b6"
+        },
+        {
+          "arc_path": "item/mechakoopa/model/body/c00/model.numshb",
+          "sha256": "6097b551fc06d012335d5e4f104d11170bb1bedf8c3c919e576faa9554c29c2f"
+        },
+        {
+          "arc_path": "item/mechakoopa/model/body/c00/model.nusktb",
+          "sha256": "e3cc978c83d21069adb77255f49a3959c238e1250bff2db83593058d1f283231"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/mechakoopa/model/body/c00",
+        "--textures",
+        "$WORK/textures/mechakoopa",
+        "--out",
+        "$WORK/raw/icon-01.png",
+        "--report",
+        "$WORK/reports/icon-01.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/mechakoopa/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 2,
-      "label": "Smile turnip",
+      "label": "Daisy: Smile Turnip",
       "filename": "icon-02.png",
-      "sha256": "96b992ef7f5ccf041706f650ab43a252813e65178d6aa6d695cdbc892878a96e",
-      "source_capture": "plan5-matrix-02/item-22/held.png",
-      "source_sha256": "dbd04c03021f665fb67808e9dd853965025cc3331d4e681574142555fc1bef51",
-      "crop": [
-        399,
-        383,
-        550,
-        548
+      "sha256": "ee643fab9b28a2aa17b198e95d5fcefcd7aad694a411f39026438c86a1d918ce",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/def_peachdaikon_001_col.nutexb",
+          "sha256": "f55c2fffce83719a31b82e9d928f571980097e46f962842295ee40f87991360a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/def_peachdaikon_002_col.nutexb",
+          "sha256": "3f94e8960e0ea6a6826c49bc2e6f0ae0a09655de3097d7a2b45f2a883d60b54a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numatb",
+          "sha256": "06c2b915f670c395d9196d9715d6b71873dc485ed5671d67c51da28e31654483"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numdlb",
+          "sha256": "c15909ae6ae9739687a0a7209fc017b0d867c79685d8f2edd104e042d821b70a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numshb",
+          "sha256": "163dcabc984ef54074564698a8057b84dbdf0c9f94145e450f16e4565781e0f1"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.nusktb",
+          "sha256": "7ef8f145e8a9bbbdf01e97bcbf2c2028f123e861daa3a2ec22365691b5b7deaa"
+        },
+        {
+          "arc_path": "item/daisydaikon/motion/body/c00/face.nuanmb",
+          "sha256": "d9eb3a20b7736fb6b8b874d36439c9b4c000e828a8a98d9e19400cca01da25dd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/daisydaikon/model/body/c00",
+        "--textures",
+        "$WORK/textures/daisydaikon",
+        "--out",
+        "$WORK/raw/icon-02.png",
+        "--report",
+        "$WORK/reports/icon-02.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-100",
+        "--pitch",
+        "10",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/daisydaikon/motion/body/c00/face.nuanmb"
+      ],
+      "frame_status": "verified: face.nuanmb animates CustomVector6 (colour-map UV transform) on def_peachdaikon_001; frame = native face index",
+      "note": null
     },
     {
       "index": 3,
-      "label": "Winky turnip",
+      "label": "Daisy: Winky Turnip",
       "filename": "icon-03.png",
-      "sha256": "b941a3fd19a875b629b456e25b2f3b0d08d8dcf48dc21b7ef7c793c73778627d",
-      "source_capture": "plan5-matrix-01/item-03/held.png",
-      "source_sha256": "c5a8be98f71ce05993fd07b253d7e9e252d16bc322dca97099fc17fe42991930",
-      "crop": [
-        329,
-        360,
-        452,
-        483
+      "sha256": "ae1128531822d7f46b0117453e126b6d7af701b35e2078158f454f6459d083d0",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/def_peachdaikon_001_col.nutexb",
+          "sha256": "f55c2fffce83719a31b82e9d928f571980097e46f962842295ee40f87991360a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/def_peachdaikon_002_col.nutexb",
+          "sha256": "3f94e8960e0ea6a6826c49bc2e6f0ae0a09655de3097d7a2b45f2a883d60b54a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numatb",
+          "sha256": "06c2b915f670c395d9196d9715d6b71873dc485ed5671d67c51da28e31654483"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numdlb",
+          "sha256": "c15909ae6ae9739687a0a7209fc017b0d867c79685d8f2edd104e042d821b70a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numshb",
+          "sha256": "163dcabc984ef54074564698a8057b84dbdf0c9f94145e450f16e4565781e0f1"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.nusktb",
+          "sha256": "7ef8f145e8a9bbbdf01e97bcbf2c2028f123e861daa3a2ec22365691b5b7deaa"
+        },
+        {
+          "arc_path": "item/daisydaikon/motion/body/c00/face.nuanmb",
+          "sha256": "d9eb3a20b7736fb6b8b874d36439c9b4c000e828a8a98d9e19400cca01da25dd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/daisydaikon/model/body/c00",
+        "--textures",
+        "$WORK/textures/daisydaikon",
+        "--out",
+        "$WORK/raw/icon-03.png",
+        "--report",
+        "$WORK/reports/icon-03.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "5",
+        "--yaw",
+        "-100",
+        "--pitch",
+        "10",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/daisydaikon/motion/body/c00/face.nuanmb"
+      ],
+      "frame_status": "verified: face.nuanmb animates CustomVector6 (colour-map UV transform) on def_peachdaikon_001; frame = native face index",
+      "note": null
     },
     {
       "index": 4,
-      "label": "Dot-Eyes turnip",
+      "label": "Daisy: Dot-Eyes Turnip",
       "filename": "icon-04.png",
-      "sha256": "cf25f2503c02211217f86135ca8371e7d9edaeee94cb2d9d028d0ee5df711de3",
-      "source_capture": "plan5-matrix-02/item-24/held.png",
-      "source_sha256": "a02d728b6c00b4e8b48d690ed3216d36719c696ce6881a8002de0e09c83c6d20",
-      "crop": [
-        399,
-        383,
-        550,
-        548
+      "sha256": "ef7967d410d8b5af487973cd48e875a1595906a1a4a7b9fe0d54c9f36f4641d6",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/def_peachdaikon_001_col.nutexb",
+          "sha256": "f55c2fffce83719a31b82e9d928f571980097e46f962842295ee40f87991360a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/def_peachdaikon_002_col.nutexb",
+          "sha256": "3f94e8960e0ea6a6826c49bc2e6f0ae0a09655de3097d7a2b45f2a883d60b54a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numatb",
+          "sha256": "06c2b915f670c395d9196d9715d6b71873dc485ed5671d67c51da28e31654483"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numdlb",
+          "sha256": "c15909ae6ae9739687a0a7209fc017b0d867c79685d8f2edd104e042d821b70a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numshb",
+          "sha256": "163dcabc984ef54074564698a8057b84dbdf0c9f94145e450f16e4565781e0f1"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.nusktb",
+          "sha256": "7ef8f145e8a9bbbdf01e97bcbf2c2028f123e861daa3a2ec22365691b5b7deaa"
+        },
+        {
+          "arc_path": "item/daisydaikon/motion/body/c00/face.nuanmb",
+          "sha256": "d9eb3a20b7736fb6b8b874d36439c9b4c000e828a8a98d9e19400cca01da25dd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/daisydaikon/model/body/c00",
+        "--textures",
+        "$WORK/textures/daisydaikon",
+        "--out",
+        "$WORK/raw/icon-04.png",
+        "--report",
+        "$WORK/reports/icon-04.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "6",
+        "--yaw",
+        "-100",
+        "--pitch",
+        "10",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/daisydaikon/motion/body/c00/face.nuanmb"
+      ],
+      "frame_status": "verified: face.nuanmb animates CustomVector6 (colour-map UV transform) on def_peachdaikon_001; frame = native face index",
+      "note": null
     },
     {
       "index": 5,
-      "label": "Stitch-Face turnip",
+      "label": "Daisy: Stitch-Face Turnip",
       "filename": "icon-05.png",
-      "sha256": "3057bac05d41217f90c6d06788b1ba53ffb0944a667da7975ad4aa943d1e78c5",
-      "source_capture": "plan5-matrix-02/item-25/held.png",
-      "source_sha256": "d9452618ca4ee5bc598294bb2e29ad2f0822ff3acac5f2e592d4b5e0b78e4c9e",
-      "crop": [
-        399,
-        383,
-        550,
-        548
+      "sha256": "4e459691982911c1badaf1a440313b90bf0bca91b0293d9a313e1524e50a36c6",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/def_peachdaikon_001_col.nutexb",
+          "sha256": "f55c2fffce83719a31b82e9d928f571980097e46f962842295ee40f87991360a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/def_peachdaikon_002_col.nutexb",
+          "sha256": "3f94e8960e0ea6a6826c49bc2e6f0ae0a09655de3097d7a2b45f2a883d60b54a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numatb",
+          "sha256": "06c2b915f670c395d9196d9715d6b71873dc485ed5671d67c51da28e31654483"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numdlb",
+          "sha256": "c15909ae6ae9739687a0a7209fc017b0d867c79685d8f2edd104e042d821b70a"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.numshb",
+          "sha256": "163dcabc984ef54074564698a8057b84dbdf0c9f94145e450f16e4565781e0f1"
+        },
+        {
+          "arc_path": "item/daisydaikon/model/body/c00/model.nusktb",
+          "sha256": "7ef8f145e8a9bbbdf01e97bcbf2c2028f123e861daa3a2ec22365691b5b7deaa"
+        },
+        {
+          "arc_path": "item/daisydaikon/motion/body/c00/face.nuanmb",
+          "sha256": "d9eb3a20b7736fb6b8b874d36439c9b4c000e828a8a98d9e19400cca01da25dd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/daisydaikon/model/body/c00",
+        "--textures",
+        "$WORK/textures/daisydaikon",
+        "--out",
+        "$WORK/raw/icon-05.png",
+        "--report",
+        "$WORK/reports/icon-05.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "7",
+        "--yaw",
+        "-100",
+        "--pitch",
+        "10",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/daisydaikon/motion/body/c00/face.nuanmb"
+      ],
+      "frame_status": "verified: face.nuanmb animates CustomVector6 (colour-map UV transform) on def_peachdaikon_001; frame = native face index",
+      "note": null
     },
     {
       "index": 6,
-      "label": "Mr. Saturn",
+      "label": "Daisy: Mr. Saturn",
       "filename": "icon-06.png",
-      "sha256": "89c691808db25c0ffdd69c511ec67dcec60a50d66a1ea03129e41039e589cfe6",
-      "source_capture": "plan5-matrix-01/item-06/held.png",
-      "source_sha256": "9ca6333c30b9ad1dc2df2ae616c360aadc85815e4ce6772285ee26698bc92364",
-      "crop": [
-        310,
-        386,
-        427,
-        503
+      "sha256": "918c87d08f790d805a10ca56b4be71902c90cc174c4fee5f4fdc52146c73bcca",
+      "method": "Native UI item_0 BNTX texture 0 decoded by stage-names-decode; aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "ui/replace/item/item_0/item_0_doseisan.bntx",
+          "sha256": "db38a7ea62b3fc077e349b2ae8f5792a2cc21caf61fe95c80a266ecad8779d1c"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [],
+      "frame_status": null,
+      "note": null
     },
     {
       "index": 7,
-      "label": "Bob-omb",
+      "label": "Daisy: Bob-omb",
       "filename": "icon-07.png",
-      "sha256": "6b9d2160e68ed3e0a19c53308456bab59d84ce319bd9752c53f55d5a567450b7",
-      "source_capture": "plan5-matrix-01/item-07/held.png",
-      "source_sha256": "24bdbbe6378937e33763408bb0eeae8bfb1036fe2343c6f81d3b5a9b616c0bac",
-      "crop": [
-        328,
-        368,
-        437,
-        477
+      "sha256": "d4d894be9fa6bc4016c14eec92814fc2c759926948c6a856009fb26e4b973eea",
+      "method": "Native UI item_0 BNTX texture 0 decoded by stage-names-decode; aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "ui/replace/item/item_0/item_0_bombhei.bntx",
+          "sha256": "8abe9eb3e3c86f9425941a8bbc645ccfbaef355e161aeedd5f318576228d61c3"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [],
+      "frame_status": null,
+      "note": null
     },
     {
       "index": 8,
-      "label": "Banana Peel",
+      "label": "Diddy Kong: Banana Peel",
       "filename": "icon-08.png",
-      "sha256": "c1fd9b990715d1517154d7571ad63cf87ddc124a5076e411b7b3e4e8b1f2ab84",
-      "source_capture": "plan5-matrix-01/item-08/held.png",
-      "source_sha256": "e47fb54805d22e24fb7c2e4788b573a2d4a451468816428fb7d93e6972264329",
-      "crop": [
-        349,
-        398,
-        454,
-        468
+      "sha256": "c1c7d74fc6da1152dede1462ddd1ec731e3edbf093122a00e6e002cc8b6509ca",
+      "method": "Native UI item_0 BNTX texture 0 decoded by stage-names-decode; aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "ui/replace/item/item_0/item_0_banana.bntx",
+          "sha256": "69114dda63e4fa678b0b8019186a7a1d1f5e8953f003854cf6aac87ac791b5ad"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [],
+      "frame_status": null,
+      "note": null
     },
     {
       "index": 9,
-      "label": "Peanut",
+      "label": "Diddy Kong: Peanut",
       "filename": "icon-09.png",
-      "sha256": "7857af340383980410d0a49a3ef4c49c932143ffdc04fde1320c8349d8a7d376",
-      "source_capture": "plan5-matrix-01/item-09/held.png",
-      "source_sha256": "193454052975400a5e2c33773973da11b04d98225d0cbe8d9ccc353f3a54944e",
-      "crop": [
-        355,
-        382,
-        439,
-        466
+      "sha256": "6ce930342a8d715305b177d5fa176b8ae3eafd2c1286b6a2cfae8dfdb7aedb26",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/diddypeanuts/model/body/c00/diddypeanuts_col.nutexb",
+          "sha256": "21220cb6f43bc307ced103aeffbb1489270f87e448323286e1e879eb291634ce"
+        },
+        {
+          "arc_path": "item/diddypeanuts/model/body/c00/model.nuanmb",
+          "sha256": "3148c19865d2062674d01dece91e5536e55bc1b753b61ddf45d37b6b38f124e9"
+        },
+        {
+          "arc_path": "item/diddypeanuts/model/body/c00/model.numatb",
+          "sha256": "4d4fd0493fbfad2d0d63e097909b86622f016987fbf99948f37eb8291be5edbb"
+        },
+        {
+          "arc_path": "item/diddypeanuts/model/body/c00/model.numdlb",
+          "sha256": "e85ac1158423b573c04530a8ec0880729f75c21f50528a80281ddcb28a61000a"
+        },
+        {
+          "arc_path": "item/diddypeanuts/model/body/c00/model.numshb",
+          "sha256": "a116469f1ce6690ef100965443eabd2cabf2d1e6b0f91519ad75d370fd235cf1"
+        },
+        {
+          "arc_path": "item/diddypeanuts/model/body/c00/model.nusktb",
+          "sha256": "8ee1df16a16c5e50dc71762cb2c3e47093bede37190f854c40c9d3c07c57713a"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/diddypeanuts/model/body/c00",
+        "--textures",
+        "$WORK/textures/diddypeanuts",
+        "--out",
+        "$WORK/raw/icon-09.png",
+        "--report",
+        "$WORK/reports/icon-09.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/diddypeanuts/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 10,
-      "label": "Crown",
+      "label": "King K. Rool: Crown",
       "filename": "icon-10.png",
-      "sha256": "c449bad400cc2c5d61fac62ac3f0de283103bb60a79ac08c632991258dc05963",
-      "source_capture": "plan5-matrix-01/item-10/held.png",
-      "source_sha256": "df86fd998de40b56f78eafb1961bbf2bc3408ca4cd9f61d38aaa4b7f23250c81",
-      "crop": [
-        353,
-        376,
-        441,
-        484
+      "sha256": "f39120f31655bbcd33f3b78cce7789f751b969c0705b463f4e0ad7afd48140eb",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/kroolcrown/model/body/c00/metal_krool_001_col.nutexb",
+          "sha256": "2211d8ea98847766518429052e032932f655b7a05473ff2a6ce418d4d3be025b"
+        },
+        {
+          "arc_path": "item/kroolcrown/model/body/c00/model.numatb",
+          "sha256": "b20087a3e0c87267126a73afe62ef006f73a994c36b9c941954503556203fa99"
+        },
+        {
+          "arc_path": "item/kroolcrown/model/body/c00/model.numdlb",
+          "sha256": "c320146cb60dcac5624ecfaddaea7b18050d87b1bb088acc942c5ace7bfcdff6"
+        },
+        {
+          "arc_path": "item/kroolcrown/model/body/c00/model.numshb",
+          "sha256": "24fd1b12e608014c789178223ef75758ccaba998664183718a5a7e1de810d89b"
+        },
+        {
+          "arc_path": "item/kroolcrown/model/body/c00/model.nusktb",
+          "sha256": "5d64f9ad61599efe285f4f2c46c509684ad24bea19c11231139dca4d00a65208"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/kroolcrown/model/body/c00",
+        "--textures",
+        "$WORK/textures/kroolcrown",
+        "--out",
+        "$WORK/raw/icon-10.png",
+        "--report",
+        "$WORK/reports/icon-10.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 11,
-      "label": "Remote Bomb",
+      "label": "Link: Remote Bomb",
       "filename": "icon-11.png",
-      "sha256": "c1497cbcad3d7c717f4f5fe2d717e3c8011d16e6c196ded80ae699c723a7940a",
-      "source_capture": "plan5-matrix-01/item-11/held.png",
-      "source_sha256": "68f33446f7cd0aa0726923c4c6b6adcc742f85a74546c6ec65ef7d730ba27377",
-      "crop": [
-        354,
-        399,
-        431,
-        476
+      "sha256": "826961ac749989535578113b0a4c3314f903d4e7d02b97b185ba9473dcbdcfc9",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/linkbomb/model/body/c00/metal_linkbomb_001_col.nutexb",
+          "sha256": "72f0d5d30d7a7ecd521b1a3c68bc2531a7c4762b20757abf2b0c501e4c712c60"
+        },
+        {
+          "arc_path": "item/linkbomb/model/body/c00/metal_linkbomb_001_emi.nutexb",
+          "sha256": "4962ded83237849926357420fc3268c31b61e53815673aabef1230e145961ddc"
+        },
+        {
+          "arc_path": "item/linkbomb/model/body/c00/model.nuanmb",
+          "sha256": "d7187441b2b4839c4632e214b60a6e15b88853bf25816b59bffc4b8b2f741498"
+        },
+        {
+          "arc_path": "item/linkbomb/model/body/c00/model.numatb",
+          "sha256": "5dedf8607f97e68730ac22ce55d993c79901cadea583ff83cc3b02cca25d5f73"
+        },
+        {
+          "arc_path": "item/linkbomb/model/body/c00/model.numdlb",
+          "sha256": "ee93b0782187d9611a11a324b838618c5bc51adc29a320bba9fc027a646353f6"
+        },
+        {
+          "arc_path": "item/linkbomb/model/body/c00/model.numshb",
+          "sha256": "075584075f94d6833f7e4b2d6e0e747c2e786245a3e82425144c48ab890a1924"
+        },
+        {
+          "arc_path": "item/linkbomb/model/body/c00/model.nusktb",
+          "sha256": "a7f622dadfa3c6f453889a8179ec6eb1978495bd7fa297818df247f8bd4d58e8"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/linkbomb/model/body/c00",
+        "--textures",
+        "$WORK/textures/linkbomb",
+        "--out",
+        "$WORK/raw/icon-11.png",
+        "--report",
+        "$WORK/reports/icon-11.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/linkbomb/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 12,
-      "label": "Arrow",
+      "label": "Link: Arrow",
       "filename": "icon-12.png",
-      "sha256": "070ea08a17456118e6535958c0ea52a819252dba5615e8ff9ff53a297bbe03b4",
-      "source_capture": "plan5-matrix-01/item-12/held.png",
-      "source_sha256": "4f71a89e663aef691181d8adfdd2e8bd1c517a96eda48bb8d73a950842658354",
-      "crop": [
-        247,
-        331,
-        312,
-        396
+      "sha256": "69e8d6ed411964fa129caedacf494fdafd3b4229238d66562cfa6a15b714c441",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/linkarrow/model/body/c00/alp_bow_001_col.nutexb",
+          "sha256": "351fd5e7262d729b850fb1ce267702f612ef18ed1b4a502ea1294117ed674f46"
+        },
+        {
+          "arc_path": "item/linkarrow/model/body/c00/model.numatb",
+          "sha256": "b4f5051ed5b61baa8823351895a0da4abfd729557a3d6dc535044d61e9b9a71d"
+        },
+        {
+          "arc_path": "item/linkarrow/model/body/c00/model.numdlb",
+          "sha256": "b0f77f8f2651b3528cc0abe3d895e4b08252b6bd6fecf5d13c2042110eacd8a1"
+        },
+        {
+          "arc_path": "item/linkarrow/model/body/c00/model.numshb",
+          "sha256": "f2b4e33bb02970d2a13e66cf6e405e9ecdf35399190dc429339406ee92da857d"
+        },
+        {
+          "arc_path": "item/linkarrow/model/body/c00/model.nusktb",
+          "sha256": "e8f25a26178899b51bc98299c1330ceecf851ac9095524be1965be488530078e"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/linkarrow/model/body/c00",
+        "--textures",
+        "$WORK/textures/linkarrow",
+        "--out",
+        "$WORK/raw/icon-12.png",
+        "--report",
+        "$WORK/reports/icon-12.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 13,
-      "label": "Metal Blade",
+      "label": "Mega Man: Metal Blade",
       "filename": "icon-13.png",
-      "sha256": "a16d884f4ff25121293b9211e50bcddfd0c9b09aa9419a8b53124274989f7e4b",
-      "source_capture": "plan5-matrix-01/item-13/held.png",
-      "source_sha256": "575a508e5687cc081ac98308996c51499fa9efeff5056b4b8989c25f0f2f2a09",
-      "crop": [
-        360,
-        379,
-        448,
-        478
+      "sha256": "724282a79bde109d50d30f3376b6d51f3176db9eab972a09bafa567155de07f4",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/metalblade/model/body/c00/def_metalblade_001_col.nutexb",
+          "sha256": "81a8450f19bf9cebd67120ad27b2ae55d9bc0b03f0ab53ef9ca7faebdd5afe9c"
+        },
+        {
+          "arc_path": "item/metalblade/model/body/c00/model.nuanmb",
+          "sha256": "235779172194825a1d37b9d5401ad40f4e6f81a77b740d75deb707cde77dac6c"
+        },
+        {
+          "arc_path": "item/metalblade/model/body/c00/model.numatb",
+          "sha256": "976b2bf3caf888b5553009b74d040bc6a17d20134287ac9e61f4a718d7c5821a"
+        },
+        {
+          "arc_path": "item/metalblade/model/body/c00/model.numdlb",
+          "sha256": "75df84d2c853e51db213f76f6ce2e2565187f64fd2719cbeeec974f30fb050d1"
+        },
+        {
+          "arc_path": "item/metalblade/model/body/c00/model.numshb",
+          "sha256": "03807d9ac84733d8689ba5bf849636e4007e49f75c29be46fe3a3b4ce13f9fe4"
+        },
+        {
+          "arc_path": "item/metalblade/model/body/c00/model.nusktb",
+          "sha256": "3242b76362625912fe034e45a9bd87fee5eaf5ede877f67aaa55775e60abb338"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/metalblade/model/body/c00",
+        "--textures",
+        "$WORK/textures/metalblade",
+        "--out",
+        "$WORK/raw/icon-13.png",
+        "--report",
+        "$WORK/reports/icon-13.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "0",
+        "--pitch",
+        "70",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/metalblade/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 14,
-      "label": "Cherry",
+      "label": "Pac-Man: Cherry",
       "filename": "icon-14.png",
-      "sha256": "c0b0e569ab6e9bdfb96fb2408658b96f1db7988c43e12aedc5f18e1123df33ed",
-      "source_capture": "plan5-matrix-01/item-14/held.png",
-      "source_sha256": "ae1c81c58a2fd4289bccc8cf65b00c870be6e82b613f475b17636c180637f6fd",
-      "crop": [
-        355,
-        368,
-        458,
-        471
+      "sha256": "44447262eb791551f03c6d924a944c2bf43729606a43f3e963bfeeb141dc0437",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/pacmancherry/model/body/c00/model.nuanmb",
+          "sha256": "6eb818060c450ee598d7dd09be03f4c478e288212d2d73c4334f672a478383db"
+        },
+        {
+          "arc_path": "item/pacmancherry/model/body/c00/model.numatb",
+          "sha256": "b01ac5216f22b7678274dfe0322bc3cff8c4d7b6380de7e044e515894bb60c48"
+        },
+        {
+          "arc_path": "item/pacmancherry/model/body/c00/model.numdlb",
+          "sha256": "e01197c526931561a0262baf738250a779398f0fa415baa426de8b454e0eac01"
+        },
+        {
+          "arc_path": "item/pacmancherry/model/body/c00/model.numshb",
+          "sha256": "e248939cc99f52b7aec0335555a34e98551f59ccbf4acebb94b469909028dd7b"
+        },
+        {
+          "arc_path": "item/pacmancherry/model/body/c00/model.nusktb",
+          "sha256": "3d88cfff789393737aa53fd60a45914ef31c011ab49a3a02f6884228fbc202f8"
+        },
+        {
+          "arc_path": "item/pacmancherry/model/body/c00/pacman_fruit_all_col.nutexb",
+          "sha256": "076a1a5b5b5d019e596cfd5ddfc5ddea9f0086c757fc5c4ffa11f1ad06ed45bd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/pacmancherry/model/body/c00",
+        "--textures",
+        "$WORK/textures/pacmancherry",
+        "--out",
+        "$WORK/raw/icon-14.png",
+        "--report",
+        "$WORK/reports/icon-14.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "0",
+        "--pitch",
+        "0",
+        "--roll",
+        "0",
+        "--only",
+        "billboardShape",
+        "--flat",
+        "--anim",
+        "$WORK/arc/item/pacmancherry/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 15,
-      "label": "Strawberry",
+      "label": "Pac-Man: Strawberry",
       "filename": "icon-15.png",
-      "sha256": "3d590b73e346bd20a934f18dd06ce16c65e939d886098daad2de428484dc2ea4",
-      "source_capture": "plan5-matrix-01/item-15/held.png",
-      "source_sha256": "db11fc03bb936d96046e2d5c5b2b937a057188b23276ec81d773b61f44001035",
-      "crop": [
-        365,
-        363,
-        465,
-        463
+      "sha256": "6c00d18a79c59544b2af32b9d6f444a879fa3157a50d192679c98bee34163720",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/pacmanstrawberry/model/body/c00/model.nuanmb",
+          "sha256": "03624d9a89e7364e6d50c09b54ec0377000f5fe16a672be7aba1ff7c19885c83"
+        },
+        {
+          "arc_path": "item/pacmanstrawberry/model/body/c00/model.numatb",
+          "sha256": "b01ac5216f22b7678274dfe0322bc3cff8c4d7b6380de7e044e515894bb60c48"
+        },
+        {
+          "arc_path": "item/pacmanstrawberry/model/body/c00/model.numdlb",
+          "sha256": "e01197c526931561a0262baf738250a779398f0fa415baa426de8b454e0eac01"
+        },
+        {
+          "arc_path": "item/pacmanstrawberry/model/body/c00/model.numshb",
+          "sha256": "2589f5c8dc8ca62e60cfbfbb9b1d3be4512c9399632ee45ff7bbdfa8c154157c"
+        },
+        {
+          "arc_path": "item/pacmanstrawberry/model/body/c00/model.nusktb",
+          "sha256": "3d72b94ca35b26e58792d9c16a67845cbdddee3e0a02fd405f8a99a58645adbd"
+        },
+        {
+          "arc_path": "item/pacmanstrawberry/model/body/c00/pacman_fruit_all_col.nutexb",
+          "sha256": "076a1a5b5b5d019e596cfd5ddfc5ddea9f0086c757fc5c4ffa11f1ad06ed45bd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/pacmanstrawberry/model/body/c00",
+        "--textures",
+        "$WORK/textures/pacmanstrawberry",
+        "--out",
+        "$WORK/raw/icon-15.png",
+        "--report",
+        "$WORK/reports/icon-15.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "0",
+        "--pitch",
+        "0",
+        "--roll",
+        "0",
+        "--only",
+        "billboardShape",
+        "--flat",
+        "--anim",
+        "$WORK/arc/item/pacmanstrawberry/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 16,
-      "label": "Orange",
+      "label": "Pac-Man: Orange",
       "filename": "icon-16.png",
-      "sha256": "513361f70dcc080955af30d9eb0e6b83d8a63464a6773e03b897c644334a729d",
-      "source_capture": "plan5-matrix-01/item-16/held.png",
-      "source_sha256": "6b9fe578aa8a9a5982b7f60d64c35a721c0c437a3f20fd35f344376cc89028b8",
-      "crop": [
-        267,
-        362,
-        369,
-        464
+      "sha256": "f24254d6fb357a41db5765d0448a6ec103efd0f693f21dfac02b0e52bdc0a2ec",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/pacmanorange/model/body/c00/model.nuanmb",
+          "sha256": "0283c25f871cec55503c9c700d7c13ec1148ecf9b2442abb4d3f67dd5f8fdaf1"
+        },
+        {
+          "arc_path": "item/pacmanorange/model/body/c00/model.numatb",
+          "sha256": "b01ac5216f22b7678274dfe0322bc3cff8c4d7b6380de7e044e515894bb60c48"
+        },
+        {
+          "arc_path": "item/pacmanorange/model/body/c00/model.numdlb",
+          "sha256": "e01197c526931561a0262baf738250a779398f0fa415baa426de8b454e0eac01"
+        },
+        {
+          "arc_path": "item/pacmanorange/model/body/c00/model.numshb",
+          "sha256": "55008bfc9022c1e5cc5580ba105641bf2595cf77ed8f0c28b38bdd1b28bbe0ad"
+        },
+        {
+          "arc_path": "item/pacmanorange/model/body/c00/model.nusktb",
+          "sha256": "ad36c32423894b0d241fd222dcadb630b20f6868716627266a162b5a60effe79"
+        },
+        {
+          "arc_path": "item/pacmanorange/model/body/c00/pacman_fruit_all_col.nutexb",
+          "sha256": "076a1a5b5b5d019e596cfd5ddfc5ddea9f0086c757fc5c4ffa11f1ad06ed45bd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/pacmanorange/model/body/c00",
+        "--textures",
+        "$WORK/textures/pacmanorange",
+        "--out",
+        "$WORK/raw/icon-16.png",
+        "--report",
+        "$WORK/reports/icon-16.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "0",
+        "--pitch",
+        "0",
+        "--roll",
+        "0",
+        "--only",
+        "billboardShape",
+        "--flat",
+        "--anim",
+        "$WORK/arc/item/pacmanorange/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 17,
-      "label": "Apple",
+      "label": "Pac-Man: Apple",
       "filename": "icon-17.png",
-      "sha256": "3b8655519b0b5da683fe14ca8a385242540191c83a35ca161568dadae226e729",
-      "source_capture": "plan5-matrix-01/item-17/held.png",
-      "source_sha256": "3d2c3b5acab973850592bcaa3102ac45c561b7e39c8ee774d62479f88c16b476",
-      "crop": [
-        358,
-        385,
-        464,
-        491
+      "sha256": "8a98c9b006dd82b2d65e5ee914919ac2a91b20f7c07072d92178ebc5d0882ca5",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/pacmanapple/model/body/c00/model.nuanmb",
+          "sha256": "63e72b4438a5aa08fe0bb2f6e90146347eb1d9f93dd19648fc0d8d95903498d7"
+        },
+        {
+          "arc_path": "item/pacmanapple/model/body/c00/model.numatb",
+          "sha256": "b01ac5216f22b7678274dfe0322bc3cff8c4d7b6380de7e044e515894bb60c48"
+        },
+        {
+          "arc_path": "item/pacmanapple/model/body/c00/model.numdlb",
+          "sha256": "e01197c526931561a0262baf738250a779398f0fa415baa426de8b454e0eac01"
+        },
+        {
+          "arc_path": "item/pacmanapple/model/body/c00/model.numshb",
+          "sha256": "46b4f51ef363f5e653ea296a93e7bf88dba8937a58cd5b87016a8730b881daa4"
+        },
+        {
+          "arc_path": "item/pacmanapple/model/body/c00/model.nusktb",
+          "sha256": "7f1cc459c972bf54dcec8ce8cd037554653fe411d0bf9e660e987152cdde5da4"
+        },
+        {
+          "arc_path": "item/pacmanapple/model/body/c00/pacman_fruit_all_col.nutexb",
+          "sha256": "076a1a5b5b5d019e596cfd5ddfc5ddea9f0086c757fc5c4ffa11f1ad06ed45bd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/pacmanapple/model/body/c00",
+        "--textures",
+        "$WORK/textures/pacmanapple",
+        "--out",
+        "$WORK/raw/icon-17.png",
+        "--report",
+        "$WORK/reports/icon-17.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "0",
+        "--pitch",
+        "0",
+        "--roll",
+        "0",
+        "--only",
+        "billboardShape",
+        "--flat",
+        "--anim",
+        "$WORK/arc/item/pacmanapple/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 18,
-      "label": "Melon",
+      "label": "Pac-Man: Melon",
       "filename": "icon-18.png",
-      "sha256": "dfb6f9463ff353f7d1163424470664bd5c5f7c1d9b509cdd10a6715f19d51b23",
-      "source_capture": "plan5-matrix-02/item-18/held.png",
-      "source_sha256": "cbd1d1d6a40933ca266ae90b02ea019694f9780ef5f6808ab6c1523201b72081",
-      "crop": [
-        381,
-        370,
-        490,
-        501
+      "sha256": "d763b83fa88d7f9526f40b2c307324a5055199927cd321f759e8e18313d61e76",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/pacmanmelon/model/body/c00/model.nuanmb",
+          "sha256": "f2d3259b8e0974ceb4b9072367f0070f44db803a69e2103e05cd9fb3f46c2ad0"
+        },
+        {
+          "arc_path": "item/pacmanmelon/model/body/c00/model.numatb",
+          "sha256": "b01ac5216f22b7678274dfe0322bc3cff8c4d7b6380de7e044e515894bb60c48"
+        },
+        {
+          "arc_path": "item/pacmanmelon/model/body/c00/model.numdlb",
+          "sha256": "e01197c526931561a0262baf738250a779398f0fa415baa426de8b454e0eac01"
+        },
+        {
+          "arc_path": "item/pacmanmelon/model/body/c00/model.numshb",
+          "sha256": "c45f25a04c5a1730063c70e700bf01d978383dcdb0a7dc78a63f35d2e1436192"
+        },
+        {
+          "arc_path": "item/pacmanmelon/model/body/c00/model.nusktb",
+          "sha256": "09652bbd506ff17cd09fdeaf3f4839a5acca29605f09c024ea7763ba4c0ba1be"
+        },
+        {
+          "arc_path": "item/pacmanmelon/model/body/c00/pacman_fruit_all_col.nutexb",
+          "sha256": "076a1a5b5b5d019e596cfd5ddfc5ddea9f0086c757fc5c4ffa11f1ad06ed45bd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/pacmanmelon/model/body/c00",
+        "--textures",
+        "$WORK/textures/pacmanmelon",
+        "--out",
+        "$WORK/raw/icon-18.png",
+        "--report",
+        "$WORK/reports/icon-18.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "0",
+        "--pitch",
+        "0",
+        "--roll",
+        "0",
+        "--only",
+        "billboardShape",
+        "--flat",
+        "--anim",
+        "$WORK/arc/item/pacmanmelon/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 19,
-      "label": "Galaxian",
+      "label": "Pac-Man: Galaxian",
       "filename": "icon-19.png",
-      "sha256": "584d503d6a182ee8666ae61e42deb2e6da7a771d40dc74dfdd7751ac0e18d90c",
-      "source_capture": "plan5-matrix-02/item-19/held.png",
-      "source_sha256": "a9b4ae2925afbc7e198acdc69b9ce827366c09783ae4273aff3fea171933248e",
-      "crop": [
-        380,
-        375,
-        485,
-        480
+      "sha256": "96028383dd49c9aaedca2beda752d5f7424bc63c4f434d52524a4a6d5f2c2392",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/pacmanboss/model/body/c00/model.nuanmb",
+          "sha256": "6cb2ca0f84fc1963072958ca59d67a4828d17d288e2cd91f919578d79d043698"
+        },
+        {
+          "arc_path": "item/pacmanboss/model/body/c00/model.numatb",
+          "sha256": "b01ac5216f22b7678274dfe0322bc3cff8c4d7b6380de7e044e515894bb60c48"
+        },
+        {
+          "arc_path": "item/pacmanboss/model/body/c00/model.numdlb",
+          "sha256": "e01197c526931561a0262baf738250a779398f0fa415baa426de8b454e0eac01"
+        },
+        {
+          "arc_path": "item/pacmanboss/model/body/c00/model.numshb",
+          "sha256": "139545d65e7f674274901f1ebac750511a2ae0e7555f153ea799d6b43d070aa8"
+        },
+        {
+          "arc_path": "item/pacmanboss/model/body/c00/model.nusktb",
+          "sha256": "71670f1b94a9b875f34bfd1fc83dff46d7ab1d344078f758f2ab3adcf0c9e90b"
+        },
+        {
+          "arc_path": "item/pacmanboss/model/body/c00/pacman_fruit_all_col.nutexb",
+          "sha256": "076a1a5b5b5d019e596cfd5ddfc5ddea9f0086c757fc5c4ffa11f1ad06ed45bd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/pacmanboss/model/body/c00",
+        "--textures",
+        "$WORK/textures/pacmanboss",
+        "--out",
+        "$WORK/raw/icon-19.png",
+        "--report",
+        "$WORK/reports/icon-19.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "0",
+        "--pitch",
+        "0",
+        "--roll",
+        "0",
+        "--only",
+        "billboardShape",
+        "--flat",
+        "--anim",
+        "$WORK/arc/item/pacmanboss/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 20,
-      "label": "Bell",
+      "label": "Pac-Man: Bell",
       "filename": "icon-20.png",
-      "sha256": "ba3a9912ead1b03c8cba8d0cf103206bf681cbb7346e9945363c0238bc5a8a81",
-      "source_capture": "plan5-matrix-02/item-20/held.png",
-      "source_sha256": "6d235b45aaa5d71bfb46520a0e5e408faeabbbd77c7c2b5d9bb895974b953c46",
-      "crop": [
-        378,
-        362,
-        487,
-        485
+      "sha256": "c6477c1b71920ab76c986dc131bbc6121861b3ba95f5ae459f5a77bd20b74e96",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/pacmanbell/model/body/c00/model.nuanmb",
+          "sha256": "1ef7de62286987fb2aa26276eb5ff5bff94934870c7397ee9d4b4e763b16ba84"
+        },
+        {
+          "arc_path": "item/pacmanbell/model/body/c00/model.numatb",
+          "sha256": "b01ac5216f22b7678274dfe0322bc3cff8c4d7b6380de7e044e515894bb60c48"
+        },
+        {
+          "arc_path": "item/pacmanbell/model/body/c00/model.numdlb",
+          "sha256": "e01197c526931561a0262baf738250a779398f0fa415baa426de8b454e0eac01"
+        },
+        {
+          "arc_path": "item/pacmanbell/model/body/c00/model.numshb",
+          "sha256": "e88ccbcf69c24cb6dcc8db8d91507ccfc476af2dc1735b4754e92a4236b3613b"
+        },
+        {
+          "arc_path": "item/pacmanbell/model/body/c00/model.nusktb",
+          "sha256": "d1a632c7e70810afaee35874f90a4c92d0d48101ca5956afd63b7e6a03ec7807"
+        },
+        {
+          "arc_path": "item/pacmanbell/model/body/c00/pacman_fruit_all_col.nutexb",
+          "sha256": "076a1a5b5b5d019e596cfd5ddfc5ddea9f0086c757fc5c4ffa11f1ad06ed45bd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/pacmanbell/model/body/c00",
+        "--textures",
+        "$WORK/textures/pacmanbell",
+        "--out",
+        "$WORK/raw/icon-20.png",
+        "--report",
+        "$WORK/reports/icon-20.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "0",
+        "--pitch",
+        "0",
+        "--roll",
+        "0",
+        "--only",
+        "billboardShape",
+        "--flat",
+        "--anim",
+        "$WORK/arc/item/pacmanbell/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 21,
-      "label": "Key",
+      "label": "Pac-Man: Key",
       "filename": "icon-21.png",
-      "sha256": "85fc423f0ccd3883e8aebf13a082819c049e726f6724636dba6af4b33db9885b",
-      "source_capture": "plan5-matrix-02/item-21/held.png",
-      "source_sha256": "2f872bbf2a3e4901789aaf1b5649ce175b3c0c764723239328454b3f4aa88b2c",
-      "crop": [
-        393,
-        377,
-        484,
-        501
+      "sha256": "2822de83b6eda7b1ff752b85790f94bf9669eea1456b7cf3d1d9854f74c86ab5",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/pacmankey/model/body/c00/model.nuanmb",
+          "sha256": "b68387f814cdb7900379d0ccf1b86f1ae695ca4727f740fa61bfe08accd9cb18"
+        },
+        {
+          "arc_path": "item/pacmankey/model/body/c00/model.numatb",
+          "sha256": "b01ac5216f22b7678274dfe0322bc3cff8c4d7b6380de7e044e515894bb60c48"
+        },
+        {
+          "arc_path": "item/pacmankey/model/body/c00/model.numdlb",
+          "sha256": "e01197c526931561a0262baf738250a779398f0fa415baa426de8b454e0eac01"
+        },
+        {
+          "arc_path": "item/pacmankey/model/body/c00/model.numshb",
+          "sha256": "d433db62796f4b84b59fca9bded7558eb60a6d6c364014eb00b072028055a6e1"
+        },
+        {
+          "arc_path": "item/pacmankey/model/body/c00/model.nusktb",
+          "sha256": "d73b91de402f6933a5573d83773e79ceb8e6d0c4119a089100b4187df6350de3"
+        },
+        {
+          "arc_path": "item/pacmankey/model/body/c00/pacman_fruit_all_col.nutexb",
+          "sha256": "076a1a5b5b5d019e596cfd5ddfc5ddea9f0086c757fc5c4ffa11f1ad06ed45bd"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/pacmankey/model/body/c00",
+        "--textures",
+        "$WORK/textures/pacmankey",
+        "--out",
+        "$WORK/raw/icon-21.png",
+        "--report",
+        "$WORK/reports/icon-21.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "0",
+        "--pitch",
+        "0",
+        "--roll",
+        "0",
+        "--only",
+        "billboardShape",
+        "--flat",
+        "--anim",
+        "$WORK/arc/item/pacmankey/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 22,
-      "label": "Smile turnip",
+      "label": "Peach: Smile Turnip",
       "filename": "icon-22.png",
-      "sha256": "96b992ef7f5ccf041706f650ab43a252813e65178d6aa6d695cdbc892878a96e",
-      "source_capture": "plan5-matrix-02/item-22/held.png",
-      "source_sha256": "dbd04c03021f665fb67808e9dd853965025cc3331d4e681574142555fc1bef51",
-      "crop": [
-        399,
-        383,
-        550,
-        548
+      "sha256": "4abbb9a61dcced2c65b3e104588ce19aef3d7c87425aea9c860cfa4cfa495fee",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/def_peachdaikon_001_col.nutexb",
+          "sha256": "5ed53067943b89bd63c80253d24b96aaea34edb332ea35fcd40934270dc644b0"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/def_peachdaikon_002_col.nutexb",
+          "sha256": "3f94e8960e0ea6a6826c49bc2e6f0ae0a09655de3097d7a2b45f2a883d60b54a"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.nuanmb",
+          "sha256": "386b5b9325eaf24d4b704dc529e37040e2b5292b5f500cd891c83c7110d66dc4"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numatb",
+          "sha256": "06c2b915f670c395d9196d9715d6b71873dc485ed5671d67c51da28e31654483"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numdlb",
+          "sha256": "c15909ae6ae9739687a0a7209fc017b0d867c79685d8f2edd104e042d821b70a"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numshb",
+          "sha256": "163dcabc984ef54074564698a8057b84dbdf0c9f94145e450f16e4565781e0f1"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.nusktb",
+          "sha256": "7ef8f145e8a9bbbdf01e97bcbf2c2028f123e861daa3a2ec22365691b5b7deaa"
+        },
+        {
+          "arc_path": "item/peachdaikon/motion/body/c00/face.nuanmb",
+          "sha256": "ecfac0a9e688b7bc953ce6d4dd45f9f30957644771171fd3313fbbe22b0df29c"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/peachdaikon/model/body/c00",
+        "--textures",
+        "$WORK/textures/peachdaikon",
+        "--out",
+        "$WORK/raw/icon-22.png",
+        "--report",
+        "$WORK/reports/icon-22.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-100",
+        "--pitch",
+        "10",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/peachdaikon/motion/body/c00/face.nuanmb"
+      ],
+      "frame_status": "verified: face.nuanmb animates CustomVector6 (colour-map UV transform) on def_peachdaikon_001; frame = native face index",
+      "note": null
     },
     {
       "index": 23,
-      "label": "Winky turnip",
+      "label": "Peach: Winky Turnip",
       "filename": "icon-23.png",
-      "sha256": "b941a3fd19a875b629b456e25b2f3b0d08d8dcf48dc21b7ef7c793c73778627d",
-      "source_capture": "plan5-matrix-01/item-03/held.png",
-      "source_sha256": "c5a8be98f71ce05993fd07b253d7e9e252d16bc322dca97099fc17fe42991930",
-      "crop": [
-        329,
-        360,
-        452,
-        483
+      "sha256": "0cd6f8c78294e6b2d95dfef3d71e3902ccbc39cf6d1e6e86409fcaf5adaf8aa6",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/def_peachdaikon_001_col.nutexb",
+          "sha256": "5ed53067943b89bd63c80253d24b96aaea34edb332ea35fcd40934270dc644b0"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/def_peachdaikon_002_col.nutexb",
+          "sha256": "3f94e8960e0ea6a6826c49bc2e6f0ae0a09655de3097d7a2b45f2a883d60b54a"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.nuanmb",
+          "sha256": "386b5b9325eaf24d4b704dc529e37040e2b5292b5f500cd891c83c7110d66dc4"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numatb",
+          "sha256": "06c2b915f670c395d9196d9715d6b71873dc485ed5671d67c51da28e31654483"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numdlb",
+          "sha256": "c15909ae6ae9739687a0a7209fc017b0d867c79685d8f2edd104e042d821b70a"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numshb",
+          "sha256": "163dcabc984ef54074564698a8057b84dbdf0c9f94145e450f16e4565781e0f1"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.nusktb",
+          "sha256": "7ef8f145e8a9bbbdf01e97bcbf2c2028f123e861daa3a2ec22365691b5b7deaa"
+        },
+        {
+          "arc_path": "item/peachdaikon/motion/body/c00/face.nuanmb",
+          "sha256": "ecfac0a9e688b7bc953ce6d4dd45f9f30957644771171fd3313fbbe22b0df29c"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/peachdaikon/model/body/c00",
+        "--textures",
+        "$WORK/textures/peachdaikon",
+        "--out",
+        "$WORK/raw/icon-23.png",
+        "--report",
+        "$WORK/reports/icon-23.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "5",
+        "--yaw",
+        "-100",
+        "--pitch",
+        "10",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/peachdaikon/motion/body/c00/face.nuanmb"
+      ],
+      "frame_status": "verified: face.nuanmb animates CustomVector6 (colour-map UV transform) on def_peachdaikon_001; frame = native face index",
+      "note": null
     },
     {
       "index": 24,
-      "label": "Dot-Eyes turnip",
+      "label": "Peach: Dot-Eyes Turnip",
       "filename": "icon-24.png",
-      "sha256": "cf25f2503c02211217f86135ca8371e7d9edaeee94cb2d9d028d0ee5df711de3",
-      "source_capture": "plan5-matrix-02/item-24/held.png",
-      "source_sha256": "a02d728b6c00b4e8b48d690ed3216d36719c696ce6881a8002de0e09c83c6d20",
-      "crop": [
-        399,
-        383,
-        550,
-        548
+      "sha256": "aeaa8cac778ea511445db3961373d89ef787e5598077fadb33d083b78b989a02",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/def_peachdaikon_001_col.nutexb",
+          "sha256": "5ed53067943b89bd63c80253d24b96aaea34edb332ea35fcd40934270dc644b0"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/def_peachdaikon_002_col.nutexb",
+          "sha256": "3f94e8960e0ea6a6826c49bc2e6f0ae0a09655de3097d7a2b45f2a883d60b54a"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.nuanmb",
+          "sha256": "386b5b9325eaf24d4b704dc529e37040e2b5292b5f500cd891c83c7110d66dc4"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numatb",
+          "sha256": "06c2b915f670c395d9196d9715d6b71873dc485ed5671d67c51da28e31654483"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numdlb",
+          "sha256": "c15909ae6ae9739687a0a7209fc017b0d867c79685d8f2edd104e042d821b70a"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numshb",
+          "sha256": "163dcabc984ef54074564698a8057b84dbdf0c9f94145e450f16e4565781e0f1"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.nusktb",
+          "sha256": "7ef8f145e8a9bbbdf01e97bcbf2c2028f123e861daa3a2ec22365691b5b7deaa"
+        },
+        {
+          "arc_path": "item/peachdaikon/motion/body/c00/face.nuanmb",
+          "sha256": "ecfac0a9e688b7bc953ce6d4dd45f9f30957644771171fd3313fbbe22b0df29c"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/peachdaikon/model/body/c00",
+        "--textures",
+        "$WORK/textures/peachdaikon",
+        "--out",
+        "$WORK/raw/icon-24.png",
+        "--report",
+        "$WORK/reports/icon-24.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "6",
+        "--yaw",
+        "-100",
+        "--pitch",
+        "10",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/peachdaikon/motion/body/c00/face.nuanmb"
+      ],
+      "frame_status": "verified: face.nuanmb animates CustomVector6 (colour-map UV transform) on def_peachdaikon_001; frame = native face index",
+      "note": null
     },
     {
       "index": 25,
-      "label": "Stitch-Face turnip",
+      "label": "Peach: Stitch-Face Turnip",
       "filename": "icon-25.png",
-      "sha256": "3057bac05d41217f90c6d06788b1ba53ffb0944a667da7975ad4aa943d1e78c5",
-      "source_capture": "plan5-matrix-02/item-25/held.png",
-      "source_sha256": "d9452618ca4ee5bc598294bb2e29ad2f0822ff3acac5f2e592d4b5e0b78e4c9e",
-      "crop": [
-        399,
-        383,
-        550,
-        548
+      "sha256": "d94484daaeade3fa89ce4d220796166e1ea26525cc6f0e315e581361b0c5fd97",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/def_peachdaikon_001_col.nutexb",
+          "sha256": "5ed53067943b89bd63c80253d24b96aaea34edb332ea35fcd40934270dc644b0"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/def_peachdaikon_002_col.nutexb",
+          "sha256": "3f94e8960e0ea6a6826c49bc2e6f0ae0a09655de3097d7a2b45f2a883d60b54a"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.nuanmb",
+          "sha256": "386b5b9325eaf24d4b704dc529e37040e2b5292b5f500cd891c83c7110d66dc4"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numatb",
+          "sha256": "06c2b915f670c395d9196d9715d6b71873dc485ed5671d67c51da28e31654483"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numdlb",
+          "sha256": "c15909ae6ae9739687a0a7209fc017b0d867c79685d8f2edd104e042d821b70a"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.numshb",
+          "sha256": "163dcabc984ef54074564698a8057b84dbdf0c9f94145e450f16e4565781e0f1"
+        },
+        {
+          "arc_path": "item/peachdaikon/model/body/c00/model.nusktb",
+          "sha256": "7ef8f145e8a9bbbdf01e97bcbf2c2028f123e861daa3a2ec22365691b5b7deaa"
+        },
+        {
+          "arc_path": "item/peachdaikon/motion/body/c00/face.nuanmb",
+          "sha256": "ecfac0a9e688b7bc953ce6d4dd45f9f30957644771171fd3313fbbe22b0df29c"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/peachdaikon/model/body/c00",
+        "--textures",
+        "$WORK/textures/peachdaikon",
+        "--out",
+        "$WORK/raw/icon-25.png",
+        "--report",
+        "$WORK/reports/icon-25.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "7",
+        "--yaw",
+        "-100",
+        "--pitch",
+        "10",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/peachdaikon/motion/body/c00/face.nuanmb"
+      ],
+      "frame_status": "verified: face.nuanmb animates CustomVector6 (colour-map UV transform) on def_peachdaikon_001; frame = native face index",
+      "note": null
     },
     {
       "index": 26,
-      "label": "Mr. Saturn",
+      "label": "Peach: Mr. Saturn",
       "filename": "icon-26.png",
-      "sha256": "89c691808db25c0ffdd69c511ec67dcec60a50d66a1ea03129e41039e589cfe6",
-      "source_capture": "plan5-matrix-01/item-06/held.png",
-      "source_sha256": "9ca6333c30b9ad1dc2df2ae616c360aadc85815e4ce6772285ee26698bc92364",
-      "crop": [
-        310,
-        386,
-        427,
-        503
+      "sha256": "918c87d08f790d805a10ca56b4be71902c90cc174c4fee5f4fdc52146c73bcca",
+      "method": "Native UI item_0 BNTX texture 0 decoded by stage-names-decode; aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "ui/replace/item/item_0/item_0_doseisan.bntx",
+          "sha256": "db38a7ea62b3fc077e349b2ae8f5792a2cc21caf61fe95c80a266ecad8779d1c"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [],
+      "frame_status": null,
+      "note": null
     },
     {
       "index": 27,
-      "label": "Bob-omb",
+      "label": "Peach: Bob-omb",
       "filename": "icon-27.png",
-      "sha256": "6b9d2160e68ed3e0a19c53308456bab59d84ce319bd9752c53f55d5a567450b7",
-      "source_capture": "plan5-matrix-01/item-07/held.png",
-      "source_sha256": "24bdbbe6378937e33763408bb0eeae8bfb1036fe2343c6f81d3b5a9b616c0bac",
-      "crop": [
-        328,
-        368,
-        437,
-        477
+      "sha256": "d4d894be9fa6bc4016c14eec92814fc2c759926948c6a856009fb26e4b973eea",
+      "method": "Native UI item_0 BNTX texture 0 decoded by stage-names-decode; aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "ui/replace/item/item_0/item_0_bombhei.bntx",
+          "sha256": "8abe9eb3e3c86f9425941a8bbc645ccfbaef355e161aeedd5f318576228d61c3"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [],
+      "frame_status": null,
+      "note": null
     },
     {
       "index": 28,
-      "label": "Holy Water",
+      "label": "Richter: Holy Water",
       "filename": "icon-28.png",
-      "sha256": "b4c4ede7f39923d720f23071c2233e0d2443fba6678b3ceca39335506bedbbf8",
-      "source_capture": "plan5-matrix-02/item-28/held.png",
-      "source_sha256": "cd2f47f6cbdb34e78c05e27629d66c46d82950c2ae7d11e607db2a4c05bcdd6b",
-      "crop": [
-        413,
-        387,
-        476,
-        465
+      "sha256": "151759e5e2d31d5e7249338326617693789bbf50ee78612c82977024fcfd2456",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/simonholywater/model/body/c00/def_holywater_001_col.nutexb",
+          "sha256": "186c0fcbb9948057f9036c764f5d1303e5dea14234d98a683e4a7ef28dc6b14b"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/def_holywater_002_col.nutexb",
+          "sha256": "1a57fff59163da9eb19d2e150e1f488b3a2d57531102bb56811bd58bf98b75a5"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/def_holywater_002_emi.nutexb",
+          "sha256": "8c52bcc5978448c6fe01ae45f3a479aa96a748751c825615d80583bfbc66004b"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/model.numatb",
+          "sha256": "122fa0947fbe19eb8f41eaa1bb833092705c03869ffe98e7d94da5ca4f8656e5"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/model.numdlb",
+          "sha256": "ad9effd7ab68d6ec6f954731d20b2af33e0ce81c4155db0b3442461f2e1e2669"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/model.numshb",
+          "sha256": "10e44aa53e1dcf742eea28ab29137830c04b92c197091ae76c69d40e540ed655"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/model.nusktb",
+          "sha256": "918bbc2479b7a8d9db7a2718446e70587bece4c5b112cbc944444cbb3308f6a6"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/simonholywater/model/body/c00",
+        "--textures",
+        "$WORK/textures/simonholywater",
+        "--out",
+        "$WORK/raw/icon-28.png",
+        "--report",
+        "$WORK/reports/icon-28.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0"
+      ],
+      "frame_status": "default",
+      "note": "Richter has no item/richterholywater model files; renders simonholywater (inferred reuse)"
     },
     {
       "index": 29,
-      "label": "Gyro",
+      "label": "R.O.B.: Gyro",
       "filename": "icon-29.png",
-      "sha256": "6deceddcf9a7708d7972b8fa3eb5d296398de268d8c203f04f465a97c2cebe2f",
-      "source_capture": "plan5-matrix-02/item-29/held.png",
-      "source_sha256": "fe8f87aa7fffbc52de47a66053eb3ed1674b76ade3339a22a00129037f8fecc5",
-      "crop": [
-        409,
-        373,
-        543,
-        470
+      "sha256": "aa50909bf4224a22fce1f32fd4f66d1e1d8606955472fa3a02d5c983d6960d6b",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/robotgyro/model/body/c00/alp_gyro_001_col.nutexb",
+          "sha256": "63b580f04a2a7f2607b68a4a4465c03827cd194060c61d4ac77dd047f72e5c95"
+        },
+        {
+          "arc_path": "item/robotgyro/model/body/c00/def_gyro_001_col.nutexb",
+          "sha256": "a9dd1aeb8ca016cba95e252328a83fcb240d30d06fb5b809a1beb33075dc80fc"
+        },
+        {
+          "arc_path": "item/robotgyro/model/body/c00/model.nuanmb",
+          "sha256": "2a4713206c92427c4f4c335ec2750b777769fe72a5582f7cb974acf69bd8b139"
+        },
+        {
+          "arc_path": "item/robotgyro/model/body/c00/model.numatb",
+          "sha256": "066b17de975b1f4520fec4be2529937ef9c4ea4e631ee27220d78e729b870f49"
+        },
+        {
+          "arc_path": "item/robotgyro/model/body/c00/model.numdlb",
+          "sha256": "ec8baffaee84812dd90a54e9c0e6c3560661113e6262402287b748fc76b9236f"
+        },
+        {
+          "arc_path": "item/robotgyro/model/body/c00/model.numshb",
+          "sha256": "d79282ef595e45373f2b71d50b59b49b5ab786525a6d093b8898cf10ee40bb55"
+        },
+        {
+          "arc_path": "item/robotgyro/model/body/c00/model.nusktb",
+          "sha256": "48686d11afb6a3ceac810df8fae704d205d4f7e8645bd8d9b4278c9051bffa6a"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/robotgyro/model/body/c00",
+        "--textures",
+        "$WORK/textures/robotgyro",
+        "--out",
+        "$WORK/raw/icon-29.png",
+        "--report",
+        "$WORK/reports/icon-29.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/robotgyro/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 30,
-      "label": "Tome",
+      "label": "Robin: Tome",
       "filename": "icon-30.png",
-      "sha256": "e95ccde4017cae71edcd1fa69566447642f146cea4bc7e9c1cfa3fb41fad4bfd",
-      "source_capture": "plan5-matrix-02/item-30/held.png",
-      "source_sha256": "a7834f4c2a7048bb33f15597d8acbf7926b4a334661f3ddbbf15c38df15dbb64",
-      "crop": [
-        416,
-        387,
-        469,
-        461
+      "sha256": "5fd3b9493ed7b94365d41d0b568a866b98f3c91996327a7bbdc945bef9efaa28",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/book/model/body/c00/def_reflet_003_col.nutexb",
+          "sha256": "2f5eddee0a45975d94d6fc4249087c55d38ff4b19257bcc1f3fd3b9927e7253d"
+        },
+        {
+          "arc_path": "item/book/model/body/c00/def_refletbook_001_col.nutexb",
+          "sha256": "fa1f03cf4fe0ea5171cf27158d3c599c50616be1f735f30de512bb0ffe43817e"
+        },
+        {
+          "arc_path": "item/book/model/body/c00/model.nuanmb",
+          "sha256": "9bcee1abe560257d587dc26af5ea4cf052e2bef37c9438ce83d38c021af16abd"
+        },
+        {
+          "arc_path": "item/book/model/body/c00/model.numatb",
+          "sha256": "934bc0167a338dc58ccb8c2b162d4c30e2f731704131f8a4290b062a0843e3a6"
+        },
+        {
+          "arc_path": "item/book/model/body/c00/model.numdlb",
+          "sha256": "dbe81ff240dc06c9278668908466990e2aff3b378e6df238410fd459a8f0cc25"
+        },
+        {
+          "arc_path": "item/book/model/body/c00/model.numshb",
+          "sha256": "d73bfd6f8810c693b5ca9ac4946595b1055f57f89affb7889f8d1d56368738d6"
+        },
+        {
+          "arc_path": "item/book/model/body/c00/model.nusktb",
+          "sha256": "4878108cc3efd417577cd82e0dc280b5735a597b0ae751c580a0d1a4d25282f4"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/book/model/body/c00",
+        "--textures",
+        "$WORK/textures/book",
+        "--out",
+        "$WORK/raw/icon-30.png",
+        "--report",
+        "$WORK/reports/icon-30.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/book/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 31,
-      "label": "Levin Sword",
+      "label": "Robin: Levin Sword",
       "filename": "icon-31.png",
-      "sha256": "9ff0ee2db63681cd9e279330c3008249a100bc0b60ed35e7ee0f2fa6c74c4aa5",
-      "source_capture": "plan5-matrix-02/item-31/held.png",
-      "source_sha256": "f0d13eafbba55ec4ebc80e3cc76c3f04c033e8a10ed5a6ece524988959d2601b",
-      "crop": [
-        367,
-        596,
-        414,
-        663
+      "sha256": "04c227ea2313c9d73a4ebfbc3bb3bab8449ed25b12258fc9ad97106ce52a7fc1",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/thundersword/model/body/c00/met_reflet_001_col.nutexb",
+          "sha256": "690b372f6b33011aa96a80d85c7ad1385ec6808546f0e657d87007a1f064b529"
+        },
+        {
+          "arc_path": "item/thundersword/model/body/c00/model.nuanmb",
+          "sha256": "b35664df77daad04bf1d2042f94b1fc6499a09521952bbb00908dc469e4e4df5"
+        },
+        {
+          "arc_path": "item/thundersword/model/body/c00/model.numatb",
+          "sha256": "d8001d5ab4ee454b9283eb6abdf326a336dd2ba0594633abc4ce149d9c3746c0"
+        },
+        {
+          "arc_path": "item/thundersword/model/body/c00/model.numdlb",
+          "sha256": "017b621ab9347aea716b9179b10bbe44c5fa972fdea3049c3aaa6568020c8d44"
+        },
+        {
+          "arc_path": "item/thundersword/model/body/c00/model.numshb",
+          "sha256": "41b440b3f017676e0fa281c2cc8b31744059f2db109e9b582b6210dc3db814f1"
+        },
+        {
+          "arc_path": "item/thundersword/model/body/c00/model.nusktb",
+          "sha256": "e7111ec5b5f414e59aaead754e8eda81570b18cc82c4c313ee7c03eaf9f63b57"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/thundersword/model/body/c00",
+        "--textures",
+        "$WORK/textures/thundersword",
+        "--out",
+        "$WORK/raw/icon-31.png",
+        "--report",
+        "$WORK/reports/icon-31.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "90",
+        "--pitch",
+        "30",
+        "--roll",
+        "0",
+        "--screen-roll=-40",
+        "--anim",
+        "$WORK/arc/item/thundersword/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 32,
-      "label": "Burst Grenade",
+      "label": "Sheik: Burst Grenade",
       "filename": "icon-32.png",
-      "sha256": "df28ee40a97e62d98c64596b4d53bd7ee7a87a9997a63b301baf3d0ae0a192a0",
-      "source_capture": "plan5-managed-items-06/item-32/throw/012.png",
-      "source_sha256": "76ef22e0a246b76f9fadcc0e0a6733e9b8e72f146d8b6fca2c5127befe06126f",
-      "crop": [
-        503,
-        111,
-        524,
-        132
+      "sha256": "c270c03a96f515285f9301024a455994b20c0d97e9660ae8ebf8e01e50ef63dd",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/explosionbomb/model/body/c00/def_explosionbomb_001_col.nutexb",
+          "sha256": "2cababa4d2d85583a489f99925ba5cb5a181349d926cdb8687d8d1f27bcdcb79"
+        },
+        {
+          "arc_path": "item/explosionbomb/model/body/c00/model.nuanmb",
+          "sha256": "a2fe07467dd63154c5cd45768546c8cd456a039b013a2232ee781a91748fa8a1"
+        },
+        {
+          "arc_path": "item/explosionbomb/model/body/c00/model.numatb",
+          "sha256": "8389fb91c45f569d2699db706b7030ef6a878a978a7bf93981fbb4d2615ae6fd"
+        },
+        {
+          "arc_path": "item/explosionbomb/model/body/c00/model.numdlb",
+          "sha256": "a0e8f8e46b18d18b2c87bedf6946e19022067600bc736ab234b0640562047ade"
+        },
+        {
+          "arc_path": "item/explosionbomb/model/body/c00/model.numshb",
+          "sha256": "3f8c36609dc26e7be17f1932dccc0059d00663765d61957553deec95b67cd56c"
+        },
+        {
+          "arc_path": "item/explosionbomb/model/body/c00/model.nusktb",
+          "sha256": "28d33dfeabcbf700ec29f1f0a0ac19c2dcd89512e1686630194ad9557244196f"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/explosionbomb/model/body/c00",
+        "--textures",
+        "$WORK/textures/explosionbomb",
+        "--out",
+        "$WORK/raw/icon-32.png",
+        "--report",
+        "$WORK/reports/icon-32.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/explosionbomb/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 33,
-      "label": "Holy Water",
+      "label": "Simon: Holy Water",
       "filename": "icon-33.png",
-      "sha256": "6244bd7401e9060ef03543f37de4af1986d05c41c9454afcfcef17070cf1bbd4",
-      "source_capture": "plan5-matrix-02/item-33/held.png",
-      "source_sha256": "58caf728a9db882ab9b0e0fde707193230a0ade8b8a31b3724fcc823c974a0a2",
-      "crop": [
-        413,
-        387,
-        476,
-        465
+      "sha256": "151759e5e2d31d5e7249338326617693789bbf50ee78612c82977024fcfd2456",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/simonholywater/model/body/c00/def_holywater_001_col.nutexb",
+          "sha256": "186c0fcbb9948057f9036c764f5d1303e5dea14234d98a683e4a7ef28dc6b14b"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/def_holywater_002_col.nutexb",
+          "sha256": "1a57fff59163da9eb19d2e150e1f488b3a2d57531102bb56811bd58bf98b75a5"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/def_holywater_002_emi.nutexb",
+          "sha256": "8c52bcc5978448c6fe01ae45f3a479aa96a748751c825615d80583bfbc66004b"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/model.numatb",
+          "sha256": "122fa0947fbe19eb8f41eaa1bb833092705c03869ffe98e7d94da5ca4f8656e5"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/model.numdlb",
+          "sha256": "ad9effd7ab68d6ec6f954731d20b2af33e0ce81c4155db0b3442461f2e1e2669"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/model.numshb",
+          "sha256": "10e44aa53e1dcf742eea28ab29137830c04b92c197091ae76c69d40e540ed655"
+        },
+        {
+          "arc_path": "item/simonholywater/model/body/c00/model.nusktb",
+          "sha256": "918bbc2479b7a8d9db7a2718446e70587bece4c5b112cbc944444cbb3308f6a6"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/simonholywater/model/body/c00",
+        "--textures",
+        "$WORK/textures/simonholywater",
+        "--out",
+        "$WORK/raw/icon-33.png",
+        "--report",
+        "$WORK/reports/icon-33.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 34,
-      "label": "Hand Grenade",
+      "label": "Snake: Hand Grenade",
       "filename": "icon-34.png",
-      "sha256": "59b38e8cf1eeedacbe536ac19517319581953f323f654261fd430ff3c300c9d7",
-      "source_capture": "plan5-matrix-02/item-34/held.png",
-      "source_sha256": "f9e57161528ff7b6d2d8c722dd96970634c284fcd04e0e763d4a94710057b5fe",
-      "crop": [
-        419,
-        391,
-        476,
-        455
+      "sha256": "a589d64af7f963ce7fe7ad3ce185db10c7f0fbbb4c2114832f7958ec23155e56",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/snakegrenade/model/body/c00/def_grenade_001_col.nutexb",
+          "sha256": "cd4ef2ffddfdbe826b739f691f88325651a052c44162372dbc584d79bec8f350"
+        },
+        {
+          "arc_path": "item/snakegrenade/model/body/c00/model.nuanmb",
+          "sha256": "f59c3d663d457006f5a6ce74e470ff9c4763e07073e5dc9d1a1d3e5a2242ae02"
+        },
+        {
+          "arc_path": "item/snakegrenade/model/body/c00/model.numatb",
+          "sha256": "0f3e8f6980d4161b505d1413e6bdd0aeec6f4b161a8db327f5833970588be846"
+        },
+        {
+          "arc_path": "item/snakegrenade/model/body/c00/model.numdlb",
+          "sha256": "bb6ae3122c74b295facf07f057fc2740b664b4c0f8058c56b2604ae50333b6e6"
+        },
+        {
+          "arc_path": "item/snakegrenade/model/body/c00/model.numshb",
+          "sha256": "da60e9126785a22d751c763edbdb10c317cc17f1d5833887275cd324cbb942ba"
+        },
+        {
+          "arc_path": "item/snakegrenade/model/body/c00/model.nusktb",
+          "sha256": "44d5c717eaefbc79858330524d5c0ffe9bd34d1a17c280d1d230448ab45f2713"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/snakegrenade/model/body/c00",
+        "--textures",
+        "$WORK/textures/snakegrenade",
+        "--out",
+        "$WORK/raw/icon-34.png",
+        "--report",
+        "$WORK/reports/icon-34.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/snakegrenade/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 35,
-      "label": "Toon Link Bomb",
+      "label": "Toon Link: Bomb",
       "filename": "icon-35.png",
-      "sha256": "5c70d7f22226e8957c5d40245620f1fd38e4d52c6e50c1c09d68a96abe7818b5",
-      "source_capture": "plan5-matrix-02/item-35/held.png",
-      "source_sha256": "86fcd9e3930b6a24eedbf08593dd5ea4684baeb08606ac33345e34012e06ddfb",
-      "crop": [
-        413,
-        301,
-        486,
-        460
+      "sha256": "bcf3878cebb06ba72fa31b9357d9ecf67d35eb40ebb1ffba3e5cf0984b560d7b",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/toonlinkbomb/model/body/c00/def_toonlinkbomb_001_col.nutexb",
+          "sha256": "572b063defb7345d0c9f6a620c22da729e3abc6e741b711ff18cd985d55a4aa8"
+        },
+        {
+          "arc_path": "item/toonlinkbomb/model/body/c00/model.nuanmb",
+          "sha256": "19c7e3175d04aa3a0be41513d44d689d5a0c401fe705320e4a1505ae1b43195e"
+        },
+        {
+          "arc_path": "item/toonlinkbomb/model/body/c00/model.numatb",
+          "sha256": "a05502428d1fdfffd6934b11cc6897b9a5fd8a05ea25534bbdec98c07d7f3ae9"
+        },
+        {
+          "arc_path": "item/toonlinkbomb/model/body/c00/model.numdlb",
+          "sha256": "77984ef58a4152348aea62cb2aabe6645071c06aab9b93b56860c237272f0575"
+        },
+        {
+          "arc_path": "item/toonlinkbomb/model/body/c00/model.numshb",
+          "sha256": "10e0f512ed086ff6dc1ef1a18535e4a12acab2e110760c643aa04eee9bd5db2b"
+        },
+        {
+          "arc_path": "item/toonlinkbomb/model/body/c00/model.nusktb",
+          "sha256": "34ae690ef9fd7c641a2f6c8f177f6da37fe4dd91411d4876d9bc51bb7eaa8e2d"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/toonlinkbomb/model/body/c00",
+        "--textures",
+        "$WORK/textures/toonlinkbomb",
+        "--out",
+        "$WORK/raw/icon-35.png",
+        "--report",
+        "$WORK/reports/icon-35.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/toonlinkbomb/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 36,
-      "label": "Wood Chip",
+      "label": "Villager: Wood Chip",
       "filename": "icon-36.png",
-      "sha256": "fd56934802a0b4f4971e975188e57848cba753e0d7b77477614f283668b11f23",
-      "source_capture": "plan5-matrix-02/item-36/held.png",
-      "source_sha256": "4ede8dba24d236eb9e05e92a736a45cb7fbde387b94f59983ec5b7e2ebdf1ea6",
-      "crop": [
-        407,
-        336,
-        464,
-        458
+      "sha256": "0af3312adee081227d9300119e649d886371a075e5b6f648768b7e8a6bfbe2db",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/wood/model/body/c00/def_tree_001_col.nutexb",
+          "sha256": "55af94af6433f38bc0123ec0fbf9d48bb5caebd84c26e067609a4d0ee1b91f2a"
+        },
+        {
+          "arc_path": "item/wood/model/body/c00/model.nuanmb",
+          "sha256": "b94188e9ac298d53dfca6336d11f8c58ec89563cad403a5b2d34ed03118eb350"
+        },
+        {
+          "arc_path": "item/wood/model/body/c00/model.numatb",
+          "sha256": "0626201d04350935393c9f3fec342dcc472e2fd873b202aef096516792c0b025"
+        },
+        {
+          "arc_path": "item/wood/model/body/c00/model.numdlb",
+          "sha256": "ecafa18f8754a2316979e797bace2d389f9469e67649292a89c08a71f4d4d9ae"
+        },
+        {
+          "arc_path": "item/wood/model/body/c00/model.numshb",
+          "sha256": "f55e30e00fe306232476c9315fb68ca76e5f2b9a45f8ae521a4805b907de9f84"
+        },
+        {
+          "arc_path": "item/wood/model/body/c00/model.nusktb",
+          "sha256": "2598c8dfb4802b8433d80cf3fc1724d08bb06aea4278df794a6c22c78a8530f6"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/wood/model/body/c00",
+        "--textures",
+        "$WORK/textures/wood",
+        "--out",
+        "$WORK/raw/icon-36.png",
+        "--report",
+        "$WORK/reports/icon-36.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0",
+        "--anim",
+        "$WORK/arc/item/wood/model/body/c00/model.nuanmb"
+      ],
+      "frame_status": "default",
+      "note": null
     },
     {
       "index": 37,
-      "label": "Young Link Bomb",
+      "label": "Young Link: Bomb",
       "filename": "icon-37.png",
-      "sha256": "c6a4f476f145c111728c93bf364cfeb320062dc8f73512236baafb2858a0d7d1",
-      "source_capture": "plan5-matrix-02/item-37/held.png",
-      "source_sha256": "8e898212cac44c02481e3871809eb672c1388135469d425859b2a6c5e2a6a94f",
-      "crop": [
-        415,
-        378,
-        494,
-        470
+      "sha256": "9bf26f635d1ff93720cbe7d3b06c808c909d62363780ab51113ec9fe72bf1bef",
+      "method": "Owned item model rendered by render_item.py (game mesh/material/texels, fixed ortho camera); aspect-fit Lanczos; transparent letterbox.",
+      "source_files": [
+        {
+          "arc_path": "item/younglinkbomb/model/body/c00/def_younglinkbomb_001_col.nutexb",
+          "sha256": "bd886b88f2a7407df71e210413715e4010dc88f7e1b815169994eb1ab89c4f20"
+        },
+        {
+          "arc_path": "item/younglinkbomb/model/body/c00/model.numatb",
+          "sha256": "9e5852a6273d2f96ab23cc03b66eb09dce6d3ea2d3fefb8572ae5f92f061de45"
+        },
+        {
+          "arc_path": "item/younglinkbomb/model/body/c00/model.numdlb",
+          "sha256": "54c0cad8f90a301fa0dc1cb6de2599fca71f01a753bb7bf809537d4d7dc25327"
+        },
+        {
+          "arc_path": "item/younglinkbomb/model/body/c00/model.numshb",
+          "sha256": "b6d58422b1d1a57e044f3b83a94c66af2c83bf1d2f5f3ed433040c02202a7ff9"
+        },
+        {
+          "arc_path": "item/younglinkbomb/model/body/c00/model.nusktb",
+          "sha256": "185cbfe8dd16cdd577133a744b76fbd03fe1f29f648cb7daddd51cb7e8f7f84b"
+        }
       ],
-      "method": "Direct gameplay crop, aspect-fit Lanczos to 96x96; transparent letterbox."
+      "render_args": [
+        "--model",
+        "$WORK/arc/item/younglinkbomb/model/body/c00",
+        "--textures",
+        "$WORK/textures/younglinkbomb",
+        "--out",
+        "$WORK/raw/icon-37.png",
+        "--report",
+        "$WORK/reports/icon-37.json",
+        "--size",
+        "128",
+        "--ss",
+        "4",
+        "--frame",
+        "0",
+        "--yaw",
+        "-30",
+        "--pitch",
+        "15",
+        "--roll",
+        "0"
+      ],
+      "frame_status": "default",
+      "note": null
     }
   ]
 }

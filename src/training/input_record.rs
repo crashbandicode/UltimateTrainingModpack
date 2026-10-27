@@ -71,6 +71,21 @@ pub static P1_FINAL_MAPPING: RwLock<[[MappedInputs; FINAL_RECORD_MAX]; TOTAL_SLO
     RwLock::new([[{ MappedInputs::empty() }; FINAL_RECORD_MAX]; TOTAL_SLOT_COUNT]);
 pub static P1_FRAME_LENGTH_MAPPING: RwLock<[usize; TOTAL_SLOT_COUNT]> =
     RwLock::new([60; TOTAL_SLOT_COUNT]);
+
+/// Facing, status, and exact Mii taken when this slot's recording started.
+/// Absent means the slot still uses the shared [`RECORDED_LR`] pair.
+/// Export reads this snapshot. It does not read the live CPU again.
+#[derive(Clone, Copy)]
+struct SlotCapture {
+    start: training_mod_macros::StartState,
+    mii: Option<training_mod_consts::mii::lifetime::Configuration>,
+    identity: training_mod_tui::macro_panel::MiiIdentity,
+}
+
+static SLOT_CAPTURE: RwLock<[Option<SlotCapture>; TOTAL_SLOT_COUNT]> =
+    RwLock::new([Option::None; TOTAL_SLOT_COUNT]);
+/// Shared facing/status parked while a snapshotted slot is playing.
+static SLOT_PARK: RwLock<Option<(f32, i32)>> = RwLock::new(Option::None);
 // pub static P1_STARTING_STATUSES: RwLock<[StartingStatus; TOTAL_SLOT_COUNT]> = RwLock::new([StartingStatus::Other; TOTAL_SLOT_COUNT]); // TODO! Not used currently
 
 unsafe fn can_transition(module_accessor: *mut BattleObjectModuleAccessor) -> bool {
@@ -307,6 +322,9 @@ unsafe fn handle_recording_for_fighter(module_accessor: &mut BattleObjectModuleA
                 if read(&MENU).playback_loop == OnOff::ON && input_record == Playback {
                     let playback_slot = read(&CURRENT_PLAYBACK_SLOT);
                     playback(Some(playback_slot));
+                } else if input_record == Playback {
+                    release_numbered_origin();
+                    assign(&INPUT_RECORD, None);
                 } else {
                     assign(&INPUT_RECORD, None);
                 }
@@ -404,6 +422,7 @@ pub unsafe fn start_named_lockout() {
         return;
     }
     let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else { return; };
+    release_numbered_origin();
     let start = crate::training::named_macros::snapshot_start(&mut *cpu_module_accessor);
     crate::training::named_macros::remember_legacy(read(&RECORDED_LR), read(&STARTING_STATUS));
     crate::training::named_macros::begin_capture(start);
@@ -449,6 +468,127 @@ fn restore_named_legacy() {
     }
 }
 
+fn release_numbered_origin() {
+    let mut park = lock_write(&SLOT_PARK);
+    if park.is_none() {
+        return;
+    }
+    let shared = (read(&RECORDED_LR), read(&STARTING_STATUS));
+    let (active, next) = training_mod_tui::macro_panel::release_slot_origin(shared, *park);
+    *park = next;
+    drop(park);
+    assign(&RECORDED_LR, active.0);
+    assign(&STARTING_STATUS, active.1);
+}
+
+fn apply_numbered_origin(slot: usize) {
+    let origin = read(&SLOT_CAPTURE)[slot].map(|capture| (capture.start.facing, capture.start.status));
+    let mut park = lock_write(&SLOT_PARK);
+    let shared = (read(&RECORDED_LR), read(&STARTING_STATUS));
+    let (active, next) = if origin.is_none() {
+        training_mod_tui::macro_panel::release_slot_origin(shared, *park)
+    } else {
+        training_mod_tui::macro_panel::engage_slot_origin(shared, *park, origin)
+    };
+    *park = next;
+    drop(park);
+    assign(&RECORDED_LR, active.0);
+    assign(&STARTING_STATUS, active.1);
+}
+
+fn frame_from_mapped(input: &MappedInputs) -> training_mod_macros::InputFrame {
+    training_mod_macros::InputFrame {
+        buttons: input.buttons.bits(),
+        lstick_x: input.lstick_x,
+        lstick_y: input.lstick_y,
+        rstick_x: input.rstick_x,
+        rstick_y: input.rstick_y,
+    }
+}
+
+fn mapped_from_frame(frame: &training_mod_macros::InputFrame) -> MappedInputs {
+    MappedInputs {
+        buttons: Buttons::from_bits_truncate(frame.buttons),
+        lstick_x: frame.lstick_x,
+        lstick_y: frame.lstick_y,
+        rstick_x: frame.rstick_x,
+        rstick_y: frame.rstick_y,
+    }
+}
+
+/// Slot snapshot from recording start. Errors name the refusal and write nothing.
+pub fn export_named(
+    slot: usize,
+) -> Result<
+    (
+        Vec<training_mod_macros::InputFrame>,
+        training_mod_macros::StartState,
+        Option<training_mod_consts::mii::lifetime::Configuration>,
+    ),
+    &'static str,
+> {
+    if slot >= TOTAL_SLOT_COUNT {
+        return Err("Record Slot is out of range");
+    }
+    let Some(capture) = read(&SLOT_CAPTURE)[slot] else {
+        return Err("Record into this slot first");
+    };
+    if let Some(message) = training_mod_tui::macro_panel::export_mii_refusal(capture.identity) {
+        return Err(message);
+    }
+    let len = read(&P1_FRAME_LENGTH_MAPPING)[slot];
+    if len == 0 || len > FINAL_RECORD_MAX {
+        return Err("Record into this slot first");
+    }
+    let mapping = read(&P1_FINAL_MAPPING);
+    let frames = mapping[slot][..len]
+        .iter()
+        .map(frame_from_mapped)
+        .collect();
+    Ok((frames, capture.start, capture.mii))
+}
+
+/// Replaces one slot, or leaves every slot byte and [`RECORDED_LR`] alone.
+pub fn import_named_slot(
+    slot: usize,
+    frames: &[training_mod_macros::InputFrame],
+    start: training_mod_macros::StartState,
+    mii: Option<training_mod_consts::mii::lifetime::Configuration>,
+) -> Result<(), String> {
+    if slot >= TOTAL_SLOT_COUNT {
+        return Err("Record Slot is out of range. Nothing was changed.".to_owned());
+    }
+    let copied = training_mod_tui::macro_panel::copy_numbered_frames(frames).map_err(|admit| {
+        match admit {
+            training_mod_tui::macro_panel::SlotAdmit::Empty => {
+                "Recording is empty. Nothing was changed.".to_owned()
+            }
+            training_mod_tui::macro_panel::SlotAdmit::OverLimit { frames, limit } => {
+                format!("Recording is {frames} frames; a Record Slot holds {limit}. Nothing was changed.")
+            }
+            training_mod_tui::macro_panel::SlotAdmit::Ready => {
+                "Recording was not admitted. Nothing was changed.".to_owned()
+            }
+        }
+    })?;
+    let mut mapping = lock_write(&P1_FINAL_MAPPING);
+    let mut lengths = lock_write(&P1_FRAME_LENGTH_MAPPING);
+    let mut captures = lock_write(&SLOT_CAPTURE);
+    (*mapping)[slot] = [MappedInputs::empty(); FINAL_RECORD_MAX];
+    for (index, frame) in copied.iter().enumerate() {
+        (*mapping)[slot][index] = mapped_from_frame(frame);
+    }
+    (*lengths)[slot] = copied.len();
+    let observed_kind = mii.as_ref().map(|configuration| configuration.canonical().class.kind());
+    let identity = training_mod_tui::macro_panel::mii_identity(start.fighter_kind, observed_kind);
+    let mii = match identity {
+        training_mod_tui::macro_panel::MiiIdentity::Exact => mii,
+        _ => Option::None,
+    };
+    (*captures)[slot] = Some(SlotCapture { start, mii, identity });
+    Ok(())
+}
+
 pub unsafe fn lockout_record() {
     if !practice::enabled() || !practice::acquire() || crate::replay_preview::occupied() {
         return;
@@ -461,6 +601,13 @@ pub unsafe fn lockout_record() {
         recording_duration
     ));
     let current_record_slot = read(&CURRENT_RECORD_SLOT);
+    release_numbered_origin();
+    let start = crate::training::named_macros::snapshot_start(&mut *cpu_module_accessor);
+    let (identity, mii) = crate::training::named_macros::mii_at_lockout(start.fighter_kind);
+    {
+        let mut captures = lock_write(&SLOT_CAPTURE);
+        (*captures)[current_record_slot] = Some(SlotCapture { start, mii, identity });
+    }
     let mut p1_final_mapping = lock_write(&P1_FINAL_MAPPING);
     (*p1_final_mapping)[current_record_slot] = [{ MappedInputs::empty() }; FINAL_RECORD_MAX];
     drop(p1_final_mapping);
@@ -474,8 +621,8 @@ pub unsafe fn lockout_record() {
     assign(&LOCKOUT_FRAME, 30); // This needs to be this high or issues occur dropping shield - but does this cause problems when trying to record ledge?
     assign(&BUFFER_FRAME, 0);
     // Store the direction the CPU is facing when we initially record, so we can turn their inputs around if needed
-    assign(&RECORDED_LR, PostureModule::lr(cpu_module_accessor));
-    assign(&CURRENT_LR, PostureModule::lr(cpu_module_accessor));
+    assign(&RECORDED_LR, start.facing);
+    assign(&CURRENT_LR, start.facing);
 }
 
 pub unsafe fn playback_named() -> bool {
@@ -495,6 +642,7 @@ pub unsafe fn playback_named() -> bool {
         );
         return false;
     };
+    release_numbered_origin();
     crate::training::named_macros::remember_legacy(read(&RECORDED_LR), read(&STARTING_STATUS));
     assign(&RECORDED_LR, info.facing);
     assign(&STARTING_STATUS, info.status);
@@ -510,6 +658,7 @@ pub unsafe fn playback_named() -> bool {
 pub unsafe fn playback_preview(recording: training_mod_macros::MacroRecording) -> bool {
     if !practice::enabled() || !practice::acquire() || recording.validate().is_err() { return false; }
     let Some(cpu) = try_get_module_accessor(FighterId::CPU) else { return false; };
+    release_numbered_origin();
     let info = crate::training::named_macros::begin_preview(recording);
     crate::training::named_macros::remember_legacy(read(&RECORDED_LR), read(&STARTING_STATUS));
     assign(&RECORDED_LR, info.facing);
@@ -537,6 +686,7 @@ pub unsafe fn playback(slot: Option<usize>) -> bool {
         let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else { return false; };
         let frame_length = read(&P1_FRAME_LENGTH_MAPPING)[slot];
         if frame_length == 0 || frame_length > FINAL_RECORD_MAX { return false; }
+        apply_numbered_origin(slot);
         assign(&CURRENT_FRAME_LENGTH, frame_length);
         assign(&CURRENT_PLAYBACK_SLOT, slot);
         assign(&INPUT_RECORD, Playback);
@@ -579,6 +729,7 @@ pub unsafe fn stop_playback() {
         ));
     }
     crate::training::named_macros::cancel_motion();
+    release_numbered_origin();
     restore_named_legacy();
     assign(&INPUT_RECORD, None);
     assign(&INPUT_RECORD_FRAME, 0);
@@ -655,6 +806,12 @@ pub unsafe fn handle_final_input_mapping(player_idx: i32, out: *mut MappedInputs
                 let Some(cpu_module_accessor) = try_get_module_accessor(FighterId::CPU) else { return; };
                 let status = StatusModule::status_kind(cpu_module_accessor);
                 assign(&STARTING_STATUS, status);
+                let slot = read(&CURRENT_RECORD_SLOT);
+                let mut captures = lock_write(&SLOT_CAPTURE);
+                if let Some(capture) = (*captures)[slot].as_mut() {
+                    capture.start.status = status;
+                }
+                drop(captures);
                 // TODO: Handle this based on slot later instead
                 // let p1_starting_statuses = lock_write_rwlock(&P1_STARTING_STATUSES);
                 // (*p1_starting_statuses)[read(&CURRENT_PLAYBACK_SLOT)] =

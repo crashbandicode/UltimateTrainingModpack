@@ -4,7 +4,7 @@
 
 **UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-full-experimental.20261024.5). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
 
-**On the lobby-parity branch:** Quickplay and Local Wireless practice gain save states, recordings and exact interrupted-editor return, plus selectable stage forms. The [C72 candidate](docs/lobby-parity-release.md) has completed its emulator checks and awaits console review.
+**New on the lobby-parity branch (unstable C89):** shareable named [practice setups](docs/setup-library.md) and [Record Slots](docs/named-macros.md#share-a-numbered-record-slot), matching HUD portraits for equipped Miis, readable replay previews, separate Normal/Omega/Battlefield [stage forms](docs/practice-stages.md#pick-a-form), and item icons from the game's own assets. Training and lobby emulator checks passed with the current console plugins; console review is next ([release notes](docs/lobby-parity-release.md)).
 
 [Download this fork from Forgejo](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases). Version 7.1.2 reduces input-display work in Training; see the [performance checks](docs/input-display-performance.md).
 
@@ -32,9 +32,15 @@ Use the practice tools while waiting for a match; your real match still uses you
 
 ### Recording and macro import
 
-Save a replay, choose the opponent's captured inputs, and trim a short sequence for the Training CPU to play. [Follow the illustrated recording walkthrough.](docs/named-macros.md)
+Save a replay, choose the opponent's captured inputs, and trim a short sequence for the Training CPU to play. [Follow the illustrated recording walkthrough.](docs/named-macros.md) Numbered Record Slots can also be saved to that library or loaded from it ([how](docs/named-macros.md#share-a-numbered-record-slot)).
 
 ![The Training CPU playing the opponent's captured P2 Hero inputs.](docs/named-macros/images/playback-p2.gif)
+
+### Named practice setups
+
+Name and share a saved setup, then load it from the library or bind it to one of the five save-state slots. [Save and restore a setup.](docs/setup-library.md)
+
+![Moving away from a saved setup, then restoring its spacing.](docs/setup-library/restore.png)
 
 ### Practice stages
 
@@ -238,7 +244,7 @@ The timing of the CPU option can be influenced by the following settings:
 
 At any time in Training Mode, you can press `Shield + Down Taunt` to save the state of training mode. This will save the position, state, and damage of each fighter, which can then be reverted to at any time with `Shield + Up Taunt`. With the mirroring setting, loading the save state will flip the positions, allowing you to practice your skills facing both directions. Use this instead of the built-in training mode reset!
 
-You can switch Save State slots by using the associated toggle! There are 5 slots you can save, and they are persisted between loads of the game!
+You can switch Save State slots by using the associated toggle! There are 5 slots you can save, and they are persisted between loads of the game! In the enhancements alpha, you can also save a slot under a name and share it as a file with the [Setup Library](docs/setup-library.md).
 
 The following attributes are saved in the save states:
 

@@ -112,6 +112,30 @@ pub(crate) mod mii_hud_portrait_policy;
 #[path="mii_hud_portrait.rs"]
 mod mii_hud_portrait;
 
+/// Settled loaded Mii for a practice role. Role 0 is Player and role 1 is CPU.
+/// The value is that role's original, saved, or discovered configuration only
+/// while its class is the loaded descriptor and no transaction is in flight.
+/// Replay receipts, helpers, and the other role are not returned.
+pub fn current_mii_configuration(role: usize) -> Option<training_mod_consts::mii::lifetime::Configuration> {
+    match role {
+        0 => settled_player_mii(),
+        1 => settled_cpu_mii(),
+        _ => None,
+    }
+}
+#[cfg(feature = "mii-ordinary-player-alpha")]
+fn settled_player_mii() -> Option<training_mod_consts::mii::lifetime::Configuration> {
+    mii_ordinary_player::current_configuration()
+}
+#[cfg(not(feature = "mii-ordinary-player-alpha"))]
+fn settled_player_mii() -> Option<training_mod_consts::mii::lifetime::Configuration> { None }
+#[cfg(feature = "mii-ordinary-cpu-alpha")]
+fn settled_cpu_mii() -> Option<training_mod_consts::mii::lifetime::Configuration> {
+    mii_ordinary_cpu::current_configuration()
+}
+#[cfg(not(feature = "mii-ordinary-cpu-alpha"))]
+fn settled_cpu_mii() -> Option<training_mod_consts::mii::lifetime::Configuration> { None }
+
 static BASE: AtomicUsize = AtomicUsize::new(0);
 static INSTALL: InstallGate = InstallGate::new();
 static OWNED_BUTTONS: AtomicU32 = AtomicU32::new(0);

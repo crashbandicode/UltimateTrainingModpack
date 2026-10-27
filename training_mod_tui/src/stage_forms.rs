@@ -2,7 +2,8 @@
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// Requested form choices. Final Destination form is an alias for Omega.
+/// Requested form choices. Saved `final_destination` remains Omega's alias.
+/// Displayed names stay Normal, Omega, and Battlefield.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]
@@ -14,13 +15,44 @@ pub enum Form {
     Battlefield = 2,
 }
 
+/// Button legend appended to the highlighted form. The native help pane needs
+/// a static string, so each supported row has its own literal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HelpControls {
+    TrainingApply,
+    LobbyApply,
+    RotationWithDirect,
+    RotationOnly,
+}
+
+macro_rules! with_controls {
+    ($controls:expr, $prefix:literal) => {
+        match $controls {
+            HelpControls::TrainingApply => concat!(
+                $prefix, "A Apply (Training only) | X Rotation | L/R Page | B Back"),
+            HelpControls::LobbyApply => concat!(
+                $prefix, "A Apply + save lobby | X Rotation | L/R Page | B Back"),
+            HelpControls::RotationWithDirect => concat!(
+                $prefix, "A Add/Remove | X Direct | L/R Page | B Back | Next lobby entry only"),
+            HelpControls::RotationOnly => concat!(
+                $prefix, "A Add/Remove | L/R Page | B Back | Next lobby entry only"),
+        }
+    };
+}
+
+impl HelpControls {
+    pub(crate) const fn bare(self) -> &'static str {
+        with_controls!(self, "")
+    }
+}
+
 impl Form {
     pub const ALL: [Self; 3] = [Self::Normal, Self::Omega, Self::Battlefield];
 
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Normal => "Normal",
-            Self::Omega => "Omega / Final Destination",
+            Self::Omega => "Omega",
             Self::Battlefield => "Battlefield",
         }
     }
@@ -29,6 +61,30 @@ impl Form {
     pub fn next(self, native_forms: [Option<u32>; 3]) -> Self {
         (1..=Self::ALL.len()).map(|step| Self::ALL[(self as usize + step) % Self::ALL.len()])
             .find(|form| native_forms[*form as usize].is_some()).unwrap_or(self)
+    }
+
+    /// Current form, then the Y cycle among slots the recorded row actually has.
+    pub(crate) const fn help_line(
+        self,
+        native_forms: [Option<u32>; 3],
+        controls: HelpControls,
+    ) -> &'static str {
+        let omega = native_forms[Self::Omega as usize].is_some();
+        let battlefield = native_forms[Self::Battlefield as usize].is_some();
+        match (self, omega, battlefield) {
+            (Self::Normal, true, true) => with_controls!(controls, "Normal | Y Form: Omega, Battlefield | "),
+            (Self::Omega, true, true) => with_controls!(controls, "Omega | Y Form: Battlefield, Normal | "),
+            (Self::Battlefield, true, true) => with_controls!(controls, "Battlefield | Y Form: Normal, Omega | "),
+            (Self::Normal, true, false) => with_controls!(controls, "Normal | Y Form: Omega | "),
+            (Self::Omega, true, false) => with_controls!(controls, "Omega | Y Form: Normal | "),
+            (Self::Battlefield, true, false) => with_controls!(controls, "Battlefield | "),
+            (Self::Normal, false, true) => with_controls!(controls, "Normal | Y Form: Battlefield | "),
+            (Self::Omega, false, true) => with_controls!(controls, "Omega | "),
+            (Self::Battlefield, false, true) => with_controls!(controls, "Battlefield | Y Form: Normal | "),
+            (Self::Normal, false, false) => with_controls!(controls, "Normal | Y Form | "),
+            (Self::Omega, false, false) => with_controls!(controls, "Omega | "),
+            (Self::Battlefield, false, false) => with_controls!(controls, "Battlefield | "),
+        }
     }
 }
 
@@ -103,6 +159,70 @@ mod tests {
         }
         assert_eq!(serde_json::from_str::<Selection>(r#"{"stage":95,"form":"battlefield"}"#).unwrap(),
             Selection { stage: 95, form: Form::Battlefield });
+        let alias: Form = serde_json::from_str("\"final_destination\"").unwrap();
+        assert_eq!(alias, Form::Omega);
+        assert_eq!(alias.label(), "Omega");
+        assert_eq!(serde_json::to_string(&alias).unwrap(), "\"omega\"");
+    }
+
+    fn cycle_names(start: Form, row: [Option<u32>; 3]) -> Vec<&'static str> {
+        let mut names = Vec::new();
+        let mut form = start;
+        loop {
+            let next = form.next(row);
+            if next == form || next == start {
+                break;
+            }
+            names.push(next.label());
+            form = next;
+            assert!(names.len() <= Form::ALL.len());
+        }
+        names
+    }
+
+    #[test]
+    fn help_names_the_supported_cycle_and_keeps_saved_alias() {
+        assert_eq!(Form::ALL.map(Form::label), ["Normal", "Omega", "Battlefield"]);
+        // Recorded 13.0.5 rows: Smashville 95/96/97, Battlefield 0/1,
+        // Final Destination 3/4, Training 308. Slots are native IDs, not offsets.
+        let rows = [
+            [Some(95), Some(96), Some(97)],
+            [Some(0), Some(1), None],
+            [Some(3), None, Some(4)],
+            [Some(308), None, None],
+        ];
+        for row in rows {
+            for start in Form::ALL {
+                let line = start.help_line(row, HelpControls::RotationOnly);
+                assert!(line.contains("L/R Page"), "{line}");
+                assert!(line.contains("Next lobby entry only"), "{line}");
+                assert!(!line.contains("Omega /"), "{line}");
+                assert!(!line.contains("Final Destination"), "{line}");
+                assert!(line.starts_with(start.label()), "{line}");
+                if row[start as usize].is_none() {
+                    assert!(!line.contains("Y Form"), "{line}");
+                    continue;
+                }
+                let names = cycle_names(start, row);
+                if names.is_empty() {
+                    assert!(line.contains("Y Form | "), "{line}");
+                    assert!(!line.contains("Y Form:"), "{line}");
+                } else {
+                    let listed = format!("Y Form: {}", names.join(", "));
+                    assert!(line.contains(&listed), "{line} missing {listed}");
+                }
+            }
+        }
+        let full = [Some(95), Some(96), Some(97)];
+        assert_eq!(cycle_names(Form::Normal, full), ["Omega", "Battlefield"]);
+        assert_eq!(
+            Form::Normal.help_line(full, HelpControls::TrainingApply),
+            "Normal | Y Form: Omega, Battlefield | A Apply (Training only) | X Rotation | L/R Page | B Back"
+        );
+        assert_eq!(
+            HelpControls::LobbyApply.bare(),
+            "A Apply + save lobby | X Rotation | L/R Page | B Back"
+        );
     }
 
     #[test]

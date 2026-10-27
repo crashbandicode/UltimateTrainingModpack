@@ -6,7 +6,9 @@ use std::convert::TryInto;
 use training_mod_consts::mii::{
     inventory::{MiiClass,Snapshot as Catalog}, lifetime::Configuration,
     ordinary_player::{Gate,Phase,SameClass,Ticket},
-    ordinary_cpu::{Destination,Request,Target,TargetKind},
+    ordinary_cpu::{Destination,NonRankDiff,RecaptureFlags,Request,Target,TargetKind,
+        non_rank_descriptor_diff,recapture_observation_seen,write_recapture_diagnostic,
+        RECAPTURE_DIAGNOSTIC_BYTES},
     selection::Action,
 };
 use training_mod_tui::mii_menu::Context as MenuContext;
@@ -18,6 +20,7 @@ static ENABLED:AtomicBool=AtomicBool::new(false);
 static STATE:Mutex<State>=Mutex::new(State {
     owner:None,track:None,catalog:None,capture:false,capture_at:(0,0),menu_valid:false,request:None,next:1,
     reservation:training_mod_consts::mii::ordinary_cpu::Reservation::empty(),departed:false,replay_result:None,generic:None,restore:None,
+    recapture_log:None,
 });
 struct Owner {
     origin:native::Snapshot,
@@ -53,10 +56,37 @@ struct State {
     replay_result:Option<training_mod_consts::mii::replay::SelectionReceipt>,
     generic:Option<Generic>,
     restore:Option<WaitingValue>,
+    /// Last printed non-rank recapture tuple. Not read on an accepted capture.
+    recapture_log:Option<(u64,NonRankDiff,RecaptureFlags)>,
 }
 fn base()->usize { BASE.load(Ordering::Acquire) }
 fn epoch()->u64 { mii_saved_alpha::current_generation(1) }
 fn note(reason:&str) { trace!("[MiiOrdinaryCpu] {reason}"); }
+/// Menu recapture already refused the descriptor. Log the locked snapshots once
+/// per owner epoch and observed tuple. Does not accept bytes or change slots.
+fn note_non_rank_recapture(expected:&native::Snapshot, now:&native::Snapshot) {
+    let diff=non_rank_descriptor_diff(&expected.descriptor,&now.descriptor);
+    if diff.count==0 {return;}
+    let flags=RecaptureFlags {
+        index_eq:expected.index==now.index,
+        scalars_eq:expected.scalars==now.scalars,
+        selector_record_eq:expected.record==now.record,
+        current_record_eq:expected.current_record==now.current_record,
+        captured_index:expected.index,
+        live_index:now.index,
+    };
+    let epoch=expected.binding.epoch;
+    if recapture_observation_seen(STATE.lock().unwrap().recapture_log,epoch,diff,flags) {return;}
+    let mut buf=[0u8;RECAPTURE_DIAGNOSTIC_BYTES];
+    let Some(n)=write_recapture_diagnostic(&mut buf,&diff,&flags) else {return;};
+    let Ok(line)=core::str::from_utf8(&buf[..n]) else {return;};
+    let print={
+        let mut s=STATE.lock().unwrap();
+        if recapture_observation_seen(s.recapture_log,epoch,diff,flags) {false}
+        else {s.recapture_log=Some((epoch,diff,flags));true}
+    };
+    if print {note(line);}
+}
 
 // Called only after the existing ordinary gate's fingerprint/install succeeds.
 pub(super) fn init() {
@@ -124,6 +154,18 @@ pub(super) fn replay_catalog()->Option<Arc<Catalog>> {
     (!s.departed && s.menu_valid && !s.capture && s.track.is_none() && s.request.is_none()
         && s.owner.as_ref().is_some_and(|o|o.origin.binding.epoch==epoch()))
         .then(||s.catalog.as_ref().filter(|c|c.is_complete()).map(Arc::clone)).flatten()
+}
+/// Settled loaded CPU configuration. This is the live original, saved or
+/// discovered body, and only when its class is the loaded descriptor kind.
+/// A replay receipt that has not become that body is not returned.
+pub(super) fn current_configuration()->Option<Configuration> {
+    let s=STATE.lock().unwrap();
+    if s.departed || !s.menu_valid || s.capture || s.track.is_some() || s.request.is_some() {return None;}
+    let owner=s.owner.as_ref().filter(|o|
+        o.origin.binding.epoch==epoch() && o.origin.layout.logical(o.origin.binding.owner)==Some(1))?;
+    let configuration=owner.live.target.publish(owner.origin_saved)?;
+    (configuration.canonical().class as u32==descriptor_kind(&owner.expected.descriptor))
+        .then_some(configuration)
 }
 pub(super) fn replay_current()->Option<Configuration> {
     let s=STATE.lock().unwrap();
@@ -411,6 +453,37 @@ unsafe fn capture(entry:*mut u8) {
     }
 }
 
+/// One idle snapshot. A busy read, a failed protected-union compare, or a
+/// changed reservation/epoch leaves `expected` unchanged. The returned value
+/// replaces only the descriptor; records, scalars, owners, and control stay
+/// the caller's expected snapshot.
+unsafe fn refresh_idle_metadata(entry:*mut u8,kind:u32,expected:native::Snapshot,live:Destination,request:Request,retained:bool,active_present:bool)->native::Snapshot {
+    let generation=epoch();
+    let reservation={
+        let state=STATE.lock().unwrap();
+        if INSTALL.active() || state.reservation.held()!=retained {return expected;}
+        state.reservation
+    };
+    let Ok(now)=native::snapshot(entry as usize,generation,kind) else {return expected;};
+    if now.binding.epoch!=generation {return expected;}
+    let Ok(descriptor)=training_mod_consts::mii::ordinary_cpu::recapture_rank(
+        now.layout,expected.binding,now.binding,&expected.descriptor,&now.descriptor) else {return expected;};
+    if descriptor==expected.descriptor {return expected;}
+    let comparison=native::Snapshot {descriptor,..expected};
+    // Protected union first. A mismatch returns the caller's expected snapshot
+    // and does not write STATE.
+    if !native::same_owned(&now,&comparison,retained || active_present) {return expected;}
+    let mut state=STATE.lock().unwrap();
+    if INSTALL.active() || state.reservation!=reservation || epoch()!=generation
+        || state.departed || state.track.is_some() || state.generic.is_some() || state.request!=Some(request)
+        || !state.owner.as_ref().is_some_and(|owner|owner.expected==expected && owner.live==live) {
+        return expected;
+    }
+    state.owner.as_mut().unwrap().expected.descriptor=comparison.descriptor;
+    drop(state);
+    comparison
+}
+
 #[inline(never)]
 unsafe fn begin(entry:*mut u8)->bool {
     #[cfg(feature = "console-swap-trace")]
@@ -429,10 +502,17 @@ unsafe fn begin(entry:*mut u8)->bool {
         return false;
     }
     if !ready_descriptor(entry,&expected.descriptor) {return false;}
-    // Keep the immutable identity/role origin, but never re-stage its stale native rank.
-    // The current rank must already have passed menu recapture or exact completion;
-    // the fresh preflight and every transaction phase below remain byte-exact.
-    let live_origin=match training_mod_consts::mii::ordinary_cpu::with_native_rank(origin.descriptor,&expected.descriptor) {
+    // No ticket exists yet. Waiting practice can change the native AI rank
+    // while the menu is open. Use the same descriptor-only qualification as
+    // menu recapture: FE+0x35 control and FE+0x37 rank, within their native
+    // domains. Every other byte and protected owner field must still match;
+    // commit rechecks INSTALL, reservation, and epoch. The later fresh preflight
+    // and all transaction phases remain byte-exact; origin is never updated.
+    let expected=refresh_idle_metadata(entry,origin.original_kind,expected,live,request,retained,active.is_some());
+    // Keep the immutable identity/role origin, but carry the qualified native
+    // rank and control type. The fresh preflight and every transaction phase
+    // below remain byte-exact against this refreshed expected descriptor.
+    let live_origin=match training_mod_consts::mii::ordinary_cpu::with_native_live_metadata(origin.descriptor,&expected.descriptor) {
         Ok(descriptor)=>descriptor,
         Err(reason)=>{refuse_request(request,reason);note(reason);return false;}
     };
@@ -443,7 +523,7 @@ unsafe fn begin(entry:*mut u8)->bool {
         if !training_mod_consts::mii::ordinary_cpu::supported_kind(c.canonical().class as u32) {
             return Err("CPU class not qualified");
         }
-        if training_mod_consts::mii::ordinary_cpu::cpu_hat_route(origin.layout,expected.scalars.e.hat,c.tokens().hat)?
+        if training_mod_consts::mii::ordinary_cpu::cpu_hat_route(origin.layout,origin.binding.owner as usize,expected.scalars.e.hat,c.tokens().hat)?
             && !provenance::cpu_headgear_fingerprints() {return Err("CPU headgear fingerprint mismatch");}
         native::target_rows(c)?;
         Ok((Target::mii(c),training_mod_consts::mii::ordinary_cpu::staged_descriptor_in(origin.layout,origin.binding.owner as usize,live_origin,Some(c)).ok_or("CPU backend selector changed")?))
@@ -555,7 +635,7 @@ unsafe fn begin(entry:*mut u8)->bool {
     // Include saved/ordinary returns. Admission and phase publication both recheck
     // the current-to-target transition; the origin's hat alone is insufficient.
     let hat_change=match training_mod_consts::mii::ordinary_cpu::cpu_hat_route(current.layout,
-        current.scalars.e.hat,publish.map_or(origin.scalars.e.hat,|c|c.tokens().hat)) {
+        current.binding.owner as usize,current.scalars.e.hat,publish.map_or(origin.scalars.e.hat,|c|c.tokens().hat)) {
         Ok(changed) if !changed || provenance::cpu_headgear_fingerprints()=>changed,
         Ok(_)=>{refuse_request(request,"CPU headgear fingerprint mismatch");note("CPU headgear fingerprint mismatch");return false;}
         Err(reason)=>{refuse_request(request,reason);note(reason);return false;}
@@ -761,7 +841,7 @@ pub(super) unsafe fn complete_generic(entry:*mut u8,token:InstallToken,kind:u32,
     }
 }
 pub(super) fn scene_changed() {
-    let mut s=STATE.lock().unwrap();s.capture=false;s.menu_valid=false;s.catalog=None;s.request=None;s.replay_result=None;
+    let mut s=STATE.lock().unwrap();s.capture=false;s.menu_valid=false;s.catalog=None;s.request=None;s.replay_result=None;s.recapture_log=None;
     s.departed=true;s.generic=None;s.restore=None;
     if let Some(t)=s.track.as_mut(){t.gate.depart();}
     // A completed or returned transaction still retains native G1 until exact destruction.
@@ -772,7 +852,7 @@ pub(super) fn on_destroy(entry:*const u8) {
         let mut s=STATE.lock().unwrap();
         if s.generic.as_ref().is_some_and(|g|g.before.binding.entry==entry as usize) {s.generic=None;}
         let exact=s.owner.as_ref().is_some_and(|o|o.origin.binding.entry==entry as usize);
-        if exact {s.owner=None;s.request=None;s.restore=None;s.replay_result=None;s.capture=false;s.menu_valid=false;s.reservation.retire(true);s.departed=false;}
+        if exact {s.owner=None;s.request=None;s.restore=None;s.replay_result=None;s.capture=false;s.menu_valid=false;s.recapture_log=None;s.reservation.retire(true);s.departed=false;}
         if s.track.as_ref().is_some_and(|t|t.ticket.entry==entry as usize) {
             s.track.take().map(|t|(t.token,t.ticket,t.gate.phase()))
         } else {None}

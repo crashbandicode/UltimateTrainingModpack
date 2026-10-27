@@ -245,12 +245,15 @@ mod mii_tests {
         let mut draft=training_mod_consts::mii::draft::Draft::from_template(&catalog.configs[0]).unwrap();
         draft.set_specials([1,0,0,0]).unwrap();let alt=draft.configuration().unwrap();
         assert_eq!(c.canonical().class,alt.canonical().class);assert_ne!(c,alt);
-        // Qualification preserves this exact payload; a mismatched inherited hat
-        // refuses only this value, without selecting another configuration.
+        // The exact payload is kept. A different hat is not replaced by a
+        // captured helper hat. LDN slot 2 is not a waiting helper.
         let hat=c.tokens().hat;
         assert_eq!(training_mod_consts::mii::ordinary_cpu::helper_configuration(c,[hat.wrapping_add(1),hat]),Ok(c));
-        assert!(training_mod_consts::mii::ordinary_cpu::helper_configuration(c,[hat.wrapping_add(1),hat.wrapping_add(2)]).is_err());
+        assert_eq!(training_mod_consts::mii::ordinary_cpu::helper_configuration(c,[hat.wrapping_add(1),hat.wrapping_add(2)]),Ok(c));
         assert_eq!(training_mod_consts::mii::ordinary_cpu::helper_configuration(alt,[hat;2]),Ok(alt));
+        assert_eq!(training_mod_consts::mii::ordinary_cpu::headgear_reload(
+            training_mod_consts::mii::backend::Layout::Ldn,2,hat,hat.wrapping_add(1)),
+            Err("headgear row is not on this layout"));
         let b=Binding {epoch:4,owner:2,entry:0x1200,row:0x2200,holder:0x5000,manager:0x6000,
             vector_begin:0x7000,vector_end:0x7000+4*104,record_index:2};
         let mut record=[0u8;104];record[..88].copy_from_slice(c.charinfo());

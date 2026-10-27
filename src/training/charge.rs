@@ -2,7 +2,6 @@ use crate::common::consts::FighterId;
 use crate::common::offsets::OFFSET_COPY_SETUP;
 use crate::common::{try_get_battle_object, try_get_module_accessor};
 use crate::training::character_specific::{kirby, pikmin};
-use serde::{Deserialize, Serialize};
 use smash::app::{self, lua_bind::*, ArticleOperationTarget, FighterFacial, FighterUtil};
 use smash::lib::lua_const::*;
 use smash::phx::{Hash40, Vector3f};
@@ -21,83 +20,10 @@ pub unsafe fn setup_copy_ability(module_accessor: *mut app::BattleObjectModuleAc
     copy_setup(module_accessor, slot, kind, true, false);
 }
 
-#[derive(Serialize, Deserialize, Default, Copy, Clone, Debug)]
-pub struct RobinCharges {
-    pub thunder_kind: i32,
-    pub yellow_book: i32,
-    pub red_book: f32,
-    pub green_book: i32,
-    pub purple_book: i32,
-    pub levin_charge: i32,
-    pub levin_recharge: i32,
-    pub has_levin: bool,
-}
-
-#[derive(Serialize, Deserialize, Default, Copy, Clone, Debug)]
-pub struct ChargeState {
-    pub int_x: Option<i32>,
-    pub int_y: Option<i32>,
-    pub int_z: Option<i32>,
-    pub float_x: Option<f32>,
-    pub float_y: Option<f32>,
-    pub float_z: Option<f32>,
-    pub has_charge: Option<bool>,
-    pub robin_charges: Option<RobinCharges>,
-}
-
-impl ChargeState {
-    pub fn int_x(mut self, int_x: i32) -> Self {
-        self.int_x = Some(int_x);
-        self
-    }
-
-    pub fn int_y(mut self, int_y: i32) -> Self {
-        self.int_y = Some(int_y);
-        self
-    }
-
-    pub fn int_z(mut self, int_z: i32) -> Self {
-        self.int_z = Some(int_z);
-        self
-    }
-
-    pub fn float_x(mut self, float_x: f32) -> Self {
-        self.float_x = Some(float_x);
-        self
-    }
-
-    pub fn float_y(mut self, float_y: f32) -> Self {
-        self.float_y = Some(float_y);
-        self
-    }
-
-    pub fn float_z(mut self, float_z: f32) -> Self {
-        self.float_z = Some(float_z);
-        self
-    }
-
-    fn set_pikmin(
-        mut self,
-        pikmin_1: Option<i32>,
-        pikmin_2: Option<i32>,
-        pikmin_3: Option<i32>,
-    ) -> Self {
-        self.int_x = pikmin_1;
-        self.int_y = pikmin_2;
-        self.int_z = pikmin_3;
-        self
-    }
-
-    fn set_robin(mut self, robin_charges: RobinCharges) -> Self {
-        self.robin_charges = Some(robin_charges);
-        self
-    }
-
-    pub fn has_charge(mut self, has_charge: bool) -> Self {
-        self.has_charge = Some(has_charge);
-        self
-    }
-}
+// The plain saved-charge values are defined once, portably, in
+// `training_mod_consts::practice_setup`, so a setup library file and the
+// save-state TOML share one definition. Native readers and writers stay here.
+pub use training_mod_consts::practice_setup::{ChargeState, RobinCharges};
 
 unsafe fn apply_revenge_effects(module_accessor: &mut app::BattleObjectModuleAccessor) {
     let pos = Vector3f {

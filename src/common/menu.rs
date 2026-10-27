@@ -330,7 +330,16 @@ pub unsafe fn handle_final_input_mapping(
                     match app.selected_submenu().id {
                         "named_macro_library" => {
                             received_input = true;
-                            crate::training::named_macros::open_library();
+                            // The open row, not the committed menu. Closing still
+                            // owns character and stage mutations.
+                            let slot = training_mod_tui::single_toggle_index(&app, "recording_slot");
+                            crate::training::named_macros::open_library(slot);
+                            return;
+                        }
+                        "named_macro_export_slot" => {
+                            received_input = true;
+                            let slot = training_mod_tui::single_toggle_index(&app, "recording_slot");
+                            crate::training::named_macros::export_record_slot(slot);
                             return;
                         }
                         "named_macro_placement" => {
@@ -341,6 +350,20 @@ pub unsafe fn handle_final_input_mapping(
                         "named_macro_replay" => {
                             received_input = true;
                             crate::replay_capture::open_editor();
+                            return;
+                        }
+                        "setup_library_save" => {
+                            received_input = true;
+                            let slot = training_mod_tui::single_toggle_index(&app, "save_state_slot");
+                            crate::training::setup_library::save_selected_slot(slot);
+                            return;
+                        }
+                        "setup_library_open" => {
+                            received_input = true;
+                            let slot = training_mod_tui::single_toggle_index(&app, "save_state_slot");
+                            // OnOff::ON is toggle 0. Passed through; not committed here.
+                            let enable = training_mod_tui::single_toggle_index(&app, "save_state_enable");
+                            crate::training::setup_library::open_library(slot, enable);
                             return;
                         }
                         _ => {}

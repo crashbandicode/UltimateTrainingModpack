@@ -20,7 +20,7 @@ Add the class portrait in **Characters → Character Cycles**. When the [cycle](
 
 ![Smash's Mii Fighter editor, opened from Add New.](feature-walkthroughs/mii-editor.png)
 
-The **lobby-parity development branch** enables these pages in Quickplay and Local Wireless waiting practice, including Player/CPU selections and the editor's cosmetic options. A match takes priority; the editor must resume its unfinished screen afterward without saving. Exact cosmetic interruption and Local Wireless match-return checks are still pending in the [validation ledger](plans/lobby-parity.md). Explicit Cancel leaves without saving.
+The **lobby-parity development branch** enables these pages in Quickplay and Local Wireless waiting practice, including Player/CPU selections and the editor's cosmetic options. A match takes priority; afterward the editor resumes its unfinished screen without saving. Emulator checks covered interrupted cosmetic choices in Quickplay and an unfinished Specials draft across a real Local Wireless match ([validation ledger](plans/lobby-parity.md)). Explicit Cancel leaves without saving.
 
 ## Opponents from your replays
 
@@ -28,7 +28,7 @@ With [replay capture](named-macros.md#turn-on-capture) on, **Save Replay → ent
 
 ## Matching portraits
 
-In Training, Player and CPU HUD portraits follow the selected Mii's face, outfit and colors, rendered by Smash itself. Local Wireless waiting practice updates the CPU icon too. The **lobby-parity development branch** adds Quickplay's CPU portrait; the Ready card continues to show the character-select fighter for the real match.
+In Training, Player and CPU HUD portraits follow the selected Mii's face, outfit and colors, rendered by Smash itself. On the **lobby-parity development branch** (C89), Miis with changed headgear also load that equipment for either role and get their own portrait rather than the generic class one; switching between two Miis of the same class reloads normally. Local Wireless waiting practice updates the CPU icon too. The **lobby-parity development branch** adds Quickplay's CPU portrait; the Ready card continues to show the character-select fighter for the real match.
 
 ![Saved Brawler and Swordfighter in Training, with matching custom portraits beside their damage percentages.](feature-walkthroughs/mii-hud-portraits.png)
 

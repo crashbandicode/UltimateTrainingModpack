@@ -1,10 +1,14 @@
 # Character items
 
-Give Player 1 another fighter's item, such as a Peach turnip, Link's Remote Bomb or a Pac-Man fruit, whatever fighter Player 1 is playing. This is part of the [unstable enhancements alpha](experimental-release.md); physical-console acceptance is pending.
+Give Player 1 another fighter's item, such as a Peach turnip, Link's Remote Bomb or a Pac-Man fruit, whatever fighter Player 1 is playing. This is part of the [unstable enhancements alpha](experimental-release.md).
 
 ## Pick an item
 
-Open **Character Extras → Character Item**. Its two pages group the items by the fighter who normally uses them. Highlight one and press **A**; the button flashes to confirm.
+Open **Character Extras → Character Item**. Its two pages group the items by the fighter who normally uses them. Highlight one and press **A**; the button flashes to confirm. Use **Up/Down** to move between pages.
+
+![Character Item menu with icons rendered from the game assets.](character-items/page-1.png)
+
+[See the second page](character-items/page-2.png).
 
 ## Get it in hand
 
@@ -12,7 +16,7 @@ Close the menu. The item appears in Player 1's hand, replacing anything Player 1
 
 ![Dedede receives Metal Blade, saves, throws it, and restores it.](feature-walkthroughs/character-items.gif)
 
-*Metal Blade on King Dedede: select → save → throw → load. The item returns to his hand.*
+*Metal Blade on King Dedede: select → save → throw → load. This earlier recording uses the previous menu icons.*
 
 ## What is listed
 

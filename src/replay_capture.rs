@@ -109,6 +109,11 @@ pub fn latest() -> Option<ReplaySession> {
 }
 
 fn notify(message: String) {
+    if let Some(editor) = EDITOR.lock().unwrap().as_mut() {
+        editor.report_error(message);
+        training_mod_sync::assign(&crate::common::menu::MENU_RECEIVED_INPUT, true);
+        return;
+    }
     crate::training::ui::notifications::notification("Clip Editor".into(), message, 180);
 }
 

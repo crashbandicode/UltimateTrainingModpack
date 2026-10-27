@@ -3,7 +3,9 @@
 //! the shared match-data module (no Skyline), so it is fully host-testable. The runtime
 //! owns recording, playback, character loading and applying a placement.
 //!
-//! A macro file is compact JSON of [`MacroRecording`] (schema version 1).
+//! A macro file is compact JSON of [`MacroRecording`] (schema version 1). The
+//! library is one instantiation of the generic [`Store`]; any other value type
+//! implementing [`Record`] gets the same atomic, id-checked, size-bounded files.
 //!
 //! ```
 //! use training_mod_macros::*;
@@ -45,7 +47,7 @@ pub use capture_settings::{host_persistence_key, recover_previous_ini, CaptureSe
     CAPTURE_CONFIG_KEY, DEFAULT_CAPTURE_INI};
 pub use capture_toggle::{CaptureToggle, RecordEnded, RecordOwner, RecordOwnership, RecordPhase,
     ToggleRequest, ToggleSnapshot, CAPTURE_OFF, CAPTURE_ON};
-pub use library::{Library, Listing, MacroEntry, SkippedFile, MAX_FILE_BYTES, MAX_ID_CHARS};
+pub use library::{Library, Listing, MacroEntry, Record, SkippedFile, Store, MAX_FILE_BYTES, MAX_ID_CHARS};
 pub use live_capture::{LiveCapturePool, NativeRecordKey, MAX_RETAINED_CAPTURES};
 pub use live_frame::{LiveFrame, LiveInput, LiveSession, LiveTrack};
 pub use recording::{

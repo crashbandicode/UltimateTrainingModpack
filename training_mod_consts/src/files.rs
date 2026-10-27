@@ -4,6 +4,8 @@ pub const LEGACY_TRAINING_MODPACK_ROOT: &str = "sd:/TrainingModpack";
 pub const TRAINING_MODPACK_ROOT: &str = "sd:/ultimate/TrainingModpack";
 pub const TRAINING_MODPACK_TOML_PATH: &str = "sd:/ultimate/TrainingModpack/training_modpack.toml";
 pub const SAVE_STATES_TOML_PATH: &str = "sd:/ultimate/TrainingModpack/save_states.toml";
+/// Named practice-setup library: one `<id>.json` per saved pair, next to `macros/`.
+pub const SETUP_LIBRARY_DIR: &str = "sd:/ultimate/TrainingModpack/setups";
 pub const DEV_TOML_PATH: &str = "sd:/ultimate/TrainingModpack/dev.toml";
 pub const VERSION_TXT_PATH: &str = "sd:/ultimate/TrainingModpack/version.txt";
 pub const LAYOUT_ARC_PATH: &str = "sd:/ultimate/TrainingModpack/layout.arc";

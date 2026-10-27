@@ -398,8 +398,10 @@ pub(crate) struct PublicationTarget<'a> {
     pub payload: Option<Configuration>,
     pub scalars: Scalars,
     pub source: Option<SourceToken>,
-    /// CPU Training fresh-O path only; never a helper or retained-O exemption.
+    /// Fresh-O for this layout entry's own row. Retained same-class stays equal-hat.
     pub hat_change: bool,
+    /// Immutable origin E+0x1a8 from the owning track. Not the active snapshot index.
+    pub original_index: u16,
 }
 pub(crate) unsafe fn publication(
     target: PublicationTarget<'_>,
@@ -413,6 +415,7 @@ pub(crate) unsafe fn publication(
         scalars,
         source,
         hat_change,
+        original_index,
     } = target;
     if let Some(c) = payload {
         target_rows(c)?;
@@ -509,7 +512,9 @@ pub(crate) unsafe fn publication(
         layout: now.layout, owner: b.owner, source: source.is_some(), opt_in: hat_change,
         initialized: observed.initialized,
         fingerprints: hat_change && super::mii_ordinary_player::native::cpu_headgear_fingerprints(),
-        before: now.scalars.e.hat, target: scalars.e.hat, descriptor, payload,
+        before: now.scalars.e.hat, target: scalars.e.hat,
+        destination_index: b.record_index, original_index,
+        descriptor, payload,
     }.validate()?;
     let address = values::record_address(b, b).map_err(|_| "selected G bounds")?;
     Ok(PublicationGuard {
@@ -554,6 +559,9 @@ pub(crate) unsafe fn completed(
         scalars,
         source,
         hat_change: _,
+        // Ignored. Ready completion compares the published descriptor and the
+        // selector record. Hat restore uses publication(), which keeps this field.
+        original_index: _,
     } = target;
     let owner = before.binding.owner as usize;
     let m = map(before.binding.entry, owner)?;

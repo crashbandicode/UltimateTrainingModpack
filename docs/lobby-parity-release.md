@@ -1,23 +1,33 @@
-# Lobby parity candidate C72 — unstable
+# Lobby parity candidate C89 — unstable
 
-Quickplay and Local Wireless waiting areas now support the practice tools,
-including save/load, recordings, macro previews and interrupted Mii editing.
-All [22 gameplay items](plans/lobby-parity.md#required-behavior) have completed
-their documented emulator or shared-code checks. **Console acceptance is still
-pending.** This candidate is separate from the earlier published enhancements alpha.
+C89 builds on C72's waiting-room practice (save/load, recordings, macro previews
+and interrupted Mii editing in Quickplay and Local Wireless waiting) and adds the
+changes below. **Training and waiting-room emulator checks passed with the
+current console plugins. Console acceptance is pending.** This candidate is separate from the earlier
+published enhancements alpha.
 
-## What changed
+## New in C89
 
-- Practice operations stop when a match starts. Unfinished macro names and Mii
-  drafts resume on return to the same lobby; Cancel still discards them.
-- Practice stages offer Normal, Ω and Battlefield forms. Training rotation is
-  optional and defaults Off; lobby rotation remains independent.
-- CPU slot 0 restores the original fighter. Mii equipment loading was checked
-  with Gunner, Brawler and Swordfighter in ordinary CPU Training.
-- Mii swaps avoid the captured portrait flash. Grounded saves now restore below
-  platforms instead of catching a platform between respawn and the saved point.
-
-Follow the [illustrated Lobby Practice guide](lobby-practice.md).
+- **Miis:** Player, CPU and HUD portraits share one rule for which saved Mii
+  loads. Miis with changed headgear or outfits load for the Player too, and
+  switching between two Miis of the same class no longer reports
+  *already active*. [Mii guide](mii-fighters.md)
+- **Waiting-room CPU Apply:** a Mii chosen for the waiting-room CPU and applied
+  after a pause is no longer refused just because the game changed the CPU's
+  rank value meanwhile. Other protected configuration changes still refuse safely.
+- **HUD portraits:** equipped Miis get their own portrait instead of the generic
+  class one, and the stage no longer blacks out while the portrait renders.
+- **Setup Library:** name a save-state slot, share the file, and bind it to any
+  of the five slots. The list reads names only; a file loads when you pick it.
+  [Setup Library](setup-library.md)
+- **Record Slots:** copy a named recording into a numbered slot, or save a slot
+  to the named library. [How](named-macros.md#share-a-numbered-record-slot)
+- **Replay preview:** a refused preview explains why in the wide help strip, and
+  **ZL+Y** moves a mid-action crop to a clean lead-in. [Preview](named-macros.md#preview)
+- **Stage forms:** Normal, Omega and Battlefield are separate **Y** choices, and
+  the help line names them. [Pick a form](practice-stages.md#pick-a-form)
+- **Item icons:** each of the 38 character items shows an icon taken from its
+  own game assets, using 35 shared textures. [Character items](character-items.md)
 
 ## Build identity
 
@@ -25,15 +35,26 @@ Follow the [illustrated Lobby Practice guide](lobby-practice.md).
 | --- | --- |
 | Smash version | 13.0.5 |
 | Branch | `lobby-parity` |
-| Full NRO size | 4,370,432 bytes |
-| NRO SHA-256 | `7941988cc4f188c2baa01de09a6b55c0ede40251035f60ddb41a2c6eccc26ed5` |
-| Compiled source content SHA-256 | `74f93b64f17770e6ba3ef557096d99afd0fc3aa272fb626226e768306d30b73c` |
+| Full NRO size | 4,231,168 bytes |
+| NRO SHA-256 | `def8782fae866857fb174c19104cadc83086b270e3b828a9f2bc2b91caeafcbb` |
+| Compiled source content SHA-256 | `7e50f98b52897bf1298b3842ca89461984f99b4312206b2bd979179fc3be8f32` |
 
-Seven final build/validation jobs passed, including strict Clippy with zero
-warnings, the no-default-features build and the full release. The Mii host suite
-passed 243 tests across seven harnesses. Earlier feature tests are retained in
-the ledger; this is not a claim that every old case was rerun on C72. Final guide
-updates and one comment correction followed compilation without changing code.
+Sixteen build/validation jobs passed, including full and base Clippy with zero
+warnings, the no-default-features build and the full release. All 707 host tests
+ran fresh on C89 across 21 harnesses: 263 Mii, 113 macro, 176 menu and 155 constants tests.
+
+The final C89 run used all 12 companion plugin binaries from the current Switch,
+plus C89. All 13 initialized. In Training, Player 1 went Mr. Game & Watch → armored
+replay Gunner → default Gunner → armored replay Gunner against Duck Hunt, with
+matching body and HUD portraits and no black stage in 887 captured frames.
+Local Wireless waiting passed delayed CPU selection in both directions, with
+matching portraits and no black stage in 581 frames. Normal exits from both
+modes passed. These are emulator checks, not an Atmosphère/sysmodule or console
+boot qualification. Earlier candidates passed
+the replay preview and Peach's Castle forms (C77), Setup Library and Record Slot
+sharing (a C82-based build), all item icons in Training and Local Wireless waiting (C84), and
+an equipped waiting-room CPU Mii with original-fighter restore (C86). Captures
+are sampled at 30 FPS, not lossless; the final five recordings dropped 43 frames.
 
 ## Console review
 
@@ -41,15 +62,34 @@ Back up the installed NRO, then replace only `libtraining_modpack.nro` in
 `atmosphere/contents/01006A800016E000/romfs/skyline/plugins/`. Keep dependencies,
 other mods, settings and saves. Do not install a second Training Modpack NRO.
 
-1. Enter Training and load your under-platform/CPU-ledge save. Confirm the player
-   stays on the saved floor and the CPU completes its ledge option.
-2. Try an exact saved Mii as the CPU, then restore the original fighter.
-3. In a waiting area, try save/load or a recording. Finish a match and return;
-   confirm practice resumes normally and your real-match fighter is unchanged.
+1. **Mii HUD:** enter Training as Mr. Game & Watch against Duck Hunt. Switch
+   Player 1 to the default Mii Gunner, then the equipped replay Gunner, then
+   back. Each time check the body and HUD portrait, no *already active* notice,
+   and no flicker or black stage.
+2. **CPU Mii:** give the CPU the equipped replay Gunner, then restore the
+   original fighter.
+3. **Setup:** [save a setup](setup-library.md) to the library, check its file
+   in `setups/`, press **Y** to bind it to another slot, move, then load that slot.
+4. **CPU recording:** record a short CPU action,
+   [save the slot](named-macros.md#share-a-numbered-record-slot) to the library,
+   bind it to another Record Slot and play it.
+5. **Stage forms:** on Peach's Castle, press **Y** through Normal, Omega and
+   Battlefield and apply each with **A**.
+6. **Replay crop:** open the crop you reported and press **X**. If it shows
+   *Needs ZL+Y lead-in*, press **ZL+Y**, then **X**
+   ([Preview](named-macros.md#preview)).
+7. **Waiting room:** choose a Mii for the CPU, wait with the menu open, then
+   close it so the change applies; change back the same way. Finish a match and
+   return: practice resumes and your real-match fighter is unchanged.
 
-Known limits: online arenas and physical-console stability are unverified.
-Changed-headgear equipment coverage here is ordinary CPU Training, with the
-documented generic portrait fallback. Earlier intermittent startup faults remain
-unresolved; a later emulator loading stall is retained separately from the clean
-C72 run. Broad tracing is off; keep the small practice logs and Atmosphère report
-if a console fault occurs.
+Kirby hats, character items, Elite Stages and counterpicks need no repeat; they
+passed earlier reported console tests on C72.
+
+Installed on the console SD card on October 27, 2026, with checksum readback;
+the other installed plugins, sysmodules and inventoried settings were unchanged.
+Physical console review of C89 is still pending.
+
+Known limits:
+Online arenas are unverified. Earlier intermittent startup faults remain
+unresolved. Broad tracing is off; keep the small practice logs and
+Atmosphère report if a console fault occurs.

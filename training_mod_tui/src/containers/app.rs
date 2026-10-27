@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::roster_grid::{Direction, Outcome, Role, RosterGrid, RosterPurpose};
-use crate::stage_forms::{Form, Forms, Selection};
+use crate::stage_forms::{Forms, HelpControls, Selection};
 use crate::{InputControl, StatefulList, SubMenu, SubMenuType, Tab};
 
 #[derive(PartialEq, Serialize, Clone, Copy)]
@@ -191,24 +191,23 @@ impl<'a> App<'a> {
     pub fn stage_help(&self) -> &'static str {
         // Static strings preserve the native renderers' borrow contract while
         // showing the highlighted form on every event-driven redraw.
-        macro_rules! help {
-            ($controls:literal) => {
-                match self.stage_selection().map(|selection| selection.form) {
-                    Some(Form::Normal) => concat!("Normal | Y Form | ", $controls),
-                    Some(Form::Omega) => concat!("Omega / Final Destination | Y Form | ", $controls),
-                    Some(Form::Battlefield) => concat!("Battlefield | Y Form | ", $controls),
-                    None => $controls,
-                }
-            };
-        }
-        if self.stage_is_direct() && self.stage_training_view.is_some() {
-            help!("A Apply (Training only) | X Rotation | L/R Page | B Back")
+        let controls = if self.stage_is_direct() && self.stage_training_view.is_some() {
+            HelpControls::TrainingApply
         } else if self.stage_is_direct() {
-            help!("A Apply + save lobby | X Rotation | L/R Page | B Back")
+            HelpControls::LobbyApply
         } else if self.stage_direct_enabled {
-            help!("A Add/Remove | X Direct | L/R Page | B Back | Next lobby entry only")
+            HelpControls::RotationWithDirect
         } else {
-            help!("A Add/Remove | L/R Page | B Back | Next lobby entry only")
+            HelpControls::RotationOnly
+        };
+        match self.stage_selection() {
+            Some(selection) => {
+                let native = self.stage_index()
+                    .and_then(|index| self.stage_forms.get(index).copied())
+                    .unwrap_or([None; 3]);
+                selection.form.help_line(native, controls)
+            }
+            None => controls.bare(),
         }
     }
 
@@ -1335,5 +1334,116 @@ impl<'a> InputControl for App<'a> {
             AppPage::ROSTER => self.toggle_roster_role(),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stage_forms::Form;
+    use crate::{InputControl, StatefulList, StatefulTable, SubMenu, SubMenuType, Tab, Toggle};
+
+    fn stage_app(native: [Option<u32>; 3]) -> App<'static> {
+        let submenu = SubMenu {
+            title: "Practice Stages",
+            id: "lobby_stages",
+            help_text: "",
+            submenu_type: SubMenuType::Ordered,
+            toggles: StatefulTable::with_items(1, 2, vec![
+                Toggle { title: "All (listed order)", value: 0, max: 1 },
+                Toggle { title: "Stage", value: 0, max: 1 },
+            ]),
+            slider: None,
+        };
+        let mut app = App::new();
+        app.tabs = StatefulList::with_items(vec![Tab {
+            title: "Misc",
+            id: "misc",
+            submenus: StatefulTable::with_items(1, 1, vec![submenu]),
+        }]);
+        app.page = AppPage::TOGGLE;
+        app.stage_direct_enabled = true;
+        app.configure_stage_catalog(vec![native[0].unwrap()]);
+        app.configure_stage_forms(vec![native]);
+        app.tabs.items[0].submenus.select(0, 0);
+        app
+    }
+
+    fn select_stage(app: &mut App<'_>) {
+        app.selected_submenu().toggles.select(0, 1);
+    }
+
+    #[test]
+    fn y_cycles_distinct_supported_forms_without_merging_direct_state() {
+        let row = [Some(95), Some(96), Some(97)];
+        let mut app = stage_app(row);
+        app.selected_submenu().toggles.select(0, 0);
+        let before = app.stage_preferences;
+        app.on_y();
+        assert_eq!(app.stage_preferences, before);
+        assert!(app.take_pending_stage().is_none());
+        let all_help = app.stage_help();
+        assert!(all_help.contains("L/R Page"), "{all_help}");
+        assert!(!all_help.contains("Final Destination"), "{all_help}");
+
+        select_stage(&mut app);
+        let expected = [Form::Normal, Form::Omega, Form::Battlefield, Form::Normal];
+        for (presses, form) in expected.into_iter().enumerate() {
+            assert_eq!(app.stage_selection(), Some(Selection { stage: 95, form }));
+            let help = app.stage_help();
+            assert!(help.starts_with(form.label()), "{help}");
+            assert!(!help.contains("Omega /"), "{help}");
+            assert!(!help.contains("Final Destination"), "{help}");
+            if presses + 1 < expected.len() {
+                app.on_y();
+            }
+        }
+        assert_eq!(app.stage_preferences.direct_form, Form::Normal);
+        assert_eq!(app.stage_preferences.rotation_forms.get(0), Some(Form::Normal));
+
+        app.on_y();
+        assert_eq!(app.stage_selection(), Some(Selection { stage: 95, form: Form::Omega }));
+        assert_eq!(app.stage_preferences.rotation_forms.get(0), Some(Form::Omega));
+        app.on_x();
+        assert!(app.stage_is_direct());
+        assert_eq!(app.stage_selection(), Some(Selection::normal(95)));
+        assert_eq!(app.stage_preferences.rotation_forms.get(0), Some(Form::Omega));
+        app.on_y();
+        app.on_y();
+        assert_eq!(app.stage_selection(), Some(Selection { stage: 95, form: Form::Battlefield }));
+        assert_eq!(app.stage_preferences.direct_form, Form::Normal);
+        assert_eq!(app.stage_preferences.rotation_forms.get(0), Some(Form::Omega));
+        assert!(app.stage_help().starts_with("Battlefield"));
+        app.on_a();
+        assert_eq!(app.take_pending_stage(), Some(Selection { stage: 95, form: Form::Battlefield }));
+        assert_eq!(app.take_pending_stage(), None);
+        assert_eq!(app.stage_preferences.direct_form, Form::Battlefield);
+        assert_eq!(app.stage_preferences.rotation_forms.get(0), Some(Form::Omega));
+    }
+
+    #[test]
+    fn y_skips_forms_the_recorded_row_does_not_have() {
+        let mut battlefield = stage_app([Some(0), Some(1), None]);
+        select_stage(&mut battlefield);
+        battlefield.on_y();
+        assert_eq!(battlefield.stage_selection(), Some(Selection { stage: 0, form: Form::Omega }));
+        assert!(battlefield.stage_help().contains("Y Form: Normal"));
+        battlefield.on_y();
+        assert_eq!(battlefield.stage_selection(), Some(Selection::normal(0)));
+
+        let mut final_destination = stage_app([Some(3), None, Some(4)]);
+        select_stage(&mut final_destination);
+        final_destination.on_y();
+        assert_eq!(final_destination.stage_selection(),
+            Some(Selection { stage: 3, form: Form::Battlefield }));
+        assert!(final_destination.stage_help().starts_with("Battlefield"));
+        assert!(!final_destination.stage_help().contains("Y Form: Omega"));
+
+        let mut training = stage_app([Some(308), None, None]);
+        select_stage(&mut training);
+        training.on_y();
+        assert_eq!(training.stage_selection(), Some(Selection::normal(308)));
+        assert!(training.stage_help().contains("Y Form | "));
+        assert!(!training.stage_help().contains("Y Form:"));
     }
 }

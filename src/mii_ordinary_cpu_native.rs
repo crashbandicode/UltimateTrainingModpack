@@ -106,9 +106,14 @@ unsafe fn retained_origin(track:&super::Track)->Result<(),&'static str> {
     check(rd::<[u8;104]>(at,0)==expected,"CPU retained origin record changed")
 }
 fn target(track:&super::Track)->shared::PublicationTarget<'_> {
+    let published=u16::from_le_bytes([track.descriptor[0x46],track.descriptor[0x47]]);
     shared::PublicationTarget {before:&track.before,descriptor:&track.descriptor,
-        payload:track.publish.filter(|_|u16::from_le_bytes([track.descriptor[0x46],track.descriptor[0x47]])==track.before.binding.record_index),
-        scalars:track.publish.map_or(track.origin_scalars,Scalars::saved),source:None,hat_change:track.hat_change}
+        // CharInfo is written at record_index. Keep the payload only for that
+        // destination. Origin restore carries track.origin_index separately.
+        payload:track.publish.filter(|_|policy::saved_payload_routes_to_destination(
+            published,track.before.binding.record_index)),
+        scalars:track.publish.map_or(track.origin_scalars,Scalars::saved),source:None,
+        hat_change:track.hat_change,original_index:track.origin_index}
 }
 pub(super) unsafe fn publish(track:&super::Track,selected:usize,evidence:&mut Option<Publication>)
     ->Result<(),&'static str> {
@@ -151,8 +156,11 @@ pub(super) unsafe fn completed(track:&super::Track)->Result<Snapshot,&'static st
 /// Reuse the native before/after proof while the generic roster still holds INSTALL.
 pub(super) unsafe fn generic_completed(g:&super::Generic,kind:u32,cursor:Option<usize>)
     ->Result<Snapshot,&'static str> {
+    // No origin is loaded here. shared::completed discards original_index;
+    // this generic path does not publish a hat row.
     let completion=shared::completed(shared::PublicationTarget {
-        before:&g.before,descriptor:&g.descriptor,payload:None,scalars:g.before.scalars,source:None,hat_change:false,
+        before:&g.before,descriptor:&g.descriptor,payload:None,scalars:g.before.scalars,source:None,
+        hat_change:false,original_index:0,
     })?;
     let now=completion.now;
     let mut state=super::STATE.lock().unwrap();
@@ -161,7 +169,7 @@ pub(super) unsafe fn generic_completed(g:&super::Generic,kind:u32,cursor:Option<
     let reservation_held=state.reservation.held();
     let owner=state.owner.as_mut().filter(|o|o.expected==g.expected && o.live==g.live)
         .ok_or("generic CPU owner changed during INSTALL")?;
-    let live_origin=policy::with_native_rank(owner.origin.descriptor,&now.descriptor)?;
+    let live_origin=policy::with_native_live_metadata(owner.origin.descriptor,&now.descriptor)?;
     let destination=policy::generic_ordinary_commit_in(now.layout,owner.origin.index,policy::GenericOrdinaryFacts {
         reservation_held,transaction_busy,origin_is_saved:owner.origin_saved.is_some(),
         live_is_saved:owner.live.target.saved().is_some(),kind,origin_kind:owner.origin.original_kind,
@@ -225,10 +233,21 @@ pub(super) unsafe fn capture_origin(entry:usize,epoch:u64,kind:u32,catalog:&Cata
         let helpers=helper_snapshot()?;
         let g=PoolLock::acquire(super::base(),b.manager);
         let now=current_locked(m,b,kind,None,helpers)?;
-        let descriptor=policy::recapture_rank(now.layout,expected.binding,now.binding,
-            &expected.descriptor,&now.descriptor)?;
-        // Only rank differs in this local comparison value. All other same_owned
-        // checks (including selected owner/records/control/thread) stay exact.
+        let descriptor=match policy::recapture_rank(now.layout,expected.binding,now.binding,
+            &expected.descriptor,&now.descriptor) {
+            Ok(descriptor)=>descriptor,
+            Err(reason)=>{
+                // expected and now are owned copies. Release G before formatting,
+                // the trace, or STATE. This branch does not read native memory again.
+                drop(g);
+                if reason=="CPU rank recapture changed non-rank descriptor bytes" {
+                    super::note_non_rank_recapture(&expected,&now);
+                }
+                return Err(reason.into());
+            }
+        };
+        // Only rank and a qualified FE+0x35 control type differ in this local
+        // comparison value. All other same_owned checks stay exact.
         let comparison=Snapshot {descriptor,..expected};
         check(same_owned(&now,&comparison,retained),"menu current owner changed")?;
         check(current_locked(m,b,kind,None,helpers)?==now,"CPU menu snapshot changed before rank refresh")?;

@@ -55,8 +55,9 @@ pub fn status() -> &'static str {
         2 => "Native input preview: attacks and effects run normally",
         3 => "Inputs complete; native effects finish normally. Y: restart",
         4 => "Restoring saved Training setup after preview...",
-        5 => "Preview stopped; check the notification",
-        _ => "X: preview from saved Training setup | Y: restart",
+        // The editor keeps the actual failure in its full-width help strip.
+        5 => "Preview stopped. Fix the issue above, then press X.",
+        _ => "",
     }
 }
 
