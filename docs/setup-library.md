@@ -1,23 +1,20 @@
 # Setup Library
 
-Give a save-state setup a name, keep it as a small file, and put it into any of
-the five Save State Slots later. You can share the file with another console.
-This is part of the [unstable enhancements alpha](experimental-release.md).
-Binding into Slot 3 and restoring from it passed an emulator check. Testing on
-a physical console is pending.
+Name a setup once, then load it into any of the five Save State Slots.
+Share its small JSON file with another console.
+
+Available in the [unstable enhancements alpha](experimental-release.md).
 
 ## Save
+
+![Saving the current positions, naming the setup with the keyboard, and finding it in the Setup Library.](setup-library/save.gif)
 
 1. Save a state into the selected **Save State Slot** as usual (default
    **ZL + D-pad Down**).
 2. Open **Save States → Save Setup to Library**.
 3. The keyboard suggests **Setup**. Type a name and confirm.
 
-The file is saved as `sd:/ultimate/TrainingModpack/setups/<name>.json`. It
-holds both fighters, the stage, and each Mii Fighter's exact look. Cancel
-writes nothing. If the name isn't allowed or the save fails, your text stays in
-the keyboard for another try. A Mii Fighter saved before its look was known is
-refused; let the Mii finish loading, then save the slot again.
+Saved files go in `sd:/ultimate/TrainingModpack/setups/`. Cancel leaves the library unchanged.
 
 ## Put it in a slot
 
@@ -43,7 +40,8 @@ Duck Hunt, and loading Slot 3 put both fighters back at the saved spacing:
 
 ![P1 walks toward Duck Hunt, then ZL + D-pad Up restores both fighters to the saved spacing.](setup-library/restore.gif)
 
-## When A refuses
+<details>
+<summary>When loading is refused</summary>
 
 A is checked when you press it and again just before the slot is written. If
 anything differs, nothing changes and a notice says why. Use **Y** instead.
@@ -53,7 +51,13 @@ anything differs, nothing changes and a notice says why. Use **Y** instead.
 - `Player 1 exact Mii differs; use Y to bind`
 - `Enable save states first, or use Y to bind`
 
-## Files
+Wait for a Mii to finish loading before saving its setup. If naming or saving
+fails, your typed name stays in the keyboard for another try.
+
+</details>
+
+<details>
+<summary>File format and sharing</summary>
 
 - The format is versioned JSON (`schema_version` 1). It holds positions,
   damage, facing, ground/air/ledge situation, charges, Steve's state, the
@@ -64,6 +68,8 @@ anything differs, nothing changes and a notice says why. Use **Y** instead.
 - To share a setup, copy its `.json` file into the other console's `setups/`
   folder. Unreadable, oversized and newer-version files are skipped in the list.
 - Image sources: [SCREENSHOTS.md](setup-library/SCREENSHOTS.md).
+
+</details>
 
 To keep **inputs** rather than positions, see
 [Share a numbered Record Slot](named-macros.md#share-a-numbered-record-slot).

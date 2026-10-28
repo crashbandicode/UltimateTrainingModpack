@@ -1,5 +1,5 @@
 //! Clip selection. Native input consumption, not rendering, advances the preview.
-use training_mod_macros::{FrameWindow, MacroRecording, ReplayFrame, ReplaySession, ReplayTrack, MAX_NAME_CHARS};
+use training_mod_macros::{FrameWindow, MacroRecording, MoveStart, MoveStartRules, ReplayFrame, ReplaySession, ReplayTrack, MAX_NAME_CHARS};
 use crate::macro_panel::Pad;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,10 +115,13 @@ pub fn clip_help(view: &ClipView, coarse: &str, chord: &str, pace: i32) -> ClipH
     } else {
         follow
     };
-    let notice = if view.clean_start {
+    let notice = if let Some(start) = view.move_start {
+        format!("Move at {} + {}f setup. Plays from your saved Training position.",
+            start.action_frame, start.action_frame - start.frame)
+    } else if view.clean_start {
         String::new()
     } else {
-        format!("Mid-action start: press {chord}+Y for lead-in, then X to preview.")
+        format!("Press {chord}+Y to snap to the move start, then X to preview.")
     };
     if let Some(error) = &view.error {
         let [primary, follow] = feedback_lines(error);
@@ -208,6 +211,7 @@ pub struct ClipView {
     pub previous_selected: bool,
     pub previous_available: bool,
     pub clean_start: bool,
+    pub move_start: Option<MoveStart>,
     pub quantized: bool,
     pub truncated: bool,
     pub source_name: String,
@@ -223,6 +227,8 @@ pub struct ClipEditor {
     handle: Handle,
     playing: bool,
     clean_statuses: Vec<i32>,
+    move_rules: Option<MoveStartRules>,
+    move_start: Option<MoveStart>,
     source_name: String,
     previous_name: String,
     open_guard: OpenInputGuard,
@@ -242,7 +248,7 @@ impl ClipEditor {
         let mut open_guard = OpenInputGuard::new();
         open_guard.arm();
         Ok(Self { session, previous: None, previous_selected: false, track: 0, window,
-            handle: Handle::Playhead, playing: false, clean_statuses,
+            handle: Handle::Playhead, playing: false, clean_statuses, move_rules: None, move_start: None,
             source_name: "Latest Vault capture".into(), previous_name: "Previous Vault capture".into(),
             open_guard, error: None })
     }
@@ -272,6 +278,11 @@ impl ClipEditor {
         self
     }
 
+    pub fn with_move_rules(mut self, rules: MoveStartRules) -> Self {
+        self.move_rules = Some(rules);
+        self
+    }
+
     pub fn with_previous(mut self, previous: Option<ReplaySession>) -> Self {
         self.previous = previous.and_then(prepare);
         self
@@ -294,7 +305,8 @@ impl ClipEditor {
             cursor: self.window.cursor(), handle: self.handle, playing: self.playing,
             entry: track.entry, fighter_kind: self.sample().start.fighter_kind,
             previous_selected: self.previous_selected, previous_available: self.previous.is_some(),
-            clean_start: self.clean_statuses.contains(&track.frames[self.window.start() as usize].start.status),
+            clean_start: self.move_start.is_some() || self.clean_statuses.contains(&track.frames[self.window.start() as usize].start.status),
+            move_start: self.move_start,
             quantized: track.quantized_analog, truncated: self.session.truncated,
             source_name: self.source_name.clone(), error: self.error.clone() }
     }
@@ -313,12 +325,19 @@ impl ClipEditor {
         self.pause();
         self.window.seek(self.window.start());
         self.handle = Handle::Playhead;
-        match self.track().export(&self.window, "Preview", "13.0.5", &self.clean_statuses) {
+        match self.export_selection("Preview") {
             Ok(recording) => {
                 self.playing = true;
                 ClipEffect::Preview(Box::new(recording))
             }
             Err(error) => ClipEffect::Error(error),
+        }
+    }
+
+    fn export_selection(&self, name: &str) -> Result<MacroRecording, String> {
+        match self.move_start.as_ref() {
+            Some(start) => self.track().export_move(&self.window, name, "13.0.5", start),
+            None => self.track().export(&self.window, name, "13.0.5", &self.clean_statuses),
         }
     }
 
@@ -334,6 +353,7 @@ impl ClipEditor {
         self.track = index;
         self.window = window;
         self.playing = false;
+        self.move_start = None;
     }
 
     pub fn on_action(&mut self, action: ClipAction) -> ClipEffect {
@@ -360,10 +380,12 @@ impl ClipEditor {
                 let add = |value: u32| (i64::from(value) + i64::from(delta)).clamp(0, i64::from(u32::MAX)) as u32;
                 match self.handle {
                     Handle::In => {
+                        self.move_start = None;
                         self.window.set_in(add(self.window.start()));
                         self.window.seek(self.window.start());
                     }
                     Handle::Out => {
+                        self.move_start = self.move_start.filter(|start| add(self.window.end()) > start.action_frame);
                         self.window.set_out(add(self.window.end()));
                         self.window.seek(self.window.end() - 1);
                     }
@@ -391,12 +413,27 @@ impl ClipEditor {
                     self.track = 0;
                     self.window = self.session.tracks[0].window().expect("nonempty capture");
                     self.handle = Handle::Playhead;
+                    self.move_start = None;
                     self.pause();
                 }
             }
             ClipAction::UseLeadIn => {
                 self.pause();
-                if let Some(start) = self.track().previous_clean_start(self.window.start(), &self.clean_statuses) {
+                if let Some(rules) = &self.move_rules {
+                    // Repeated presses keep the same move, rather than treating
+                    // its included setup as a request for the preceding move.
+                    let requested = self.move_start.map_or(self.window.start(), |s| s.action_frame);
+                    match rules.snap(self.track(), requested) {
+                        Ok(start) if start.action_frame < self.window.end() => {
+                            self.window.set_in(start.frame);
+                            self.window.seek(start.frame);
+                            self.handle = Handle::In;
+                            self.move_start = Some(start);
+                        }
+                        Ok(_) => return ClipEffect::Error("Move is outside the crop; move Out later".into()),
+                        Err(error) => return ClipEffect::Error(error),
+                    }
+                } else if let Some(start) = self.track().previous_clean_start(self.window.start(), &self.clean_statuses) {
                     self.window.set_in(start);
                     self.window.seek(start);
                     self.handle = Handle::In;
@@ -407,8 +444,7 @@ impl ClipEditor {
                 let suffix = format!(" P{}", self.track().entry + 1);
                 let prefix: String = self.source_name.chars()
                     .take(MAX_NAME_CHARS.saturating_sub(suffix.chars().count())).collect();
-                return match self.track().export(&self.window, &format!("{prefix}{suffix}"),
-                    "13.0.5", &self.clean_statuses) {
+                return match self.export_selection(&format!("{prefix}{suffix}")) {
                     Ok(recording) => ClipEffect::Export(Box::new(recording)),
                     Err(error) => ClipEffect::Error(error),
                 };
@@ -423,6 +459,54 @@ impl ClipEditor {
 mod tests {
     use super::*;
     use training_mod_macros::{InputFrame, StartState};
+
+    #[test]
+    fn move_snap_previews_and_exports_the_same_local_inputs_and_is_idempotent() {
+        use training_mod_macros::{MoveFamily, MoveStartRules};
+        let mut frames: Vec<_> = (0..40).map(|i| ReplayFrame {
+            input: InputFrame { buttons: i, ..Default::default() },
+            start: StartState { status: match i { 0 => 0, 28..=29 => 6,
+                30..=31 => 7, 32 => 45, 33 => 46, 34..=39 => 47, _ => 486 },
+                ..StartState::neutral(74, 0, 1.0) }, x: 0.0, y: 0.0,
+        }).collect();
+        // Keep original input bytes as the independent crop oracle.
+        frames[27].input.lstick_x = -127;
+        let wanted: Vec<_> = frames[27..38].iter().map(|f| f.input).collect();
+        let mut e = ClipEditor::new(ReplaySession { tracks: vec![ReplayTrack {
+            entry: 1, frames, quantized_analog: false }], truncated: false }, vec![0, 14]).unwrap()
+            .with_move_rules(MoveStartRules { families: vec![MoveFamily { fighter: None,
+                statuses: vec![45, 46, 47], buttons: 0 }], setup: vec![6, 7], ground: 0, air: 2,
+                wait: 0, fall: 14, trigger_buttons: 0 });
+        e.window.set_in(35); e.window.set_out(38);
+        assert!(matches!(e.on_action(ClipAction::TogglePlay), ClipEffect::Error(_)));
+        e.on_action(ClipAction::UseLeadIn);
+        assert_eq!((e.view().start, e.view().end), (27, 38));
+        assert!(clip_help(&e.view(), "ZL/ZR", "ZL", 1).notice.contains("5f setup"));
+        e.on_action(ClipAction::UseLeadIn);
+        assert_eq!(e.view().start, 27);
+        let ClipEffect::Preview(preview) = e.on_action(ClipAction::TogglePlay) else { panic!("preview refused") };
+        assert_eq!(preview.frames, wanted);
+        assert_eq!(preview.start.status, 0);
+        e.preview_progress(6); assert_eq!(e.view().cursor, 32);
+        e.preview_progress(11); assert!(!e.view().playing);
+        let ClipEffect::Export(saved) = e.on_action(ClipAction::Confirm) else { panic!("save refused") };
+        assert_eq!(saved.frames, preview.frames);
+        assert_eq!(saved.start, preview.start);
+        e.on_action(ClipAction::SelectIn);
+        e.on_action(ClipAction::Nudge(1));
+        assert!(e.view().move_start.is_none());
+        assert!(matches!(e.on_action(ClipAction::TogglePlay), ClipEffect::Error(_)));
+    }
+
+    #[test]
+    fn failed_move_snap_does_not_replace_the_users_in_point() {
+        let mut e = editor().with_move_rules(training_mod_macros::MoveStartRules {
+            families: vec![], setup: vec![], ground: 0, air: 2,
+            wait: 0, fall: 14, trigger_buttons: 0 });
+        e.window.set_in(4);
+        assert!(matches!(e.on_action(ClipAction::UseLeadIn), ClipEffect::Error(_)));
+        assert_eq!(e.window.start(), 4);
+    }
     #[test]
     fn close_owns_first_poll_without_a_draw_and_retains_short_press_grace() {
         let mut guard = CloseInputGuard::new();
@@ -617,7 +701,7 @@ mod tests {
         assert_eq!(e.view().start, 4);
         let feedback = clip_help(&e.view(), "ZL/ZR", "ZL", 0);
         assert!(feedback.primary.contains("mid-action"));
-        assert!(!feedback.follow.is_empty());
+        assert_eq!(feedback.primary, "In is mid-action. Snap to a move start before previewing or saving.");
         assert!(feedback.primary.chars().count() <= 75 && feedback.follow.chars().count() <= 75);
         assert!(feedback.notice.contains("ZL+Y") && feedback.notice.contains("X to preview"));
         e.on_action(ClipAction::UseLeadIn);

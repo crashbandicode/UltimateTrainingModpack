@@ -459,10 +459,12 @@ pub unsafe fn draw(root: &Pane, view: &ClipView, status: &str) {
         ),
         CYAN,
     );
-    let clean_label = if view.clean_start {
+    let clean_label = if view.move_start.is_some() {
+        "Move start: aligned".into()
+    } else if view.clean_start {
         "Clean start: valid".into()
     } else {
-        format!("Needs {chord}+Y lead-in")
+        format!("{chord}+Y: snap to move")
     };
     saved.label(
         root,
@@ -476,14 +478,14 @@ pub unsafe fn draw(root: &Pane, view: &ClipView, status: &str) {
     saved.label(root, 11, [0.0, -449.0, WIDTH], &help.follow, WHITE);
     saved.label(root, 13, [0.0, -484.0, WIDTH], &help.controls, MUTED);
     let needs_clean_start = !help.notice.is_empty();
-    let notice = if needs_clean_start {
-        help.notice
-    } else if !status.is_empty() {
+    let notice = if !status.is_empty() {
         status.to_owned()
+    } else if needs_clean_start {
+        help.notice
     } else if view.playing {
         "Y restarts the preview from the saved setup.".to_owned()
     } else {
-        let mut extra = format!("{chord}+Y jumps to the previous clean start.");
+        let mut extra = format!("{chord}+Y snaps In to a nearby move start.");
         if view.previous_available {
             extra = format!("{chord}+X switches capture. {extra}");
         }

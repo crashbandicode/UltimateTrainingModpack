@@ -36,6 +36,7 @@ mod capture_toggle;
 mod library;
 mod live_capture;
 mod live_frame;
+mod move_start;
 mod recording;
 mod replay;
 mod shared_capture;
@@ -56,6 +57,7 @@ pub use recording::{
 };
 pub use window::{timestamp, FrameSnapshot, FrameWindow, Step};
 pub use replay::{ReplayFrame, ReplaySession, ReplayTrack};
+pub use move_start::{MoveFamily, MoveStart, MoveStartRules, MAX_MOVE_SETUP};
 pub use shared_capture::SharedCaptureArchive;
 
 #[cfg(test)]

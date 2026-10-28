@@ -200,7 +200,8 @@ fn open_capture(id: &str, revision: u64) -> Result<(), String> {
             .ok_or_else(||"Capture track is absent".to_string())?;
         session.mii_for_track(miis,entry as i32,kind).map_err(str::to_string)
     });
-    let result = ClipEditor::new(session, clean_statuses());
+    let result = ClipEditor::new(session, clean_statuses())
+        .map(|editor| editor.with_move_rules(crate::replay_move_start::rules()));
     match result {
         Ok(mut editor) => {
             // Do not take preview/named-UI locks under BROWSER: their visibility

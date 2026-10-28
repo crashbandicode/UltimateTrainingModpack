@@ -52,7 +52,7 @@ Use the practice tools while waiting for a match; your real match still uses you
 
 ![The Training CPU playing the opponent's captured P2 Hero inputs.](docs/named-macros/images/playback-p2.gif)
 
-Save a replay, pick either player's captured inputs, and trim a sequence for the Training CPU to play ([walkthrough](docs/named-macros.md)). Starting partway through an animation is not yet supported; **ZL+Y** moves the start to an earlier idle or falling frame.
+Save a replay, pick either player's captured inputs, and trim a sequence for the Training CPU to play ([walkthrough](docs/named-macros.md)). **ZL+Y** snaps to the move's start and includes its short setup; existing replay captures work too.
 
 ### Practice stages
 

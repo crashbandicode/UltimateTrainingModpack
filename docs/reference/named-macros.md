@@ -112,7 +112,7 @@ capture off, or a replay without a companion. A live match saved with capture on
 does not need it. It observes the CPU while the native replay runs.
 
 1. Play the replay through **Vault → Replays → Replay Data → Play**, only through
-   the section you want plus enough lead-in for an idle or falling start.
+   the section you want, including the start of the move and its setup.
 2. Quit with the game's displayed combination and enter Training **without
    restarting**. The latest two observed timelines stay in memory for that game
    process, so they can be reused without replaying.
@@ -129,15 +129,17 @@ does not need it. It observes the CPU while the native replay runs.
 | **X** | Play the selection from the saved setup, or stop and restore it. A refusal is written in the editor's help strip |
 | **Y** | Restart from the saved setup |
 | **ZL + X** | Switch latest / previous capture if Vault looped (Z as modifier on GameCube) |
-| **ZL + Y** | Move In back to the previous idle or falling start. A mid-action In needs this before X or A |
+| **ZL + Y** | Snap In to the move's initiating inputs, including its short movement/jump setup |
 | **A** | Name and save with the system keyboard; cancelling keeps the crop |
 | **B** | Close; an already-started fighter install finishes |
 
 - The crop is `[In, Out)`: it includes In, excludes Out and holds at least one
   input. Handles cannot cross. An unsupported start is rejected without moving In.
-- A mid-action In shows `Needs ZL+Y lead-in` and the line
-  `Mid-action start: press ZL+Y for lead-in, then X to preview.` Preview and
-  save refusals go in the editor's two-line help strip, not in the narrow
+- A mid-action In asks for **ZL+Y**. Snapping groups startup, charge and release
+  into one move and includes up to two seconds of nearby setup. On setup frames,
+  it selects the upcoming move. If no nearby move or trigger was captured, In
+  stays unchanged and the editor explains why. Existing captures need no conversion.
+  Preview and save refusals go in the editor's two-line help strip, not in the narrow
   notification. If a running preview stops on an error, its status reads
   `Preview stopped. Fix the issue above, then press X.`
 - During a fighter load, P1 input is isolated and the CPU must settle to grounded
@@ -162,6 +164,11 @@ reports when it rounded them. Capture reads the game's native simulation rather
 than treating the replay file's `FRAM` records as gameplay frames. Never write
 the upstream `clamped_rstick` fields: native review identified those bytes as
 rumble state.
+
+Snapped clips restart from neutral and replay the captured setup inputs. A
+buffered attack can fire earlier than it did during the original move's endlag;
+hits and spacing depend on your saved Training position. Snapping does not
+restore an animation halfway through, hitstun, or the original opponent's state.
 
 ## Direct file import
 

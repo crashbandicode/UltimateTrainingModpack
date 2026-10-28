@@ -1,6 +1,6 @@
 # Image provenance
 
-The images come from emulator run150 on 2026-10-27. That run used the installed NRO with
+The binding and restore images come from emulator run150 on 2026-10-27. That run used the installed NRO with
 SHA-256 `9d537cd543c04d380cc616abeed047632c366ddac68aeb57e026e974693cc8ba` in Eden
 `40b6b78a53`, with Mii Gunner as P1 against a Duck Hunt CPU on the Training stage. The
 local archive copy is `runtime150/collected150/live/`, and its source hashes match.
@@ -27,3 +27,24 @@ The walkthrough and README use the animated examples. The older stills remain
 available as reference images.
 
 [Back to Setup Library](../setup-library.md)
+
+## Naming and saving (run161)
+
+[save.gif](save.gif) shows **Save Setup to Library → keyboard → Gunner spacing**
+in the library. The keyboard text is entered through Eden's normal UI and
+confirmed with its OK button. The setup file persists into the fresh process
+used for the final library view.
+
+Source: `evidence-final161.zip/runtime/run-first/setup-save-gif161/frames`, frames
+0–89, followed by `evidence-final161.zip/runtime/run/setup-library-ending161`, frames 0–29.
+One straight cut removes unrelated navigation between saving and the later
+library view. Both segments play at their captured 10 fps: 12 seconds total.
+The 1920 × 1108 game view loses only 14-pixel top/bottom margins; its 1920 × 1080
+viewport and the 2560 × 1440 native keyboard are downscaled to 1280 × 720.
+No upscaling, annotations or replacement UI.
+
+Naming used C91 pre-label NRO `fb0fcb45` and the library view used final C91
+`5ddc0b34`; the setup implementation is identical. Eden commit `40b6b78a53`.
+The JSON is 1,104 bytes and holds Mr. Game & Watch versus the exact armored Mii
+Gunner. GIF SHA-256
+`6b879852856257d0a6a6f997c2efa668f6890923e4cacff76865361aee00647b`.

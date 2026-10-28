@@ -4,8 +4,8 @@ Save a match, open it in Training, pick either captured player, crop the part
 you want, and let the Training CPU play those inputs. Pick your opponent to
 practice against their inputs.
 
-Kirby is our player (P1) and Hero is the opponent (P2) in the saved match used
-throughout this page:
+The opening examples use Kirby (P1) against Hero (P2). The middle-crop example
+below uses an older saved match against an armored Mii Gunner:
 
 ![The opening exchange between Kirby P1 and Hero P2.](named-macros/images/match.gif)
 
@@ -35,7 +35,9 @@ replay in the Vault.
 In Training, open **Input Recording → Replay Window → Replay Captures**. Each
 entry is the replay name and its length in frames, here **Replay · 8299f**.
 Press **A** to open it. Saved captures stay available after a restart, even with
-capture turned off.
+capture turned off. For an older replay without a capture, play the desired
+section once in the Vault, then open Replay Window without restarting Smash.
+[Vault fallback](reference/named-macros.md#vault-fallback) explains the steps.
 
 ![Replay Captures, with Replay · 8299f selected.](named-macros/images/replay-list.png)
 
@@ -52,11 +54,12 @@ controllers.
 Press **L** for the start or **R** for the end, then hold **Left** or **Right**;
 the step speeds up the longer you hold. Hold **ZL** or **ZR** to start fast.
 
-If In lands mid-action, the editor shows **Needs ZL+Y lead-in**. X will not
-preview it. Press **ZL+Y** to move In back to the last idle or falling start,
-then press **X**.
+If In lands mid-action, press **ZL+Y** to snap to that move's start and include
+its short setup, such as a jump before an aerial. Existing captures work too.
+Here the Gunner crop snaps **4531 → 4470**, then **X** plays the nearby forward
+smash. It does not return to the match opening.
 
-![The In point moving along the capture.](named-macros/images/crop.gif)
+![Snapping a middle-of-match Gunner crop and previewing its forward smash to completion.](named-macros/images/move-snap.gif)
 
 ## Preview
 

@@ -99,6 +99,7 @@ mod console_map_probe;
 mod console_load_probe;
 mod live_replay;
 mod replay_capture;
+mod replay_move_start;
 mod replay_preview;
 mod replay_store;
 mod native_keyboard;

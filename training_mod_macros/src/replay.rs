@@ -1,6 +1,6 @@
 //! Value-only replay observations. The runtime supplies real simulation samples;
 //! this module neither decodes proprietary replay bytes nor invents action state.
-use crate::{FrameSnapshot, FrameWindow, InputFrame, MacroRecording, StartState};
+use crate::{FrameWindow, InputFrame, MacroRecording, MoveStart, StartState};
 
 /// Input and start-context observation. Native simulation provides the preview;
 /// no animation/pose samples are retained in the per-frame capture buffer.
@@ -62,16 +62,35 @@ impl ReplayTrack {
                   clean_statuses: &[i32]) -> Result<MacroRecording, String> {
         let first = self.frames.get(window.start() as usize).ok_or("No frame at In")?;
         if !clean_statuses.contains(&first.start.status) {
-            return Err("In is mid-action. Choose an idle/falling frame or move In earlier to include the initiating inputs.".into());
+            return Err("In is mid-action. Snap to a move start before previewing or saving.".into());
         }
+        self.export_inputs(window, name, game_version, first.start)
+    }
+
+    /// Explicitly restart a snapped input sequence from neutral. No source frame
+    /// is rewritten and no animation/work-state restore is claimed. Ordinary
+    /// macro JSON already persists this context and the exact selected inputs.
+    pub fn export_move(&self, window: &FrameWindow, name: &str, game_version: &str,
+        start: &MoveStart) -> Result<MacroRecording, String> {
+        if start.frame != window.start() || start.action_frame < start.frame
+            || start.action_frame >= window.end()
+            || self.frames.get(start.action_frame as usize).is_none_or(|frame|
+                frame.start.status != start.action_status || frame.start.fighter_kind != start.context.fighter_kind) {
+            return Err("Move alignment changed; snap the start again".into());
+        }
+        self.export_inputs(window, name, game_version, start.context)
+    }
+
+    fn export_inputs(&self, window: &FrameWindow, name: &str, game_version: &str,
+        start: StartState) -> Result<MacroRecording, String> {
         let range = window.range();
         let selected = self.frames.get(range.start as usize..range.end as usize)
             .ok_or("Window exceeds captured replay")?;
-        if selected.iter().any(|f| f.start.fighter_kind != first.start.fighter_kind) {
+        if selected.iter().any(|f| f.start.fighter_kind != start.fighter_kind) {
             return Err("Window crosses a fighter transformation; select one fighter form.".into());
         }
-        let inputs: Vec<InputFrame> = self.frames.iter().map(|f| f.input).collect();
-        window.crop(&inputs, &FrameSnapshot { frame: window.start(), state: first.start }, name, game_version)
+        let inputs: Vec<InputFrame> = selected.iter().map(|f| f.input).collect();
+        MacroRecording::new(name, game_version, start, inputs)
             .map_err(|e| e.to_string())
     }
 }

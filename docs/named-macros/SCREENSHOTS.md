@@ -1,10 +1,32 @@
 # Image provenance
 
-## Current walkthrough
+## Move-start snapping (run161)
 
-The [walkthrough](../named-macros.md) embeds seven verified game captures added on
+[move-snap.gif](images/move-snap.gif) shows an existing armored Mii Gunner replay
+capture: **In 4531 → ZL + Y → In 4470**, with Out 4615 unchanged. **X** plays
+those 145 inputs; the final notice confirms completion. This is a nearby move
+start with its short setup, not the beginning of the replay or a restored
+mid-animation pose.
+
+Recorded on Yoga in Eden `40b6b78a53`, C91 NRO SHA-256
+`5ddc0b344b6d32e2dcecde71afd8645aba66776ca488bdee64bb58f00b898431`.
+The retained capture has 12,692 frames, P2 Gunner, SHA-256
+`2ef198ba9f528f68cb70c64c7fa1bbf1b23f55996cbce08003d3ea930be56384`.
+Local evidence: `replay-move-start161/runtime161-final/gunner-snap-final161/`
+and `MOVE-GIF-RESULT.json`. A separate fresh-process check reloaded the saved
+145-input macro and played the Gunner attack again.
+
+Processing: 100 consecutive frames at 10 fps, 10 seconds. Crop 14 pixels from
+top and bottom of the 1920 × 1108 render window, then downscale to 1280 × 720.
+No game-pixel edits or annotations. GIF SHA-256
+`863c926ec3d0d51a121f959ebd9765b4661e5064c12fbb7ec6e7da6887276824`.
+
+## Earlier Kirby/Hero walkthrough
+
+The [walkthrough](../named-macros.md) retains six of seven verified game captures added on
 2026-10-14 (commits `d3f2ae1` and `6fd5b3a`): `match.gif`, `replay-list.png`,
 `fighter.gif`, `crop.gif`, `playback.gif`, `playback-p2.gif` and `naming.gif`.
+The older `crop.gif` remains available; the walkthrough now uses the Gunner move-start example below.
 They show one saved Kirby (P1) versus Hero (P2) match, its capture, and the
 **In 0 / Out 449** crop played back on the Training CPU for each player. Their
 capture identities are not recorded in a repository manifest; the commit
