@@ -17,7 +17,7 @@ use crate::common::{
 use crate::training::{self, lobby};
 use training_mod_consts::character_forms::{
     configured_forms, cycle_position, next_cycle, next_from_original, EntryState, Forms,
-    PresentedReceipt,
+    PresentedReceipt, Rebuild,
 };
 
 #[path = "native_service.rs"]
@@ -144,6 +144,9 @@ static OWNED_BUTTONS: AtomicU32 = AtomicU32::new(0);
 // Reloads retain the entry, so a practice replacement must not overwrite this.
 static ORIGINAL_KINDS: [AtomicU32; 2] = [AtomicU32::new(u32::MAX), AtomicU32::new(u32::MAX)];
 static SOLO_ACTIVE: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
+/// Set by `allow_portrait` when native reset rebuilt a role's Mii publication. Value-only:
+/// that role's next service callback revalidates the receipt and body, then republishes.
+static REBUILT: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
 static STATES: [Mutex<State>; 2] = [Mutex::new(State::empty()), Mutex::new(State::empty())];
 static WAITING_MEMORY: Mutex<WaitingSession<WaitingValue>> = Mutex::new(WaitingSession::empty());
 type WaitingValue=training_mod_consts::mii::remembered::Value<TrioFighter,Forms>;
@@ -696,6 +699,7 @@ pub fn scene_changed(mode: game_mode::Mode) {
         state.loaded = None;
         state.observed = None;
         state.presented.retire();
+        REBUILT[role as usize].store(false, Ordering::Release);
         if let Some(active) = state.active.as_mut() {
             active.departed = true;
             trace!("[CharacterRoster] scene departure during reload owner={} target=0x{:x} phase=0x{:x}; native teardown owns cancellation",
@@ -856,6 +860,7 @@ unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8) {
     sources::service(ctx, entry, owner);
     #[cfg(feature="mii-hud-portrait-alpha")]
     mii_hud_portrait::service(entry, owner);
+    republish_after_rebuild(entry, owner);
     #[cfg(feature = "source-owner-probe")]
     if owner == 0 {
         source_owner_probe::observe_rules();
@@ -1202,6 +1207,7 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
     };
     state.loaded = None;
     state.presented.retire();
+    REBUILT[role as usize].store(false, Ordering::Release);
     state.active = Some(active);
     drop(state);
     // 653240 synchronously copies this descriptor. Preserve all native role,
@@ -1314,6 +1320,9 @@ pub unsafe fn on_destroy(entry: *const u8) {
         state.cursor = None;
     }
     state.presented.retire_entry(entry as usize);
+    if state.observed.is_some_and(|(identity, _)| identity == entry as usize) {
+        REBUILT[role as usize].store(false, Ordering::Release);
+    }
     if state
         .observed
         .is_some_and(|(identity, _)| identity == entry as usize)
@@ -1390,6 +1399,8 @@ unsafe fn publish_mii_presentation(
     // Never `loaded`: that receipt gates saved-CPU idleness. Native reset admits
     // this publication through the presentation-only receipt instead.
     state.presented.publish(entry as usize, owner, kind);
+    // This publication supersedes a reset deferred during its INSTALL.
+    REBUILT[role as usize].store(false, Ordering::Release);
     drop(state);
     role.sync_selection(fighter);
     #[cfg(feature="mii-hud-portrait-alpha")]
@@ -1420,10 +1431,12 @@ fn policy_rejected_hud(accepted: bool) -> bool {
         == mii_hud_portrait_policy::HudStep::RefreshFallback
 }
 
-/// Native reset already owns the HUD lookup. Admit our fresh, active fighter body
-/// into its existing presentation helper; never retain a HUD pane reference.
+/// Native reset already owns the HUD lookup. Admit our fresh, active ordinary fighter
+/// body into its existing presentation helper; never retain a HUD pane reference. A Mii
+/// publication keeps native's own rebuild and is republished on the service callback.
+/// Both native reset hooks arrive here: one short roster lock, no native calls.
 pub unsafe fn allow_portrait(ctx: &mut InlineCtx, entry_id: u64, entry: *const u8) {
-    if busy() || entry_id > 1 {
+    if entry_id > 1 {
         return;
     }
     let role = if entry_id == 0 {
@@ -1431,19 +1444,74 @@ pub unsafe fn allow_portrait(ctx: &mut InlineCtx, entry_id: u64, entry: *const u
     } else {
         Role::Cpu
     };
+    if busy() {
+        // The caller already qualified native Training. INSTALL may be inside a
+        // native call made with the roster lock held: record no pointers and take
+        // no lock here. The service callback evaluates the current receipt later.
+        REBUILT[role as usize].store(true, Ordering::Release);
+        return;
+    }
     if scope(role).is_none_or(|s| s.mode != 0x04040000) {
         return;
     }
-    let admitted = {
+    let rebuild = {
         let state = state_for(role).lock().unwrap();
         state
             .presented
-            .admit(state.loaded, entry as usize, ctx.registers[0].x() as u32)
+            .rebuild(state.loaded, entry as usize, ctx.registers[0].x() as u32)
     };
-    if let Some((_, owner, kind)) = admitted {
-        if active_body(entry, owner, kind) {
-            ctx.registers[8].set_x(0);
+    match rebuild {
+        Rebuild::Admit((_, owner, kind)) => {
+            if active_body(entry, owner, kind) {
+                ctx.registers[8].set_x(0);
+            }
         }
+        Rebuild::Republish(_) => REBUILT[role as usize].store(true, Ordering::Release),
+        Rebuild::Native => {}
+    }
+}
+
+/// Native reset rebuilt the original CSS portrait over this role's live Mii publication.
+/// On the service callback, after `mii_hud_portrait::service`: revalidate the receipt and
+/// the live body, then republish the live kind once. The exact lifecycle restores its own
+/// texture. Global INSTALL activity can belong to another role or a helper: defer
+/// consumption while it is busy, rather than lose this role's reset notification.
+unsafe fn republish_after_rebuild(entry: *mut u8, owner: u32) {
+    let role = match owner {
+        0 => Role::Player,
+        1 => Role::Cpu,
+        _ => return,
+    };
+    if !REBUILT[role as usize].load(Ordering::Acquire) || busy() {
+        return;
+    }
+    if scope(role).is_none_or(|s| s.owner != owner || s.mode != 0x04040000) {
+        REBUILT[role as usize].store(false, Ordering::Release);
+        return;
+    }
+    let Some(live) = ready_kind(entry, owner) else { return; };
+    let rebuild = {
+        let state = state_for(role).lock().unwrap();
+        // Temporary loading and a coexisting preview entry must not consume the
+        // visible owner's notification. Its publication or destruction retires it.
+        if state.active.is_some() || state.pending.is_some()
+            || state.observed.is_some_and(|(identity, _)| identity != entry as usize)
+        {
+            return;
+        }
+        state.presented.rebuild(state.loaded, entry as usize, live)
+    };
+    REBUILT[role as usize].store(false, Ordering::Release);
+    let Rebuild::Republish((_, published, kind)) = rebuild else { return; };
+    if published != owner {
+        return;
+    }
+    #[cfg(feature = "mii-hud-portrait-alpha")]
+    mii_hud_portrait::represent(entry, owner, kind);
+    #[cfg(not(feature = "mii-hud-portrait-alpha"))]
+    {
+        refresh_hud(entry, owner, kind);
+        trace!("[CharacterRoster] native reset: Mii kind 0x{:x} republished owner={}", kind, owner);
     }
 }
 

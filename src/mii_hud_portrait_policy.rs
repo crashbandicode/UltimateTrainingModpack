@@ -656,6 +656,177 @@ pub const fn service_bind_after_wait(bind_refused: bool, tick_bound: bool) -> bo
     !bind_refused && !tick_bound
 }
 
+/// An exact portrait this module bound into a Training HUD slot: the publication it
+/// presents and its retained registration. Values only; identities are compared.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shown { pub entry: usize, pub physical: u32, pub kind: u32, pub generation: u64, pub binding: Binding }
+
+/// The live Mii publication a native presentation rebuild (Training reset) found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Live { pub entry: usize, pub physical: u32, pub kind: u32, pub generation: u64 }
+
+impl Shown {
+    pub fn presents(self, live: Live) -> bool {
+        self.entry == live.entry && self.physical == live.physical
+            && self.kind == live.kind && self.generation == live.generation
+    }
+}
+
+/// After native reset rebuilt the original CSS portrait over a live Mii publication.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Represent {
+    /// A pending job still withholds this owner's event; it publishes and binds itself.
+    Defer,
+    /// Republish the live kind (event 0x1d) only; no retained exact texture applies.
+    Paint,
+    /// Republish, then rebind the retained texture once that event's assets settle.
+    Rebind(Shown),
+}
+
+/// `pending_withheld` is None without a job, else whether its event is still withheld.
+/// `retained` means fresh reads found the shown binding still this owner's bound record,
+/// owned, and registered at `table[0x12+row]`. Nothing here renders or leases a helper.
+pub fn represent(pending_withheld: Option<bool>, shown: Option<Shown>, live: Live, retained: bool, halted: bool) -> Represent {
+    match pending_withheld {
+        Some(true) => Represent::Defer,
+        Some(false) => Represent::Paint,
+        None => match shown {
+            Some(shown) if shown.presents(live) && retained && !halted => Represent::Rebind(shown),
+            _ => Represent::Paint,
+        },
+    }
+}
+
+/// Service callbacks a rebind waits for native assets and its qualified source tick.
+pub const REBIND_SETTLE_CALLBACKS: u16 = 1200;
+
+/// One armed rebind. `key` is the event key read right after the republish.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RebindWait { pub shown: Shown, pub key: u64, pub waits: u16 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RebindStep { Wait, Bind(Binding), Drop(&'static str) }
+
+impl RebindWait {
+    /// One service callback of the shown owner. `live` is None when its body, scope or
+    /// generation no longer qualifies. Only the retained binding is ever bound.
+    pub fn step(&mut self, live: Option<Live>, settled: bool, retained: bool) -> RebindStep {
+        if !live.is_some_and(|live| self.shown.presents(live)) {
+            return RebindStep::Drop("owner body, scope or generation changed before the rebind");
+        }
+        if !settled {
+            if self.waits >= REBIND_SETTLE_CALLBACKS {
+                return RebindStep::Drop("native HUD rebind did not reach a qualified tick; exact texture left unbound");
+            }
+            self.waits += 1;
+            return RebindStep::Wait;
+        }
+        if !retained {
+            return RebindStep::Drop("retained exact texture is no longer registered or bound");
+        }
+        RebindStep::Bind(self.shown.binding)
+    }
+}
+
+#[cfg(test)]
+mod rebuild_tests {
+    use super::{represent, Binding, Live, Ownership, RebindStep, RebindWait, Represent, Request, Shown, REBIND_SETTLE_CALLBACKS};
+
+    // Training CPU after a CSS (Random) Dr. Mario start and an exact replay Gunner.
+    const CPU_ENTRY: usize = 0x11aed3e000;
+    const GUNNER: u32 = 0x4a;
+
+    fn binding(row: u32, sub: u32) -> Binding { Binding { request: Request { row, sub }, descriptor: 0x7000 + row as usize * 0x100 + sub as usize } }
+    fn shown(kind: u32) -> Shown { Shown { entry: CPU_ENTRY, physical: 1, kind, generation: 6, binding: binding(3, 7) } }
+    fn live(kind: u32) -> Live { Live { entry: CPU_ENTRY, physical: 1, kind, generation: 6 } }
+
+    #[test]
+    fn dr_mario_to_exact_gunner_native_reset_rebinds_the_retained_texture_every_time() {
+        let shown = shown(GUNNER);
+        for _ in 0..3 {
+            // Each L+R+A: republish the live Gunner, then rebind the same texture. No render.
+            assert_eq!(represent(None, Some(shown), live(GUNNER), true, false), Represent::Rebind(shown));
+            let mut wait = RebindWait { shown, key: (0xc1 << 56) | 0x4a, waits: 0 };
+            assert_eq!(wait.step(Some(live(GUNNER)), false, true), RebindStep::Wait);
+            assert_eq!(wait.step(Some(live(GUNNER)), true, true), RebindStep::Bind(shown.binding));
+        }
+    }
+
+    #[test]
+    fn every_mii_class_rebinds_only_its_own_publication() {
+        for class in 0x48..=0x4a {
+            let shown = shown(class);
+            assert_eq!(represent(None, Some(shown), live(class), true, false), Represent::Rebind(shown));
+            let other = if class == 0x4a { 0x48 } else { class + 1 };
+            assert_eq!(represent(None, Some(shown), live(other), true, false), Represent::Paint);
+        }
+    }
+
+    #[test]
+    fn a_stale_entry_owner_or_generation_only_republishes_the_kind() {
+        let shown = shown(GUNNER);
+        let stale = [
+            Live { entry: CPU_ENTRY + 0x6000, ..live(GUNNER) },
+            Live { physical: 0, ..live(GUNNER) },
+            Live { generation: 7, ..live(GUNNER) },
+        ];
+        for found in stale {
+            assert_eq!(represent(None, Some(shown), found, true, false), Represent::Paint);
+            let mut wait = RebindWait { shown, key: 1, waits: 0 };
+            assert!(matches!(wait.step(Some(found), true, true), RebindStep::Drop(_)));
+        }
+    }
+
+    #[test]
+    fn a_pending_job_owns_its_publication() {
+        let shown = shown(GUNNER);
+        // A withheld job publishes and binds after its render proof.
+        assert_eq!(represent(Some(true), Some(shown), live(GUNNER), true, false), Represent::Defer);
+        // An already published job is repainted; its own bind follows.
+        assert_eq!(represent(Some(false), Some(shown), live(GUNNER), true, false), Represent::Paint);
+    }
+
+    #[test]
+    fn a_generic_fallback_or_lost_texture_republishes_the_kind_only() {
+        // Never bound (budget/refusal fallback): no shown record.
+        assert_eq!(represent(None, None, live(GUNNER), false, false), Represent::Paint);
+        // Batch teardown, an explicit unbind or a lost registration clears `retained`.
+        assert_eq!(represent(None, Some(shown(GUNNER)), live(GUNNER), false, false), Represent::Paint);
+        // A halted scene never rebinds.
+        assert_eq!(represent(None, Some(shown(GUNNER)), live(GUNNER), true, true), Represent::Paint);
+        // Lost between arming and the settled bind.
+        let mut wait = RebindWait { shown: shown(GUNNER), key: 1, waits: 0 };
+        assert!(matches!(wait.step(Some(live(GUNNER)), true, false), RebindStep::Drop(_)));
+    }
+
+    #[test]
+    fn departure_or_unsettled_assets_end_the_rebind_without_binding() {
+        let mut departed = RebindWait { shown: shown(GUNNER), key: 1, waits: 0 };
+        assert!(matches!(departed.step(None, true, true), RebindStep::Drop(_)));
+        let mut wait = RebindWait { shown: shown(GUNNER), key: 1, waits: 0 };
+        for _ in 0..REBIND_SETTLE_CALLBACKS {
+            assert_eq!(wait.step(Some(live(GUNNER)), false, true), RebindStep::Wait);
+        }
+        assert!(matches!(wait.step(Some(live(GUNNER)), false, true), RebindStep::Drop(_)));
+    }
+
+    #[test]
+    fn a_rebind_reuses_the_bound_record_and_keeps_both_owners_rows() {
+        let mut own = Ownership::new();
+        let (p1, cpu) = (binding(2, 7), binding(3, 8));
+        own.bound(0, p1);
+        own.bound(1, cpu);
+        let before = (own.bound, own.owned_count());
+        let mut wait = RebindWait { shown: Shown { binding: cpu, ..shown(GUNNER) }, key: 1, waits: 0 };
+        let RebindStep::Bind(rebound) = wait.step(Some(live(GUNNER)), true, true) else { panic!("expected a bind") };
+        assert_eq!(rebound, cpu);
+        own.bound(1, rebound);
+        assert_eq!((own.bound, own.owned_count()), before);
+        assert!(super::row_free_for(&own.bound, 1, cpu.request.row));
+        assert!(!super::row_free_for(&own.bound, 1, p1.request.row));
+    }
+}
+
 #[cfg(test)]
 mod hud_asset_tests {
     use super::{

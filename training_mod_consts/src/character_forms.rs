@@ -200,21 +200,38 @@ pub fn next_cycle(
 /// compared only, never dereferenced.
 pub type Receipt = (usize, u32, u32);
 
-/// Native reset rebuilds the original CSS portrait unless it admits the live body.
-/// The ordinary loader's `loaded` receipt also gates saved-CPU idleness, so an
-/// accepted Mii-adapter publication (named or replay fighter switch) never writes
-/// it. This presentation-only receipt admits that adapter's ordinary fighter
-/// instead. A Mii class body is never recorded: its bust presentation belongs to
-/// the exact-portrait lifecycle.
+/// What a native presentation rebuild (Training reset) does for the live body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rebuild {
+    /// Native reset presents the live ordinary fighter itself.
+    Admit(Receipt),
+    /// Native reset keeps its own rebuild. The next service callback republishes
+    /// this Mii publication, and the exact-portrait lifecycle restores its texture.
+    Republish(Receipt),
+    /// Not a plugin publication: native reset rebuilds the original CSS portrait.
+    Native,
+}
+
+fn mii_class(kind: u32) -> bool {
+    (0x48..=0x4a).contains(&kind)
+}
+
+/// Native reset rebuilds the original CSS portrait unless the plugin restores the live
+/// body. The ordinary loader's `loaded` receipt also gates saved-CPU idleness, so an
+/// accepted Mii-adapter publication (named or replay fighter switch, saved or exact
+/// Mii) never writes it. This presentation-only receipt records that publication
+/// instead. An ordinary fighter is admitted into native reset. A Mii class body is
+/// never admitted, because its bust belongs to the exact-portrait lifecycle; it is
+/// republished after native reset instead.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PresentedReceipt(Option<Receipt>);
 
 impl PresentedReceipt {
     pub const NONE: Self = Self(None);
 
-    /// An accepted adapter publication replaces the previous receipt; a Mii class retires it.
+    /// An accepted adapter publication replaces the previous receipt.
     pub fn publish(&mut self, entry: usize, owner: u32, kind: u32) {
-        self.0 = (!(0x48..=0x4a).contains(&kind)).then_some((entry, owner, kind));
+        self.0 = Some((entry, owner, kind));
     }
 
     /// A newly observed ready kind. The same entry and owner carry the receipt to
@@ -241,10 +258,27 @@ impl PresentedReceipt {
 
     /// The receipt native reset may admit for `entry` presenting `kind`. A matching
     /// loader receipt wins; a stale one cannot hide a later adapter publication,
-    /// which never updates `loaded`. The caller still verifies the live body.
+    /// which never updates `loaded`. A Mii class publication is never admitted.
+    /// The caller still verifies the live body.
     pub fn admit(self, loaded: Option<Receipt>, entry: usize, kind: u32) -> Option<Receipt> {
         let matches = move |receipt: &Receipt| receipt.0 == entry && receipt.2 == kind;
-        loaded.filter(matches).or_else(|| self.0.filter(matches))
+        loaded
+            .filter(matches)
+            .or_else(|| self.0.filter(|receipt| matches(receipt) && !mii_class(receipt.2)))
+    }
+
+    /// The single native-rebuild decision for `entry` presenting `kind`, from both
+    /// native reset hooks. The caller verifies the live body before acting on it.
+    pub fn rebuild(self, loaded: Option<Receipt>, entry: usize, kind: u32) -> Rebuild {
+        if let Some(receipt) = self.admit(loaded, entry, kind) {
+            return Rebuild::Admit(receipt);
+        }
+        match self.0 {
+            Some(receipt) if receipt.0 == entry && receipt.2 == kind && mii_class(kind) => {
+                Rebuild::Republish(receipt)
+            }
+            _ => Rebuild::Native,
+        }
     }
 }
 
@@ -621,20 +655,67 @@ mod tests {
     }
 
     #[test]
-    fn mii_class_bodies_never_hold_a_presented_receipt() {
+    fn mii_class_publications_are_republished_never_admitted() {
         let mut receipt = PresentedReceipt::NONE;
         for class in 0x48..=0x4a {
             receipt.publish(CPU_ENTRY, 1, class);
             assert_eq!(receipt.admit(None, CPU_ENTRY, class), None);
+            assert_eq!(
+                receipt.rebuild(None, CPU_ENTRY, class),
+                Rebuild::Republish((CPU_ENTRY, 1, class))
+            );
+            // Another class on the same entry is not this publication.
+            let other = if class == 0x4a { 0x48 } else { class + 1 };
+            assert_eq!(receipt.rebuild(None, CPU_ENTRY, other), Rebuild::Native);
         }
-        // An exact Mii published after Fox retires the Fox receipt.
+        // An exact Mii published after Fox supersedes the Fox receipt.
         receipt.publish(CPU_ENTRY, 1, FOX);
+        assert_eq!(receipt.rebuild(None, CPU_ENTRY, FOX), Rebuild::Admit((CPU_ENTRY, 1, FOX)));
         receipt.publish(CPU_ENTRY, 1, 0x4a);
         assert_eq!(receipt.admit(None, CPU_ENTRY, FOX), None);
+        assert_eq!(receipt.rebuild(None, CPU_ENTRY, FOX), Rebuild::Native);
         assert_eq!(receipt.admit(None, CPU_ENTRY, 0x4a), None);
+        // A later ordinary publication supersedes the Mii one and is admitted again.
         receipt.publish(CPU_ENTRY, 1, FOX);
-        receipt.observe(CPU_ENTRY, 1, 0x49);
+        assert_eq!(receipt.rebuild(None, CPU_ENTRY, 0x4a), Rebuild::Native);
+        assert_eq!(receipt.rebuild(None, CPU_ENTRY, FOX), Rebuild::Admit((CPU_ENTRY, 1, FOX)));
+    }
+
+    #[test]
+    fn css_dr_mario_to_exact_gunner_republishes_on_every_reset_until_retired() {
+        const DR_MARIO: u32 = 0x12;
+        const GUNNER: u32 = 0x4a;
+        let mut receipt = PresentedReceipt::NONE;
+        // CSS (Random) Dr. Mario: nothing published; native reset keeps its own path.
+        assert_eq!(receipt.rebuild(None, CPU_ENTRY, DR_MARIO), Rebuild::Native);
+        // A replay load publishes the exact Gunner through the Mii adapter; `loaded` stays empty.
+        receipt.publish(CPU_ENTRY, 1, GUNNER);
+        // Every native reset of that live body republishes; the decision has no one-shot state.
+        for _ in 0..3 {
+            assert_eq!(
+                receipt.rebuild(None, CPU_ENTRY, GUNNER),
+                Rebuild::Republish((CPU_ENTRY, 1, GUNNER))
+            );
+        }
+        // A rebuild of another live kind or another entry is not this publication.
+        assert_eq!(receipt.rebuild(None, CPU_ENTRY, DR_MARIO), Rebuild::Native);
+        assert_eq!(receipt.rebuild(None, OTHER_ENTRY, GUNNER), Rebuild::Native);
+        // A matching loader receipt is still the ordinary admission.
+        let loaded = Some((CPU_ENTRY, 1, DR_MARIO));
+        assert_eq!(receipt.rebuild(loaded, CPU_ENTRY, DR_MARIO), Rebuild::Admit((CPU_ENTRY, 1, DR_MARIO)));
+        assert_eq!(receipt.rebuild(loaded, CPU_ENTRY, GUNNER), Rebuild::Republish((CPU_ENTRY, 1, GUNNER)));
+        // Entry destruction, a new identity, another owner and scene exit retire it.
+        receipt.retire_entry(CPU_ENTRY);
+        assert_eq!(receipt.rebuild(None, CPU_ENTRY, GUNNER), Rebuild::Native);
+        receipt.publish(CPU_ENTRY, 1, GUNNER);
+        receipt.observe(OTHER_ENTRY, 1, GUNNER);
+        assert_eq!(receipt.rebuild(None, OTHER_ENTRY, GUNNER), Rebuild::Native);
+        receipt.publish(CPU_ENTRY, 1, GUNNER);
+        receipt.observe(CPU_ENTRY, 4, GUNNER);
         assert_eq!(receipt, PresentedReceipt::NONE);
+        receipt.publish(CPU_ENTRY, 1, GUNNER);
+        receipt.retire();
+        assert_eq!(receipt.rebuild(None, CPU_ENTRY, GUNNER), Rebuild::Native);
     }
 
     #[test]

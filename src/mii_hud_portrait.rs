@@ -269,6 +269,16 @@ struct Job {
     tick_bound: bool,
 }
 
+/// Reset rebind identities are values only. Publication stays on service; binding
+/// stays on the same native source tick and thread as the original render bind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ResetRebind {
+    wait: policy::RebindWait,
+    source: usize,
+    batch: usize,
+    thread: usize,
+}
+
 struct State {
     jobs: [Option<Job>; policy::VISIBLE_OWNERS],
     own: policy::Ownership,
@@ -282,18 +292,25 @@ struct State {
     /// Retained through waiting departure until native retirement is confirmed.
     bootstrap: Option<Bootstrap>,
     waiting_crop: Option<WaitingCrop>,
+    /// The exact Training portrait each logical owner's pane was bound to, for native
+    /// reset. Any later publication, entry destruction or scene exit forgets it.
+    shown: [Option<policy::Shown>; policy::VISIBLE_OWNERS],
+    /// A rebind of `shown` armed after native reset, waiting for its event's assets.
+    rebinds: [Option<ResetRebind>; policy::VISIBLE_OWNERS],
 }
 
 impl State {
     const fn new() -> Self {
-        Self { jobs: [None, None], own: policy::Ownership::new(), batch: 0, refused: [0, 0], halted: false, flipped: [None, None], bootstrap: None, waiting_crop: None }
+        Self { jobs: [None, None], own: policy::Ownership::new(), batch: 0, refused: [0, 0], halted: false, flipped: [None, None], bootstrap: None, waiting_crop: None, shown: [None, None], rebinds: [None, None] }
     }
     fn sync_pending(&self) {
         PENDING.store(
-            self.jobs.iter().flatten().count() + usize::from(self.own.in_flight.is_some()),
+            self.jobs.iter().flatten().count() + usize::from(self.own.in_flight.is_some())
+                + self.rebinds.iter().flatten().count(),
             Ordering::Release,
         );
-        TICK_BIND.store(self.jobs.iter().flatten().any(|job| job.hud_key.is_some()), Ordering::Release);
+        TICK_BIND.store(self.jobs.iter().flatten().any(|job| job.hud_key.is_some())
+            || self.rebinds.iter().any(Option::is_some), Ordering::Release);
     }
 }
 
@@ -364,7 +381,13 @@ pub(super) unsafe fn init(base: usize) {
 pub(super) unsafe fn request(
     entry: *const u8, owner: u32, generation: u64, kind: u32, intent: PortraitIntent, defer_hud: bool,
 ) -> bool {
-    if !ACTIVE.load(Ordering::Acquire) || !(0x48..=0x4a).contains(&kind) {
+    if !ACTIVE.load(Ordering::Acquire) {
+        return false;
+    }
+    // Every publication for this owner, Mii or not, supersedes the exact portrait
+    // retained for native reset: a same-class Mii can carry another configuration.
+    forget_shown(owner);
+    if !(0x48..=0x4a).contains(&kind) {
         return false;
     }
     let intent = match intent {
@@ -471,6 +494,7 @@ pub(super) unsafe fn service(entry: *mut u8, owner: u32) {
     }
     if let Some(logical) = mii_backend::current().and_then(|l| l.logical(owner)) {
         job_tick(base, logical, entry as usize, svc);
+        rebind_tick(base, logical, entry);
     }
 }
 
@@ -502,6 +526,15 @@ pub(super) unsafe fn on_destroy(entry: *const u8, owner: u32) {
                 disarm();
                 // The helper is freed after this callback: keep no address that could be read.
                 s.jobs[o] = if job.stage == Stage::Issued { Some(Job { lease: None, helper_entry: 0, ..job }) } else { None };
+            }
+        }
+        // A destroyed visible owner never takes a reset rebind; its pane record stays above.
+        for o in 0..policy::VISIBLE_OWNERS {
+            if s.shown[o].is_some_and(|shown| shown.entry == entry as usize) {
+                s.shown[o] = None;
+            }
+            if s.rebinds[o].is_some_and(|arm| arm.wait.shown.entry == entry as usize) {
+                s.rebinds[o] = None;
             }
         }
         s.sync_pending();
@@ -543,6 +576,8 @@ pub(super) fn scene_changed() {
     s.refused = [0; policy::VISIBLE_OWNERS];
     s.halted = false;
     s.flipped = [None; policy::VISIBLE_OWNERS];
+    s.shown = [None; policy::VISIBLE_OWNERS];
+    s.rebinds = [None; policy::VISIBLE_OWNERS];
     if s.bootstrap.is_none_or(|p| !p.layout.waiting()) {
         s.bootstrap = None;
         s.waiting_crop = None;
@@ -731,12 +766,18 @@ unsafe fn job_tick(base: usize, owner: usize, entry: usize, svc: Option<ServiceC
 }
 
 unsafe fn owner_valid(job: &Job) -> bool {
-    let role = if job.logical == 0 { Role::Player } else { Role::Cpu };
-    mii_backend::current() == Some(job.layout)
-        && scope(role).is_some_and(|s| s.owner == job.physical && (job.layout != Layout::Training || s.mode == 0x04040000))
-        && state_for(role).lock().unwrap().observed == Some((job.entry, job.kind))
-        && mii_saved_alpha::current_generation(job.logical) == job.generation
-        && active_body(job.entry as *const u8, job.physical, job.kind)
+    owner_current(job.logical, job.layout, job.physical, job.entry, job.kind, job.generation)
+}
+
+/// The publication is still this owner's live body in its layout and generation.
+/// Callers pass an entry already matched to the current callback, or an issued job's.
+unsafe fn owner_current(logical: u32, layout: Layout, physical: u32, entry: usize, kind: u32, generation: u64) -> bool {
+    let role = if logical == 0 { Role::Player } else { Role::Cpu };
+    mii_backend::current() == Some(layout)
+        && scope(role).is_some_and(|s| s.owner == physical && (layout != Layout::Training || s.mode == 0x04040000))
+        && state_for(role).lock().unwrap().observed == Some((entry, kind))
+        && mii_saved_alpha::current_generation(logical) == generation
+        && active_body(entry as *const u8, physical, kind)
 }
 
 /// Start the native portrait-only command sequence once, before acquiring a helper.
@@ -988,7 +1029,10 @@ unsafe fn pipeline_after_tick(ctx: &mut InlineCtx) {
         finish_pipeline_retirement(BASE.load(Ordering::Acquire), ctx.registers[19].x() as *const u8);
     }
     if TICK_BIND.load(Ordering::Acquire) {
-        tick_bind(BASE.load(Ordering::Acquire), ctx.registers[19].x() as usize);
+        let base = BASE.load(Ordering::Acquire);
+        let source = ctx.registers[19].x() as usize;
+        tick_bind(base, source);
+        tick_rebind(base, source);
     }
 }
 
@@ -1016,7 +1060,7 @@ unsafe fn tick_bind(base: usize, ticked_source: usize) {
                         job.hud_thread == thread, job.layout == Layout::Training, s.halted)
             });
         let Some(candidate) = candidate else {
-            TICK_BIND.store(false, Ordering::Release);
+            TICK_BIND.store(s.rebinds.iter().any(Option::is_some), Ordering::Release);
             return;
         };
         candidate
@@ -1030,7 +1074,7 @@ unsafe fn tick_bind(base: usize, ticked_source: usize) {
     if source as usize != ticked_source || (job.source, job.batch) != (source as usize, batch as usize) {
         return;
     }
-    if !scene_writable() || !owner_valid(&job) || !hud_assets_ready(base, &job, key) {
+    if !scene_writable() || !owner_valid(&job) || !hud_assets_ready(base, job.physical, key) {
         return;
     }
     let Some(req) = request_at(batch, flight.request.row, flight.request.sub) else { return; };
@@ -1060,7 +1104,11 @@ unsafe fn tick_bind(base: usize, ticked_source: usize) {
                 }
             }
             if recorded {
-                s.own.bound(owner, policy::Binding { request: flight.request, descriptor });
+                let binding = policy::Binding { request: flight.request, descriptor };
+                s.own.bound(owner, binding);
+                s.shown[owner] = Some(policy::Shown {
+                    entry: job.entry, physical: job.physical, kind: job.kind, generation: job.generation, binding,
+                });
             }
             s.sync_pending();
             trace!("[MiiPortrait] owner={} bound on the source tick after HUD assets settled index=0x{:x} slot={} request=({},{}) descriptor=0x{:x} recorded={}",
@@ -1068,7 +1116,7 @@ unsafe fn tick_bind(base: usize, ticked_source: usize) {
         }
         Err(reason) => {
             // The service callback repeats the bind and owns the refusal.
-            TICK_BIND.store(false, Ordering::Release);
+            TICK_BIND.store(STATE.lock().unwrap().rebinds.iter().any(Option::is_some), Ordering::Release);
             trace!("[MiiPortrait] owner={} source-tick bind left to the service callback: {}", job.physical, reason);
         }
     }
@@ -1267,7 +1315,7 @@ unsafe fn drain_tick(base: usize, svc: Option<ServiceCallback>) {
                 return;
             }
             if let Some(key) = current.hud_key {
-                if hud_assets_ready(base, &current, key) {
+                if hud_assets_ready(base, current.physical, key) {
                     let mut s = STATE.lock().unwrap();
                     if let Some(j) = s.jobs[owner].as_mut() { j.hud_key = None; }
                     s.sync_pending();
@@ -1346,7 +1394,16 @@ unsafe fn drain_tick(base: usize, svc: Option<ServiceCallback>) {
                     if bind {
                         match bind_target(base, &current, index, descriptor) {
                             Ok(slot) => {
-                                STATE.lock().unwrap().own.bound(owner, policy::Binding { request: job.request, descriptor });
+                                let binding = policy::Binding { request: job.request, descriptor };
+                                let mut s = STATE.lock().unwrap();
+                                s.own.bound(owner, binding);
+                                if current.layout == Layout::Training {
+                                    s.shown[owner] = Some(policy::Shown {
+                                        entry: current.entry, physical: current.physical, kind: current.kind,
+                                        generation: current.generation, binding,
+                                    });
+                                }
+                                drop(s);
                                 trace!("[MiiPortrait] owner={} bound index=0x{:x} slot={} layout={:?} request=({},{}) descriptor=0x{:x}", current.physical, index, slot, current.layout, job.request.row, job.request.sub, descriptor);
                             }
                             Err(reason) => {
@@ -1463,8 +1520,8 @@ fn framing_proved(job: &Job) -> bool {
 
 /// Read under the same live-owner/slot proof as the binder. Native owns the
 /// loader: this is observation only, never a forced key/state write or delay.
-unsafe fn hud_assets_ready(base: usize, job: &Job, key: u64) -> bool {
-    let Ok((_, slot)) = slot_of_owner(base, job.physical) else { return false; };
+unsafe fn hud_assets_ready(base: usize, physical: u32, key: u64) -> bool {
+    let Ok((_, slot)) = slot_of_owner(base, physical) else { return false; };
     policy::hud_assets_settled(key, policy::HudAssets {
         committed_key: read(slot, 0x170),
         event_dirty: read::<u8>(slot, 0x140) != 0,
@@ -1514,6 +1571,168 @@ unsafe fn paint_hud(entry: usize, physical: u32, kind: u32) {
     let entry = entry as *const u8;
     before_refresh(entry, physical, kind);
     super::refresh_hud(entry, physical, kind);
+}
+
+/// Forget the exact portrait retained for native reset, and any rebind armed for it.
+fn forget_shown(physical: u32) {
+    let Some(logical) = mii_backend::current().and_then(|l| l.logical(physical)) else { return; };
+    let mut s = STATE.lock().unwrap();
+    if s.shown[logical].is_none() && s.rebinds[logical].is_none() {
+        return;
+    }
+    s.shown[logical] = None;
+    s.rebinds[logical] = None;
+    s.sync_pending();
+}
+
+/// From `character_roster`'s service callback, after native reset rebuilt the original CSS
+/// portrait over this owner's live Mii publication (`allow_portrait` Republish). The caller
+/// verified the publication receipt and the live body. Republish the live kind (event 0x1d).
+/// When this module's exact texture for that same publication is still bound and registered,
+/// rebind it after the event's native assets settle (the hud151 barrier). No helper, lease or
+/// render is used, and ownership and both owners' rows stay as they are.
+pub(super) unsafe fn represent(entry: *const u8, physical: u32, kind: u32) {
+    let base = BASE.load(Ordering::Acquire);
+    let logical = mii_backend::current()
+        .filter(|layout| *layout == Layout::Training)
+        .and_then(|layout| layout.logical(physical));
+    let Some(o) = logical.filter(|_| ACTIVE.load(Ordering::Acquire) && base != 0) else {
+        paint_hud(entry as usize, physical, kind);
+        trace!("[MiiPortrait] owner={} native reset: kind 0x{:x} republished; exact portrait inactive", physical, kind);
+        return;
+    };
+    // A batch replaced while nothing was pending is observed before `bound` is trusted.
+    scene_tick(base);
+    let live = policy::Live {
+        entry: entry as usize, physical, kind, generation: mii_saved_alpha::current_generation(o as u32),
+    };
+    let (pending, shown, halted) = {
+        let s = STATE.lock().unwrap();
+        (s.jobs[o].map(|job| job.hud.is_withheld()), s.shown[o], s.halted)
+    };
+    let retained = shown.is_some_and(|shown| retained_texture(base, o, shown.binding));
+    // What native reset left in the slot: bust mode, bound flag and table index.
+    let words = slot_of_owner(base, physical).ok()
+        .map(|(_, slot)| (read::<u8>(slot, 0x1a8), read::<u8>(slot, 0x1a9), read::<u32>(slot, 0x1ac)));
+    match policy::represent(pending, shown, live, retained, halted) {
+        policy::Represent::Defer => {
+            trace!("[MiiPortrait] owner={} native reset: pending exact job publishes kind=0x{:x}; slot={:?}", physical, kind, words);
+        }
+        policy::Represent::Paint => {
+            paint_hud(entry as usize, physical, kind);
+            trace!("[MiiPortrait] owner={} native reset: kind 0x{:x} republished, no retained exact texture (shown={} retained={}); slot={:?}",
+                physical, kind, shown.is_some(), retained, words);
+        }
+        policy::Represent::Rebind(shown) => {
+            paint_hud(entry as usize, physical, kind);
+            let key = slot_of_owner(base, physical).ok().map(|(_, slot)| read::<u64>(slot, 0x120))
+                .filter(|key| key >> 56 == 0xc1 && key & 0xffffffffff != 0);
+            let source = pointer_chain(base as *const u8, &SOURCE).map(|p| p as usize);
+            let batch = pointer_chain(base as *const u8, &BATCH).map(|p| p as usize);
+            let thread = skyline::nn::os::GetCurrentThread() as usize;
+            let armed = {
+                let mut s = STATE.lock().unwrap();
+                let armed = key.filter(|_| source.is_some() && batch.is_some()
+                    && s.shown[o] == Some(shown) && s.jobs[o].is_none());
+                if let Some(key) = armed {
+                    s.rebinds[o] = Some(ResetRebind {
+                        wait: policy::RebindWait { shown, key, waits: 0 },
+                        source: source.unwrap(), batch: batch.unwrap(), thread,
+                    });
+                    s.sync_pending();
+                }
+                armed
+            };
+            trace!("[MiiPortrait] owner={} native reset: kind 0x{:x} republished; retained index=0x{:x} request=({},{}) rebind armed={} key={:x?}; slot={:?}",
+                physical, kind, policy::table_index(shown.binding.request.row), shown.binding.request.row,
+                shown.binding.request.sub, armed.is_some(), key, words);
+        }
+    }
+}
+
+/// Fresh reads only: the binding is still this owner's bound record, still owned, its request
+/// live on the current batch, and `table[0x12+row]` still that descriptor. The stored
+/// descriptor is compared, never dereferenced.
+unsafe fn retained_texture(base: usize, logical: usize, binding: policy::Binding) -> bool {
+    {
+        let s = STATE.lock().unwrap();
+        if s.own.bound[logical] != Some(binding) || !s.own.is_owned(binding.request) {
+            return false;
+        }
+    }
+    let Some(req) = pointer_chain(base as *const u8, &BATCH)
+        .and_then(|batch| request_at(batch, binding.request.row, binding.request.sub)) else {
+        return false;
+    };
+    req as usize + 0x180 == binding.descriptor
+        && request_words(Some(req)).owned_live(binding.request.row)
+        && table_at(base, policy::table_index(binding.request.row)) == Some(binding.descriptor)
+}
+
+/// Service owns the finite wait and retirement; it never binds late in the frame.
+/// The source tick below does the bind after the native asset update, as for hud151.
+unsafe fn rebind_tick(_base: usize, owner: usize, entry: *mut u8) {
+    let Some(armed) = STATE.lock().unwrap().rebinds.get(owner).copied().flatten() else { return; };
+    let shown = armed.wait.shown;
+    let live = (shown.entry == entry as usize
+        && owner_current(owner as u32, Layout::Training, shown.physical, shown.entry, shown.kind, shown.generation))
+        .then_some(policy::Live { entry: shown.entry, physical: shown.physical, kind: shown.kind, generation: shown.generation });
+    let mut next = armed;
+    // Only the source tick may complete the wait. Count a service callback even
+    // when assets are ready but the original native phase/thread is unavailable.
+    let step = next.wait.step(live, false, false);
+    let mut s = STATE.lock().unwrap();
+    if s.rebinds[owner] != Some(armed) { return; }
+    s.rebinds[owner] = match step {
+        policy::RebindStep::Wait => Some(next),
+        policy::RebindStep::Bind(_) | policy::RebindStep::Drop(_) => None,
+    };
+    s.sync_pending();
+    drop(s);
+    if let policy::RebindStep::Drop(reason) = step {
+        trace!("[MiiPortrait] owner={} native reset: rebind dropped: {}", shown.physical, reason);
+    }
+}
+
+/// Reuse the registered exact texture on the native source update, on the same
+/// thread that published event 0x1d. No render, helper, lease or cached pointer use.
+unsafe fn tick_rebind(base: usize, ticked_source: usize) {
+    if base == 0 || !ACTIVE.load(Ordering::Acquire) || !scene_writable() { return; }
+    let thread = skyline::nn::os::GetCurrentThread() as usize;
+    let Some(source) = pointer_chain(base as *const u8, &SOURCE).map(|p| p as usize) else { return; };
+    let Some(batch) = pointer_chain(base as *const u8, &BATCH).map(|p| p as usize) else { return; };
+    if source != ticked_source { return; }
+    for owner in 0..policy::VISIBLE_OWNERS {
+        let armed = {
+            let s = STATE.lock().unwrap();
+            if s.halted || s.jobs[owner].is_some() { continue; }
+            s.rebinds[owner]
+        };
+        let Some(armed) = armed else { continue; };
+        if (armed.thread, armed.source, armed.batch) != (thread, source, batch) { continue; }
+        let shown = armed.wait.shown;
+        // Reacquire the native entry; the stored numeric identity is never a borrow.
+        let live = (native_source::entry(shown.physical).is_some_and(|p| p as usize == shown.entry)
+            && owner_current(owner as u32, Layout::Training, shown.physical, shown.entry, shown.kind, shown.generation))
+            .then_some(policy::Live { entry: shown.entry, physical: shown.physical, kind: shown.kind, generation: shown.generation });
+        let settled = live.is_some() && hud_assets_ready(base, shown.physical, armed.wait.key);
+        let retained = settled && retained_texture(base, owner, shown.binding);
+        // The service callback owns the wait budget; this clone only decides binding.
+        let mut wait = armed.wait;
+        if !matches!(wait.step(live, settled, retained), policy::RebindStep::Bind(_)) { continue; }
+        let index = policy::table_index(shown.binding.request.row);
+        let result = bind_training_slot(base, shown.physical, owner, index);
+        let mut s = STATE.lock().unwrap();
+        if s.rebinds[owner] != Some(armed) { continue; }
+        if result.is_ok() { s.own.bound(owner, shown.binding); }
+        s.rebinds[owner] = None;
+        s.sync_pending();
+        drop(s);
+        match result {
+            Ok(slot) => trace!("[MiiPortrait] owner={} native reset: exact texture rebound on source tick index=0x{:x} slot={} after {} callbacks", shown.physical, index, slot, armed.wait.waits),
+            Err(reason) => trace!("[MiiPortrait] owner={} native reset: rebind refused: {}", shown.physical, reason),
+        }
+    }
 }
 
 /// Gate for binding a drained render and returning its helper: every armed render of this job
@@ -1661,38 +1880,7 @@ unsafe fn bind_target(base: usize, job: &Job, index: u32, descriptor: usize) -> 
         return Err("scene does not allow portrait writes");
     }
     match job.layout {
-        Layout::Training => {
-            let (slot, slot_ptr) = slot_of_owner(base, job.physical)?;
-            if table_at(base, index).unwrap_or(0) == 0 {
-                return Err("table slot is empty");
-            }
-            if !part_ready(slot_ptr) {
-                return Err(NO_PART);
-            }
-            let original = Flipped {
-                slot,
-                mode: read(slot_ptr, 0x1a8),
-                bound_flag: read(slot_ptr, 0x1a9),
-                index: read(slot_ptr, 0x1ac),
-            };
-            let first_bind = original.mode == 0 || original.bound_flag != 1;
-            if original.mode == 0 {
-                store(slot_ptr as *mut u8, 0x1a8, 1u8);
-            }
-            if let Err(reason) = rebind_slot(base, slot, slot_ptr, index) {
-                store(slot_ptr as *mut u8, 0x1a8, original.mode);
-                return Err(reason);
-            }
-            if first_bind {
-                let mut s = STATE.lock().unwrap();
-                let l = job.logical as usize;
-                if s.flipped[l].is_none() {
-                    s.flipped[l] = Some(original);
-                }
-                trace!("[MiiPortrait] owner={} slot {} entered bust mode (was +0x1a8={} +0x1a9={} +0x1ac=0x{:x}); key +0x170 untouched", job.physical, slot, original.mode, original.bound_flag, original.index);
-            }
-            Ok(slot)
-        }
+        Layout::Training => bind_training_slot(base, job.physical, job.logical as usize, index),
         Layout::Ldn | Layout::Quickplay => {
             let (pane, coordinates) = waiting_uv(base, job.physical)?;
             let current = read::<[f32; 8]>(coordinates, 0);
@@ -1709,6 +1897,43 @@ unsafe fn bind_target(base: usize, job: &Job, index: u32, descriptor: usize) -> 
             Ok(-1)
         }
     }
+}
+
+/// Training bind of `table[index]` into the owner's slot, shared by a render's bind and a
+/// native-reset rebind of the retained texture.
+unsafe fn bind_training_slot(base: usize, physical: u32, logical: usize, index: u32) -> Result<i32, &'static str> {
+    if !scene_writable() {
+        return Err("scene does not allow portrait writes");
+    }
+    let (slot, slot_ptr) = slot_of_owner(base, physical)?;
+    if table_at(base, index).unwrap_or(0) == 0 {
+        return Err("table slot is empty");
+    }
+    if !part_ready(slot_ptr) {
+        return Err(NO_PART);
+    }
+    let original = Flipped {
+        slot,
+        mode: read(slot_ptr, 0x1a8),
+        bound_flag: read(slot_ptr, 0x1a9),
+        index: read(slot_ptr, 0x1ac),
+    };
+    let first_bind = original.mode == 0 || original.bound_flag != 1;
+    if original.mode == 0 {
+        store(slot_ptr as *mut u8, 0x1a8, 1u8);
+    }
+    if let Err(reason) = rebind_slot(base, slot, slot_ptr, index) {
+        store(slot_ptr as *mut u8, 0x1a8, original.mode);
+        return Err(reason);
+    }
+    if first_bind {
+        let mut s = STATE.lock().unwrap();
+        if s.flipped[logical].is_none() {
+            s.flipped[logical] = Some(original);
+        }
+        trace!("[MiiPortrait] owner={} slot {} entered bust mode (was +0x1a8={} +0x1a9={} +0x1ac=0x{:x}); key +0x170 untouched", physical, slot, original.mode, original.bound_flag, original.index);
+    }
+    Ok(slot)
 }
 
 /// `nn::ui2d::Picture`'s in-place TexCoordArray at +0xf0. Run95 and native
@@ -1822,6 +2047,8 @@ pub(super) unsafe fn before_refresh(entry: *const u8, owner: u32, kind: u32) {
     }
     if (0x48..=0x4a).contains(&kind) { return; }
     let _ = entry;
+    // Includes the ordinary loader's completion, which never reaches `request`.
+    forget_shown(owner);
     release_presentation(base, layout, owner, logical, "non-Mii kind published");
 }
 

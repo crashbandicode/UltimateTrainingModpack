@@ -52,6 +52,9 @@ is asked. Results differ naturally when the fighter differs.
 
 ![Choosing Switch replaces Fox with the recorded armored Mii Gunner and its matching HUD portrait.](named-macros/images/fighter.gif)
 
+Closing the editor without saving or previewing keeps that fighter. **L + R + A**
+resets positions while keeping its matching portrait, including an exact replay Mii.
+
 ## Crop
 
 Press **L** for the start or **R** for the end, then hold **Left** or **Right**;

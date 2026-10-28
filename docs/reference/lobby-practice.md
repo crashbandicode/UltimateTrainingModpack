@@ -138,6 +138,10 @@ Short Quickplay idle samples before/after a match stayed near 60 FPS and
 0.94 CPU cores with zero swap. They do not establish a memory improvement.
 Earlier evidence below remains historical.
 
+On 2026-10-28, the operator also confirmed direct stage changes on a physical
+Switch in both Quickplay and Local Wireless waiting practice. Deluxe's display
+changing to its compact strip after those transitions is a separate open report.
+
 Emulator and local-wireless (LDN) checks passed for P1/CPU swaps, menus, the CPU
 icon, the embedded waiting UI and a two-peer match/return. They do not establish
 Nintendo online-service or ban safety; one controller per peer is the exercised
