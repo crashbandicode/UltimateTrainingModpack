@@ -25,7 +25,7 @@ use std::sync::Mutex;
 const CHANNELS: usize = if cfg!(feature = "mii-hud-portrait-alpha") { 5 } else { 3 };
 /// Portrait wants carry the loaded configuration and avoid the other owner's bust row.
 #[cfg(feature = "mii-hud-portrait-alpha")]
-pub const PORTRAIT_CHANNELS: [usize; 2] = [3, 4];
+pub const PORTRAIT_CHANNELS: [usize; 2] = super::mii_hud_portrait_policy::SOURCE_CHANNELS;
 const LEASES: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1212,9 +1212,9 @@ fn slot_allowed(avoid: Option<u32>, slot: u32) -> bool {
 }
 
 #[cfg(not(feature = "mii-hud-portrait-alpha"))]
-fn pending_request_for(state: &State, slot: Option<u32>) -> Option<Want> {
+fn pending_request_for(state: &State, slot: Option<u32>, menu_open: bool) -> Option<Want> {
     let _ = slot;
-    pending_request(state)
+    if menu_open { None } else { pending_request(state) }
 }
 
 #[cfg(not(feature = "mii-hud-portrait-alpha"))]
@@ -1229,14 +1229,20 @@ fn pending_request(state: &State) -> Option<Want> {
 
 #[cfg(all(feature = "mii-hud-portrait-alpha", feature = "managed-third-source-alpha"))]
 fn pending_request(state: &State) -> Option<Want> {
-    pending_request_for(state, None)
+    pending_request_for(state, None, false)
 }
 
 /// The first unsatisfied want this slot may install. An avoided slot neither
 /// satisfies the want nor installs it. `slot == None` is the previous global walk.
 #[cfg(feature = "mii-hud-portrait-alpha")]
-fn pending_request_for(state: &State, slot: Option<u32>) -> Option<Want> {
-    state.wants.iter().flatten().copied().find(|want| {
+fn pending_request_for(state: &State, slot: Option<u32>, menu_open: bool) -> Option<Want> {
+    // Exact portrait requests depend on the loaded fighter, not menu preferences.
+    // Hats/items still wait for menu close, even when a hat carries a Mii payload.
+    // Filter before finding a want so a pending hat cannot hide a portrait.
+    state.wants.iter().enumerate().filter_map(|(channel, want)| {
+        want.filter(|want| super::mii_hud_portrait_policy::source_channel_admitted(
+            channel, want.configuration.is_some(), menu_open))
+    }).find(|want| {
         slot.is_none_or(|slot| super::mii_hud_portrait_policy::slot_may_install(want.avoid, slot))
             && state.book.is_current(want.epoch) && !state.sources.iter().flatten().any(|source|
             source.kind == want.kind && source.configuration==want.configuration
@@ -1260,11 +1266,28 @@ fn ready_still_requested(state: &State, index: usize) -> bool {
                 && want.kind == source.kind && want.configuration==source.configuration))
 }
 
+/// Hard gates apply to every source. Only an exact portrait may pass the
+/// separate mod-menu gate; it never relaxes native UI, save/preview ownership,
+/// native readiness, or the single installer. Also used by the portrait wait
+/// budget so deliberately deferred acquisition cannot expire during playback.
+unsafe fn admission_blocker() -> Option<&'static str> {
+    if INSTALL.active() { Some("another source install") }
+    else if !crate::common::is_ready_go() { Some("ready-go") }
+    else if super::lobby::native_ui_busy() { Some("native UI") }
+    else if super::training::save_states::is_loading() { Some("save-state restore") }
+    else if super::training::recording_or_playback() { Some("recording or playback") }
+    else if crate::replay_preview::occupied() { Some("replay preview") }
+    else { None }
+}
+
+#[cfg(feature = "mii-hud-portrait-alpha")]
+pub unsafe fn portrait_admission_blocker() -> Option<&'static str> {
+    admission_blocker()
+}
+
+#[cfg(feature = "managed-third-source-alpha")]
 unsafe fn admission_blocked() -> bool {
-    INSTALL.active() || !crate::common::is_ready_go()
-        || super::menu::captures_input() || super::lobby::native_ui_busy()
-        || super::training::save_states::is_loading() || super::training::recording_or_playback()
-        || crate::replay_preview::occupied()
+    admission_blocker().is_some() || super::menu::captures_input()
 }
 
 unsafe fn visible_ready(backend: Backend) -> bool {
@@ -1459,11 +1482,11 @@ pub unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8, slot: u32) {
         }
         return;
     }
-    let (wanted, replaceable, previous) = {
+    let initial = {
         let state = STATE.lock().unwrap();
         // Idle: no native snapshots, log formatting, or allocation.
         // Per-slot: a want this helper may take is not hidden by an earlier avoided want.
-        let Some(wanted) = pending_request_for(&state, Some(slot)) else {
+        let Some(wanted) = pending_request_for(&state, Some(slot), false) else {
             return;
         };
         (
@@ -1472,6 +1495,16 @@ pub unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8, slot: u32) {
             state.sources[index],
         )
     };
+    // Check the menu only after finding work: idle loader callbacks retain the
+    // original allocation-free fast path. Re-select under the same channel rule
+    // used at commit, without holding the source mutex while reading menu state.
+    let menu_open = super::menu::captures_input();
+    let (wanted, replaceable, previous) = if menu_open {
+        let state = STATE.lock().unwrap();
+        let Some(wanted) = pending_request_for(&state, Some(slot), true) else { return; };
+        (wanted, !ready_still_requested(&state, index) && state.book.can_replace(index) == Ok(true),
+            state.sources[index])
+    } else { initial };
     #[cfg(all(feature = "managed-third-source-alpha", feature = "source-capacity-probe"))]
     macro_rules! declined {
         ($code:expr, $reason:expr) => {
@@ -1485,9 +1518,9 @@ pub unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8, slot: u32) {
         create_capacity(ctx, entry, slot, wanted);
         return;
     }
-    if admission_blocked() {
+    if admission_blocker().is_some() {
         #[cfg(all(feature = "managed-third-source-alpha", feature = "source-capacity-probe"))]
-        declined!(1, "install/ready-go/menu/native-ui/save-state/playback gate");
+        declined!(1, "install/ready-go/native-ui/save-state/playback gate");
         return;
     }
     let Ok(backend) = qualified_backend() else {
@@ -1561,7 +1594,7 @@ pub unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8, slot: u32) {
                 })
                 .map_or(1, |old| old.ticks.saturating_add(1));
             let mut state = STATE.lock().unwrap();
-            if pending_request_for(&state, Some(slot)) != Some(wanted)
+            if pending_request_for(&state, Some(slot), menu_open) != Some(wanted)
                 || state.sources[index] != previous
                 || reservation(&state) != Some(owner)
             {
@@ -1649,7 +1682,7 @@ pub unsafe fn service(ctx: &ServiceEntryContext, entry: *mut u8, slot: u32) {
     };
     let mut state = STATE.lock().unwrap();
     // Same per-slot selection as initiation. Slot 7 capacity probes stay on the global walk.
-    if pending_request_for(&state, Some(slot)) != Some(wanted)
+    if pending_request_for(&state, Some(slot), menu_open) != Some(wanted)
         || state.sources[index] != previous
         || ready_still_requested(&state, index)
         || state.book.can_replace(index) != Ok(true)

@@ -268,9 +268,12 @@ unsafe fn render_submenu_page(app: &mut App, root_pane: &Pane) {
                 // corresponds with a particular button to be visible.
 
                 // The original archive's fixed-width native pane name is truncated.
-                let icon_name = if submenu.id == "save_damage_limits_player" {
-                    "save_damage_limits_playe"
-                } else { submenu.id };
+                let icon_name = match submenu.id {
+                    "save_damage_limits_player" => "save_damage_limits_playe",
+                    // Reuse the native CPU portrait chip without another texture.
+                    "fighter_prompt" => "save_damage_cpu",
+                    other => other,
+                };
                 if let Some(pane) = menu_button.find_pane_by_name_recursive(icon_name) {
                     pane.set_visible(true);
                 }

@@ -42,11 +42,15 @@ section once in the Vault, then open Replay Window without restarting Smash.
 
 ## Choose the fighter
 
-**D-pad Up/Down** switch between the captured players, and the CPU reloads as
-that fighter. P1 and P2 are players in the saved match, not your current
-controllers.
+**D-pad Up/Down** switch between the captured players. P1 and P2 are players in
+the saved match, not your current controllers. Only the inputs play, so any
+fighter can use them. If the player you pick used a different fighter than the
+CPU, a prompt asks once: **Keep current fighter** (the default) or **Switch to
+recorded fighter**. **B** cancels and leaves your previous selection. With
+**Input Recording → Fighter Prompt** off, the CPU is never changed and nothing
+is asked. Results differ naturally when the fighter differs.
 
-![The editor switching the CPU from Kirby to Hero.](named-macros/images/fighter.gif)
+![Choosing Switch replaces Fox with the recorded armored Mii Gunner and its matching HUD portrait.](named-macros/images/fighter.gif)
 
 ## Crop
 
@@ -62,7 +66,7 @@ smash. It does not return to the match opening.
 
 ## Preview
 
-Wait for the fighter to finish loading, then press **X**. The editor saves a
+After **Switch**, wait for the fighter to finish loading. Then press **X**. The editor saves a
 temporary preview setup of both fighters by itself; you do not need to save a
 state first, and your five save-state slots are not changed. **Y** restarts, and
 after you move In or Out, **X** plays again from the same spot. **X** again or
@@ -93,8 +97,11 @@ When the preview looks right, press **A** once. The keyboard suggests the replay
 ## Record and load
 
 1. Set **Input Recording → Macro Source** to **Named Library**.
-2. In **Input Recording → Named Library**, press **A** on a recording. The CPU
-   changes to its fighter; close the menu and let the change finish.
+2. In **Input Recording → Named Library**, press **A** on a recording
+   (**A Load from file**). That reads the file and readies it for playback; it
+   does not start it. If its fighter differs from the CPU you get the same
+   **Keep current fighter / Switch to recorded fighter** choice as above.
+   After **Switch**, close the menu and let the change finish.
 3. Save the Training setup you want, then press **Input Playback** (default
    **ZR + D-pad Up**). The setup is restored, then the inputs play on the CPU.
    Unlike the editor preview, playback uses this saved setup.
@@ -110,9 +117,11 @@ emulator check, a 51-frame recording was copied into Record Slot 3 and saved bac
 out unchanged apart from its new name. Console testing is pending.
 
 **Copy a named recording into a slot.** Set **Input Recording → Recording Slot**
-(here **3**), open **Named Library**, highlight a recording and press **Y**.
+(here **3**), open **Named Library**, highlight a recording and press **Y**
+(**Y Copy to Record Slot 3**). This copies the recording and its starting information into the slot; it
+does not select it for named playback (that is **A**).
 
-![Pressing Y on Duck Hunt dash binds it to Record Slot 3 and returns to Input Recording.](named-macros/images/record-slot-bind.gif)
+![Pressing Y on Duck Hunt dash copies it to Record Slot 3 and returns to Input Recording.](named-macros/images/record-slot-bind.gif)
 
 **Save a slot as a named file.** Choose **Input Recording → Save Slot to
 Library**, type a name and confirm with **OK**.

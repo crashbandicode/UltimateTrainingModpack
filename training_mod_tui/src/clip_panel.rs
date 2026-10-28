@@ -294,6 +294,28 @@ impl ClipEditor {
         }
     }
 
+    /// Entry, recorded fighter kind and capture side (`true` = the previous
+    /// capture) of the track `action` would select, without selecting it. Only a
+    /// real change of track or capture answers; re-selecting the current track,
+    /// or toggling with no previous capture, selects nothing new.
+    pub fn peek_selection(&self, action: ClipAction) -> Option<(i32, i32, bool)> {
+        match action {
+            ClipAction::PreviousFighter | ClipAction::NextFighter => {
+                let count = self.session.tracks.len();
+                let offset = if matches!(action, ClipAction::PreviousFighter) { count - 1 } else { 1 };
+                let index = (self.track + offset) % count;
+                if index == self.track { return None; }
+                let track = &self.session.tracks[index];
+                Some((track.entry, track.frames[0].start.fighter_kind, self.previous_selected))
+            }
+            ClipAction::ToggleCapture => {
+                let track = self.previous.as_ref()?.tracks.first()?;
+                Some((track.entry, track.frames.first()?.start.fighter_kind, !self.previous_selected))
+            }
+            _ => None,
+        }
+    }
+
     pub fn track(&self) -> &ReplayTrack { &self.session.tracks[self.track] }
     pub fn sample(&self) -> ReplayFrame { self.track().frames[self.window.cursor() as usize] }
     pub fn pause(&mut self) { self.playing = false; }
@@ -758,6 +780,41 @@ mod tests {
         assert_eq!((e.view().start, e.view().end), (0, 3));
         e.on_action(ClipAction::NextFighter);
         assert_eq!((e.view().start, e.view().end), (0, 10));
+    }
+
+    #[test]
+    fn peeking_a_selection_names_the_candidate_and_changes_nothing() {
+        let mut e = unequal_tracks();
+        let view = e.view();
+        let before = (view.entry, view.fighter_kind, view.start, view.end);
+        // Track 0 is entry 0 (fighter 8); the other is entry 1 (fighter 18).
+        assert_eq!(e.peek_selection(ClipAction::NextFighter), Some((1, 18, false)));
+        assert_eq!(e.peek_selection(ClipAction::PreviousFighter), Some((1, 18, false)));
+        let view = e.view();
+        assert_eq!((view.entry, view.fighter_kind, view.start, view.end), before);
+        // Only a track or capture change selects anything.
+        assert!(e.peek_selection(ClipAction::Confirm).is_none());
+        assert!(e.peek_selection(ClipAction::ToggleCapture).is_none());
+        assert!(editor().peek_selection(ClipAction::NextFighter).is_none(), "one track has nothing to re-select");
+        // The peek agrees with the real selection.
+        e.on_action(ClipAction::NextFighter);
+        assert_eq!((e.view().entry, e.view().fighter_kind), (1, 18));
+    }
+
+    #[test]
+    fn peeking_the_capture_toggle_names_the_previous_capture_without_swapping() {
+        let mut previous = editor().session;
+        previous.tracks[0].entry = 0;
+        for sample in &mut previous.tracks[0].frames { sample.start.fighter_kind = 8; }
+        let mut e = editor().with_previous(Some(previous));
+        assert_eq!(e.peek_selection(ClipAction::ToggleCapture), Some((0, 8, true)));
+        assert!(!e.view().previous_selected);
+        assert_eq!((e.view().entry, e.view().fighter_kind), (1, 18));
+        e.on_action(ClipAction::ToggleCapture);
+        assert!(e.view().previous_selected);
+        assert_eq!((e.view().entry, e.view().fighter_kind), (0, 8));
+        // From the previous capture, the same toggle names the latest one.
+        assert_eq!(e.peek_selection(ClipAction::ToggleCapture), Some((1, 18, false)));
     }
 
     #[test]

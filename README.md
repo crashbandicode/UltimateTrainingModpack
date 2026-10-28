@@ -4,7 +4,7 @@
 
 **Download:** [enhancements alpha `v7.1.2-enhancements-full-experimental.20261024.5`](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-full-experimental.20261024.5), the latest published build. Its [features, validation and known limits](docs/experimental-release.md) include intermittent console startup faults that are still under investigation.
 
-**Current source (C92) is newer than that download:** it adds the features marked *New* below. Console review of C92 is pending ([build notes](docs/lobby-parity-release.md)).
+**Current source (C93) is newer than that download:** recordings can keep your current CPU or switch to the recorded fighter. It also fixes replay-Mii portraits, ordinary-fighter HUD resets and Quickplay stage selection ([build notes](docs/lobby-parity-release.md)).
 
 [Download this fork from Forgejo](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases). Version 7.1.2 reduces input-display work in Training; see the [performance checks](docs/input-display-performance.md).
 
@@ -52,7 +52,7 @@ Use the practice tools while waiting for a match; your real match still uses you
 
 ![The Training CPU playing the opponent's captured P2 Hero inputs.](docs/named-macros/images/playback-p2.gif)
 
-Save a replay, pick either player's captured inputs, and trim a sequence for the Training CPU to play ([walkthrough](docs/named-macros.md)). **ZL+Y** snaps to the move's start and includes its short setup; existing replay captures work too. *New:* **X** previews right away, with no saved setup needed.
+Save a replay, pick either player's captured inputs, and trim a sequence for the Training CPU to play ([walkthrough](docs/named-macros.md)). **ZL+Y** snaps to the move's start and includes its short setup; existing replay captures work too. *New:* **X** previews right away, with no saved setup needed. Choose **Keep current fighter** to try the inputs on another character.
 
 ### Practice stages
 

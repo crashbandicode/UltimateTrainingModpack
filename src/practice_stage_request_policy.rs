@@ -321,39 +321,41 @@ mod tests {
     }
     #[test]
     fn quickplay_waiting_keeps_match_cache_and_scene_ownership_barriers() {
-        let mut v = waiting();
-        v.scene.mode = 0x07010100;
-        let (c, descriptor) = plan(v, None, 0, 0x123456789a).unwrap();
-        assert_eq!((c.incoming, c.outgoing), (0, 2));
-        assert_eq!(&descriptor[16..], &v.descriptor[16..]);
-        for cache_state in [0, 1] {
-            let mut match_loading = v;
-            match_loading.resources[3] = Some(Resource {
-                address: 88, state: cache_state, kind: 44, hash: 99,
-            });
-            assert_eq!(admit(match_loading, None), Err("pending match cache occupied"));
+        for mode in [0x07010100, 0x07010101, 0x07010400, 0x87010400] {
+            let mut v = waiting();
+            v.scene.mode = mode;
+            let (c, descriptor) = plan(v, None, 0, 0x123456789a).unwrap();
+            assert_eq!((c.incoming, c.outgoing), (0, 2));
+            assert_eq!(&descriptor[16..], &v.descriptor[16..]);
+            for cache_state in [0, 1] {
+                let mut match_loading = v;
+                match_loading.resources[3] = Some(Resource {
+                    address: 88, state: cache_state, kind: 44, hash: 99,
+                });
+                assert_eq!(admit(match_loading, None), Err("pending match cache occupied"));
+            }
+            let (mut loaded, ready) = loaded(v, c);
+            loaded.waiting_ready = false;
+            assert_eq!(acknowledge(loaded, c, ready), Ok(None));
+            loaded.waiting_ready = true;
+            assert!(acknowledge(loaded, c, ready).unwrap().is_some());
+            // Match start revokes the original scene even if allocation addresses
+            // have not changed yet. A return with a new epoch cannot revive it.
+            loaded.scene.melee = 0x10;
+            assert_eq!(acknowledge(loaded, c, ready), Err("activation owner changed"));
+            let mut other = v;
+            other.scene.melee = 0x10;
+            assert_eq!(admit(other, None), Err("not owned practice scene"));
+            other = v;
+            other.scene.mode = 0x07010200;
+            assert_eq!(admit(other, None), Err("not owned practice scene"));
+            other = v;
+            other.waiting_ready = false;
+            assert_eq!(admit(other, None), Err("not owned practice scene"));
+            other = v;
+            other.scene.epoch += 1;
+            assert!(!current_request(c.scene, other.scene, 48, 48));
         }
-        let (mut loaded, ready) = loaded(v, c);
-        loaded.waiting_ready = false;
-        assert_eq!(acknowledge(loaded, c, ready), Ok(None));
-        loaded.waiting_ready = true;
-        assert!(acknowledge(loaded, c, ready).unwrap().is_some());
-        // Match start revokes the original scene even if allocation addresses
-        // have not changed yet. A return with a new epoch cannot revive it.
-        loaded.scene.melee = 1;
-        assert_eq!(acknowledge(loaded, c, ready), Err("activation owner changed"));
-        let mut other = v;
-        other.scene.melee = 1;
-        assert_eq!(admit(other, None), Err("not owned practice scene"));
-        other = v;
-        other.scene.mode = 0x07010200;
-        assert_eq!(admit(other, None), Err("not owned practice scene"));
-        other = v;
-        other.waiting_ready = false;
-        assert_eq!(admit(other, None), Err("not owned practice scene"));
-        other = v;
-        other.scene.epoch += 1;
-        assert!(!current_request(c.scene, other.scene, 48, 48));
     }
     #[test]
     fn real_pending_match_cache_blocks_both_loading_and_ready() {

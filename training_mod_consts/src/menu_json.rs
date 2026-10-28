@@ -460,6 +460,22 @@ mod tests {
     }
 
     #[test]
+    fn missing_fighter_prompt_defaults_on_and_an_explicit_off_survives() {
+        let mut file = modern();
+        file.as_object_mut().unwrap().remove("fighter_prompt");
+        let text = format!("{{\"menu\":{file},\"defaults_menu\":{file}}}");
+        let parsed = serde_json::from_str::<MenuJsonStruct>(&text).unwrap();
+        assert_eq!(parsed.menu.fighter_prompt, crate::OnOff::ON);
+        assert_eq!(parsed.defaults_menu.fighter_prompt, crate::OnOff::ON);
+        let mut off = modern();
+        off["fighter_prompt"] = serde_json::to_value(crate::OnOff::OFF).unwrap();
+        let text = format!("{{\"menu\":{off},\"defaults_menu\":{off}}}");
+        let parsed = serde_json::from_str::<MenuJsonStruct>(&text).unwrap();
+        assert_eq!(parsed.menu.fighter_prompt, crate::OnOff::OFF);
+        assert_eq!(parsed.defaults_menu.fighter_prompt, crate::OnOff::OFF);
+    }
+
+    #[test]
     fn every_live_stored_key_has_a_submenu_and_retired_keys_are_not_written() {
         let mut app = unsafe { crate::create_app() };
         let ids: Vec<&str> = app

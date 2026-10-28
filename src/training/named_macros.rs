@@ -15,11 +15,11 @@ use smash::phx::{Hash40, Vector2f, Vector3f};
 use training_mod_macros::{InputFrame, Library, MacroRecording, StartState};
 use training_mod_sync::*;
 use training_mod_tui::macro_panel::{
-    Effect, LibraryRow, MacroUi, MiiIdentity, NameContext, Pad, View, MACRO_KEYBOARD_TITLE,
-    SETUP_KEYBOARD_TITLE,
+    Effect, FighterGate, FighterOrigin, LibraryRow, LoadContext, MacroUi, MiiIdentity,
+    NameContext, Pad, View, MACRO_KEYBOARD_TITLE, SETUP_KEYBOARD_TITLE,
 };
 
-use crate::common::consts::{FighterId, MacroSource, MENU};
+use crate::common::consts::{FighterId, MacroSource, OnOff, MENU};
 use crate::common::input::{Buttons, MappedInputs};
 use crate::common::{menu, try_get_module_accessor};
 use super::practice;
@@ -108,10 +108,45 @@ pub(crate) fn cancel_character_selection() {
     NAMED_REFUSAL_SHOWN.store(0, Ordering::Release);
     lock_write(&UI).invalidate_character_request();
 }
-fn commit_loaded(id:String, recording:MacroRecording, current:Option<i32>) -> Result<Effect,training_mod_macros::MacroError> {
+/// Select a recording as the named macro. `prompt` is true only for an explicit
+/// library load: boot restore and a clip saved right after its own fighter choice
+/// never ask, and a mismatch there keeps the current CPU.
+fn commit_selected(id:String, recording:MacroRecording, prompt:bool, current:Option<i32>) -> Result<Effect,training_mod_macros::MacroError> {
+    let context=load_context(&recording,prompt,current);
+    // A pending question changes nothing yet: the old selection's revision, and
+    // any exact-Mii receipt tied to it, stay valid until the user answers.
+    if context.gate(&recording)!=FighterGate::Prompt {begin_selection();}
+    lock_write(&UI).offer_load(id,recording,context)
+}
+/// The named selection changes now: retire every request tied to the old one.
+fn begin_selection() {
     NAMED_SELECTION_REVISION.fetch_add(1, Ordering::AcqRel);
     NAMED_REFUSAL_SHOWN.store(0, Ordering::Release);
-    lock_write(&UI).commit_loaded(id,recording,current)
+}
+/// Everything the panel needs to decide, from the runtime's exact predicate. Class
+/// equality alone is never a match: a same-class Mii with another exact
+/// configuration is a mismatch. `current` is the live CPU kind, or None before
+/// any fighter exists (plugin init).
+fn load_context(recording:&MacroRecording, prompt:bool, current:Option<i32>) -> LoadContext {
+    let target=recording.playback_target().ok();
+    let matches=target.is_some_and(|target|recorded_target_matches(target,current));
+    let recorded=fighter_label(recording.start.fighter_kind);
+    LoadContext {
+        cpu_kind:current,
+        matches,
+        prompt_enabled:prompt && read(&MENU).fighter_prompt==OnOff::ON,
+        // An exact Mii can only be requested by the Mii alpha; other builds keep the CPU.
+        can_switch:target.is_some_and(|target|cfg!(feature="mii-ordinary-cpu-alpha") || target.configuration().is_none()),
+        revision:selection_revision(),
+        recorded_label:if target.is_some_and(|target|target.configuration().is_some()) {format!("{recorded} (recorded Mii)")} else {recorded},
+        current_label:current.map_or_else(||"CPU".to_owned(),fighter_label),
+    }
+}
+/// Compare identities, not a previous loader request's acknowledgement. A
+/// manually selected exact Mii is already a match even without a replay receipt.
+pub(crate) fn recorded_target_matches(target:training_mod_consts::mii::replay::Target,current:Option<i32>) -> bool {
+    current.is_some_and(|kind| target.ready(kind as u32,
+        crate::character_roster::current_mii_configuration(CPU_ROLE)))
 }
 fn exact_target_ready(target:training_mod_consts::mii::replay::Target,current:Option<i32>) -> bool {
     let Some(kind)=current else{return false;};
@@ -122,11 +157,37 @@ fn exact_target_ready(target:training_mod_consts::mii::replay::Target,current:Op
     {false}
 }
 fn observe_loaded() {
-    let target=lock_read(&UI).loaded_target();
+    let (plays_current,target)={let ui=lock_read(&UI);(ui.plays_current(),ui.loaded_target())};
     let current=cpu_kind();
     let busy=crate::character_roster::busy();
-    let configuration=target.filter(|target|exact_target_ready(*target,current)).and_then(|target|target.configuration());
+    // A macro playing on the current CPU has no recorded identity to acknowledge.
+    let configuration=if plays_current {None} else {
+        target.filter(|target|exact_target_ready(*target,current)).and_then(|target|target.configuration())
+    };
     lock_write(&UI).observe_exact_cpu(current,configuration,busy);
+}
+/// The prompt belongs to one explicit selection. A moved-on selection revision, a
+/// suspended waiting scene or a departed practice scene retires it unanswered.
+fn fighter_prompt_stale(origin:FighterOrigin, revision:u64) -> bool {
+    let current=match origin {
+        FighterOrigin::Named=>selection_revision(),
+        FighterOrigin::Clip=>crate::replay_capture::selection_revision(),
+    };
+    revision!=current || suspended() || !practice::scene_enabled()
+}
+fn retire_stale_fighter_prompt() -> bool {
+    let Some((origin,revision))=lock_read(&UI).fighter_prompt() else {return false;};
+    if !fighter_prompt_stale(origin,revision) {return false;}
+    lock_write(&UI).drop_fighter_prompt();
+    assign(&menu::MENU_RECEIVED_INPUT,true);
+    true
+}
+/// Open the shared prompt for a replay clip or track. The clip editor owns the
+/// candidate and receives the answer through [`apply_effect`].
+pub(crate) fn open_clip_fighter_prompt(revision:u64, recorded:String, current:String) -> bool {
+    let opened=lock_write(&UI).open_fighter_prompt(revision,recorded,current);
+    if opened {assign(&menu::MENU_RECEIVED_INPUT,true);}
+    opened
 }
 fn submit_loaded_character() {
     if !crate::character_roster::cpu_reload_ready() {return;}
@@ -448,7 +509,10 @@ pub fn init() {
     let Ok(recording) = library().load(id) else {
         return;
     };
-    let _ = commit_loaded(id.to_owned(), recording, None);
+    // A restored selection is not an explicit choice: it plays on whichever CPU
+    // Training starts with instead of forcing the recorded fighter.
+    // No fighter exists at plugin init, so no native accessor is read here.
+    let _ = commit_selected(id.to_owned(), recording, false, None);
 }
 
 /// Save a validated recording from the later replay-export stream and select it.
@@ -460,7 +524,7 @@ pub fn accept_recording(recording: MacroRecording) -> Result<String, String> {
         .save_new(&recording)
         .map_err(|err| err.to_string())?;
     remember(&id);
-    let effect = commit_loaded(id.clone(), recording, cpu_kind())
+    let effect = commit_selected(id.clone(), recording, false, cpu_kind())
         .map_err(|err| err.to_string())?;
     apply_effect(effect);
     Ok(id)
@@ -468,6 +532,28 @@ pub fn accept_recording(recording: MacroRecording) -> Result<String, String> {
 
 pub fn on_pad(pad: Pad) {
     if naming_pending() || crate::native_keyboard::busy() { return; }
+    // The fighter question owns the pad until answered. An answer to a selection
+    // or scene that has moved on is dropped, never applied.
+    let prompt = lock_read(&UI).fighter_prompt();
+    if let Some((origin, revision)) = prompt {
+        if fighter_prompt_stale(origin, revision) {
+            lock_write(&UI).drop_fighter_prompt();
+            notify("Selection changed; choose again");
+        } else {
+            let effect = lock_write(&UI).on_pad(pad);
+            // Only an answered library prompt commits its candidate. Cancel and
+            // navigation leave the previous selection and selected.txt alone.
+            let committed = lock_write(&UI).take_prompt_commit();
+            if let Some((id, name)) = committed {
+                begin_selection();
+                remember(&id);
+                notify(&format!("Loaded {name}"));
+            }
+            apply_effect(effect);
+        }
+        assign(&menu::MENU_RECEIVED_INPUT, true);
+        return;
+    }
     if lock_read(&UI).name_prompt().is_some() {
         match pad {
             Pad::Confirm => request_native_name(),
@@ -1068,9 +1154,12 @@ pub fn restored_target(x: f32, y: f32) -> Option<(f32, f32)> {
     if source_is_named() && loaded_fighter_matches() { target } else { None }
 }
 
+/// The recorded-identity gate only. A macro the user chose to play on the current
+/// CPU has no recorded identity to match; ownership, scope, readiness and restore
+/// guards at every caller still apply.
 fn loaded_fighter_matches() -> bool {
-    let target=lock_read(&UI).loaded_target();
-    target.is_some_and(|target|exact_target_ready(target,cpu_kind()))
+    let (plays_current,target)={let ui=lock_read(&UI);(ui.plays_current(),ui.loaded_target())};
+    plays_current || target.is_some_and(|target|exact_target_ready(target,cpu_kind()))
 }
 
 /// Recorded aerial motion must survive even at zero vertical offset.
@@ -1142,6 +1231,7 @@ unsafe fn set_gravity_speed(module_accessor: &mut BattleObjectModuleAccessor, y:
 }
 
 pub fn service_character() {
+    retire_stale_fighter_prompt();
     let named=source_is_named();
     if !named && NAMED_SOURCE_ACTIVE.swap(false,Ordering::AcqRel) {
         cancel_character_selection();
@@ -1156,6 +1246,12 @@ pub fn service_character() {
     if crate::training::recording_or_playback()
         || unsafe { crate::training::save_states::is_loading() }
     {
+        return;
+    }
+    if lock_read(&UI).plays_current() {
+        // The recorded identity is bypassed: no refusal, re-acknowledgement or
+        // character request. Only the settled current CPU gates playback.
+        observe_loaded();
         return;
     }
     #[cfg(feature="mii-ordinary-cpu-alpha")]
@@ -1260,6 +1356,7 @@ fn apply_effect(effect: Effect) {
             *lock_write(&CONFIRMED_NAME) = Some(NameConfirmation { context, name });
         }
         Effect::NeedCharacter(kind) => request_kind(kind),
+        Effect::ClipFighter(choice) => crate::replay_capture::fighter_choice(choice),
     }
 }
 
@@ -1280,7 +1377,7 @@ fn bind_to_slot(id: &str) {
     };
     let label = format!("Record Slot {}", slot + 1);
     match crate::training::input_record::import_named_slot(slot, &recording.frames, recording.start, recording.mii) {
-        Ok(()) => notify(&format!("Bound {} to {label}", recording.name)),
+        Ok(()) => notify(&format!("Copied {} to {label}", recording.name)),
         Err(err) => notify(&err),
     }
 }
@@ -1291,7 +1388,8 @@ fn save_new(recording: MacroRecording) {
             crate::replay_capture::close_editor();
             remember(&id);
             let name = recording.name.clone();
-            let result = commit_loaded(id, recording, cpu_kind());
+            // The clip's own fighter choice already stands; do not ask again.
+            let result = commit_selected(id, recording, false, cpu_kind());
             match result {
                 Ok(effect) => {
                     notify(&format!("Saved {name}"));
@@ -1320,11 +1418,14 @@ fn load_id(id: &str) {
     match library().load(id) {
         Ok(recording) => {
             let name = recording.name.clone();
-            remember(id);
-            let result = commit_loaded(id.to_owned(), recording, cpu_kind());
-            match result {
+            match commit_selected(id.to_owned(), recording, true, cpu_kind()) {
                 Ok(effect) => {
-                    notify(&format!("Loaded {name}"));
+                    // A fighter question leaves the previous selection, and
+                    // selected.txt, in place until it is answered.
+                    if lock_read(&UI).fighter_prompt().is_none() {
+                        remember(id);
+                        notify(&format!("Loaded {name}"));
+                    }
                     apply_effect(effect);
                 }
                 Err(err) => notify(&err.to_string()),
@@ -1345,7 +1446,7 @@ fn cpu_kind() -> Option<i32> {
     }
 }
 
-fn fighter_label(kind: i32) -> String {
+pub(crate) fn fighter_label(kind: i32) -> String {
     if kind < 0 {
         return "CPU".to_owned();
     }

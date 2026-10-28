@@ -13,6 +13,49 @@ pub const VISIBLE_OWNERS: usize = 2;
 /// Two helper rows times three subs.
 pub const OWNED_CAPACITY: usize = 6;
 
+/// The two exact-portrait request channels in the shared source registry.
+/// Configuration alone cannot identify a portrait: Kirby Mii hats carry it too.
+pub const SOURCE_CHANNELS: [usize; 2] = [3, 4];
+pub fn source_channel_admitted(channel: usize, exact: bool, menu_open: bool) -> bool {
+    !menu_open || (SOURCE_CHANNELS.contains(&channel) && exact)
+}
+
+/// Count active helper acquisition attempts, not time deliberately spent behind
+/// a native UI/restore/playback gate. No helper is leased in this phase. Once a
+/// helper is leased or rendering, its original bounded lifetime still applies.
+pub fn helper_wait_tick(waits: u16, admission_blocked: bool) -> (u16, bool) {
+    if admission_blocked { return (waits, false); }
+    let next = waits.saturating_add(1);
+    (next, next >= 1200)
+}
+
+#[cfg(test)]
+#[test]
+fn open_editor_admits_exact_portraits_without_admitting_mii_hats_or_items() {
+    let requests = [(0, true), (1, true), (2, false), (3, true), (4, true)];
+    let admitted: Vec<_> = requests.iter().copied().filter(|&(c, exact)|
+        source_channel_admitted(c, exact, true)).collect();
+    assert_eq!(admitted, [(3, true), (4, true)]);
+    assert!(!source_channel_admitted(3, false, true));
+    assert!(!source_channel_admitted(4, false, true));
+    assert!(!source_channel_admitted(5, true, true));
+    for (c, exact) in requests { assert!(source_channel_admitted(c, exact, false)); }
+}
+
+#[cfg(test)]
+#[test]
+fn portrait_acquisition_budget_pauses_during_owned_playback_and_remains_bounded_after() {
+    let mut waits = 1199;
+    for _ in 0..3600 {
+        let (next, expired) = helper_wait_tick(waits, true);
+        assert_eq!(next, 1199);
+        assert!(!expired);
+        waits = next;
+    }
+    assert_eq!(helper_wait_tick(waits, false), (1200, true));
+    assert_eq!(helper_wait_tick(u16::MAX, false), (u16::MAX, true));
+}
+
 /// A square face/shoulder window in the native 1024px Mii render. The small waiting
 /// icon has no texture-SRT storage; crop its existing quad rather than allocating
 /// a new material. Bilinear interpolation preserves a pane's native UV orientation.

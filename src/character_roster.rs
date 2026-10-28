@@ -17,6 +17,7 @@ use crate::common::{
 use crate::training::{self, lobby};
 use training_mod_consts::character_forms::{
     configured_forms, cycle_position, next_cycle, next_from_original, EntryState, Forms,
+    PresentedReceipt,
 };
 
 #[path = "native_service.rs"]
@@ -282,6 +283,9 @@ struct State {
     cursor: Option<usize>,
     loaded: Option<(usize, u32, u32)>,
     observed: Option<(usize, u32)>,
+    /// Native-reset portrait admission for an accepted Mii-adapter publication.
+    /// Read only by `allow_portrait`; never a CPU idleness input.
+    presented: PresentedReceipt,
 }
 
 impl State {
@@ -294,6 +298,7 @@ impl State {
             cursor: None,
             loaded: None,
             observed: None,
+            presented: PresentedReceipt::NONE,
         }
     }
 }
@@ -690,6 +695,7 @@ pub fn scene_changed(mode: game_mode::Mode) {
         state.cursor = None;
         state.loaded = None;
         state.observed = None;
+        state.presented.retire();
         if let Some(active) = state.active.as_mut() {
             active.departed = true;
             trace!("[CharacterRoster] scene departure during reload owner={} target=0x{:x} phase=0x{:x}; native teardown owns cancellation",
@@ -1026,6 +1032,7 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
                     }) {
                         state.loaded = Some((entry as usize, owner, kind));
                     }
+                    state.presented.observe(entry as usize, owner, kind);
                     trace!(
                         "[CharacterRoster] observed owner={} entry=0x{:x} kind=0x{:x} epoch={}",
                         owner,
@@ -1194,6 +1201,7 @@ unsafe fn service_body(entry:*mut u8,owner:u32,_caller_lr:usize) {
         departed: false,
     };
     state.loaded = None;
+    state.presented.retire();
     state.active = Some(active);
     drop(state);
     // 653240 synchronously copies this descriptor. Preserve all native role,
@@ -1305,6 +1313,7 @@ pub unsafe fn on_destroy(entry: *const u8) {
         state.loaded = None;
         state.cursor = None;
     }
+    state.presented.retire_entry(entry as usize);
     if state
         .observed
         .is_some_and(|(identity, _)| identity == entry as usize)
@@ -1378,6 +1387,9 @@ unsafe fn publish_mii_presentation(
         return;
     }
     state.observed = Some((entry as usize, kind));
+    // Never `loaded`: that receipt gates saved-CPU idleness. Native reset admits
+    // this publication through the presentation-only receipt instead.
+    state.presented.publish(entry as usize, owner, kind);
     drop(state);
     role.sync_selection(fighter);
     #[cfg(feature="mii-hud-portrait-alpha")]
@@ -1422,12 +1434,14 @@ pub unsafe fn allow_portrait(ctx: &mut InlineCtx, entry_id: u64, entry: *const u
     if scope(role).is_none_or(|s| s.mode != 0x04040000) {
         return;
     }
-    let loaded = state_for(role).lock().unwrap().loaded;
-    if let Some((identity, owner, kind)) = loaded {
-        if identity == entry as usize
-            && ctx.registers[0].x() as u32 == kind
-            && active_body(entry, owner, kind)
-        {
+    let admitted = {
+        let state = state_for(role).lock().unwrap();
+        state
+            .presented
+            .admit(state.loaded, entry as usize, ctx.registers[0].x() as u32)
+    };
+    if let Some((_, owner, kind)) = admitted {
+        if active_body(entry, owner, kind) {
             ctx.registers[8].set_x(0);
         }
     }

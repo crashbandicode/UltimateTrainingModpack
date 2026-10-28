@@ -8,10 +8,13 @@ pub(super) enum WaitingStageFamily {
     Quickplay,
 }
 
+// Eden and console Quickplay use different outer modes for the same verified
+// PracticeScene driver (console caller 0x2369208, slot 2). waiting() adds melee
+// 0x0d; entry_preload's caller allowlist keeps actual match preloads out.
 pub(super) fn family(mode: u32) -> Option<WaitingStageFamily> {
     if mode == 0x02010000 {
         Some(WaitingStageFamily::LocalWireless)
-    } else if mode & 0x7fffff00 == 0x07010100 {
+    } else if matches!(mode & 0x7fffff00, 0x07010100 | 0x07010400) {
         Some(WaitingStageFamily::Quickplay)
     } else {
         None
@@ -242,6 +245,30 @@ mod tests {
         assert!(!waiting(0x07010100, 1));
         assert!(!waiting(0x07010200, 0x0d));
         assert!(!waiting(0x04040000, 0x0d));
+    }
+
+    #[test]
+    fn console_quickplay_uses_the_verified_waiting_driver_and_excludes_matches() {
+        // Observed Switch: 0x07010400/0x20 -> resource caller 0x2369208,
+        // slot2/stage311 -> melee0x0d waiting -> melee0x10 actual match.
+        for mode in [0x07010400, 0x87010400] {
+            assert_eq!(family(mode), Some(WaitingStageFamily::Quickplay));
+            assert!(waiting(mode, 0x0d));
+            for melee in [0x20, 0x10, 1] { assert!(!waiting(mode, melee)); }
+            for caller in [0x23684b0, 0x2369208, 0x236ca48, 0x237cce0] {
+                assert!(entry_preload(mode, caller));
+            }
+            for caller in [0x2335cf0, 0x26074f4, 0x14f57c4, 0] {
+                assert!(!entry_preload(mode, caller));
+            }
+            assert!(unprepared_quickplay_entry(mode, 0x0d, 311, true));
+            assert!(!unprepared_quickplay_entry(mode, 0x0d, 311, false));
+            assert!(!unprepared_quickplay_entry(mode, 0x10, 311, true));
+        }
+        for mode in [0x07010200, 0x07010500] {
+            assert!(!waiting(mode, 0x0d));
+            assert!(!entry_preload(mode, 0x2369208));
+        }
     }
 
     #[test]

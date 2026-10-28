@@ -196,6 +196,58 @@ pub fn next_cycle(
     next_from_original(choices, original)
 }
 
+/// Entry identity, owner and kind of a settled practice body. The identity is
+/// compared only, never dereferenced.
+pub type Receipt = (usize, u32, u32);
+
+/// Native reset rebuilds the original CSS portrait unless it admits the live body.
+/// The ordinary loader's `loaded` receipt also gates saved-CPU idleness, so an
+/// accepted Mii-adapter publication (named or replay fighter switch) never writes
+/// it. This presentation-only receipt admits that adapter's ordinary fighter
+/// instead. A Mii class body is never recorded: its bust presentation belongs to
+/// the exact-portrait lifecycle.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PresentedReceipt(Option<Receipt>);
+
+impl PresentedReceipt {
+    pub const NONE: Self = Self(None);
+
+    /// An accepted adapter publication replaces the previous receipt; a Mii class retires it.
+    pub fn publish(&mut self, entry: usize, owner: u32, kind: u32) {
+        self.0 = (!(0x48..=0x4a).contains(&kind)).then_some((entry, owner, kind));
+    }
+
+    /// A newly observed ready kind. The same entry and owner carry the receipt to
+    /// it (a native transformation); a different identity retires it.
+    pub fn observe(&mut self, entry: usize, owner: u32, kind: u32) {
+        if self.0.is_some_and(|(identity, presented, _)| identity == entry && presented == owner) {
+            self.publish(entry, owner, kind);
+        } else {
+            self.0 = None;
+        }
+    }
+
+    /// Scene change, or an ordinary loader replacement of the body.
+    pub fn retire(&mut self) {
+        self.0 = None;
+    }
+
+    /// Before that entry's native destruction.
+    pub fn retire_entry(&mut self, entry: usize) {
+        if self.0.is_some_and(|(identity, _, _)| identity == entry) {
+            self.0 = None;
+        }
+    }
+
+    /// The receipt native reset may admit for `entry` presenting `kind`. A matching
+    /// loader receipt wins; a stale one cannot hide a later adapter publication,
+    /// which never updates `loaded`. The caller still verifies the live body.
+    pub fn admit(self, loaded: Option<Receipt>, entry: usize, kind: u32) -> Option<Receipt> {
+        let matches = move |receipt: &Receipt| receipt.0 == entry && receipt.2 == kind;
+        loaded.filter(matches).or_else(|| self.0.filter(matches))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,5 +571,106 @@ mod tests {
         // No numbered choices at all leaves only the original.
         assert_eq!(next_from_original(&[], Some(IC)), Some((IC, None)));
         assert_eq!(next_from_original(&[], None), None);
+    }
+
+    // Training CPU entry identity from a console log; compared only.
+    const CPU_ENTRY: usize = 0x11aed3e000;
+    const OTHER_ENTRY: usize = 0x11aed44000;
+    const FOX: u32 = 0x07;
+    const ROSALINA: u32 = 0x33;
+
+    #[test]
+    fn adapter_switch_from_css_rosalina_to_fox_is_admitted_without_a_loader_receipt() {
+        let mut receipt = PresentedReceipt::NONE;
+        // CSS Rosalina: nothing was published; native reset keeps its own path.
+        assert_eq!(receipt.admit(None, CPU_ENTRY, ROSALINA), None);
+        // A named or replay Switch publishes Fox through the Mii adapter and leaves
+        // `loaded` empty so saved-CPU idleness is unchanged.
+        receipt.publish(CPU_ENTRY, 1, FOX);
+        assert_eq!(receipt.admit(None, CPU_ENTRY, FOX), Some((CPU_ENTRY, 1, FOX)));
+        // The receipt cannot admit another live kind or another entry.
+        assert_eq!(receipt.admit(None, CPU_ENTRY, ROSALINA), None);
+        assert_eq!(receipt.admit(None, OTHER_ENTRY, FOX), None);
+    }
+
+    #[test]
+    fn presented_receipt_retires_with_its_scene_entry_identity_and_loader_replacement() {
+        let mut receipt = PresentedReceipt::NONE;
+        receipt.publish(CPU_ENTRY, 1, FOX);
+        // Another entry's destruction keeps it; its own destruction retires it.
+        receipt.retire_entry(OTHER_ENTRY);
+        assert_eq!(receipt.admit(None, CPU_ENTRY, FOX), Some((CPU_ENTRY, 1, FOX)));
+        receipt.retire_entry(CPU_ENTRY);
+        assert_eq!(receipt, PresentedReceipt::NONE);
+        // Scene change or an ordinary loader install.
+        receipt.publish(CPU_ENTRY, 1, FOX);
+        receipt.retire();
+        assert_eq!(receipt.admit(None, CPU_ENTRY, FOX), None);
+        // A new entry identity, or the same identity under another owner, never
+        // inherits the receipt.
+        receipt.publish(CPU_ENTRY, 1, FOX);
+        receipt.observe(OTHER_ENTRY, 1, FOX);
+        assert_eq!(receipt.admit(None, OTHER_ENTRY, FOX), None);
+        assert_eq!(receipt, PresentedReceipt::NONE);
+        receipt.publish(CPU_ENTRY, 1, FOX);
+        receipt.observe(CPU_ENTRY, 4, FOX);
+        assert_eq!(receipt, PresentedReceipt::NONE);
+        // Observation alone never creates a receipt.
+        receipt.observe(CPU_ENTRY, 1, ROSALINA);
+        assert_eq!(receipt, PresentedReceipt::NONE);
+    }
+
+    #[test]
+    fn mii_class_bodies_never_hold_a_presented_receipt() {
+        let mut receipt = PresentedReceipt::NONE;
+        for class in 0x48..=0x4a {
+            receipt.publish(CPU_ENTRY, 1, class);
+            assert_eq!(receipt.admit(None, CPU_ENTRY, class), None);
+        }
+        // An exact Mii published after Fox retires the Fox receipt.
+        receipt.publish(CPU_ENTRY, 1, FOX);
+        receipt.publish(CPU_ENTRY, 1, 0x4a);
+        assert_eq!(receipt.admit(None, CPU_ENTRY, FOX), None);
+        assert_eq!(receipt.admit(None, CPU_ENTRY, 0x4a), None);
+        receipt.publish(CPU_ENTRY, 1, FOX);
+        receipt.observe(CPU_ENTRY, 1, 0x49);
+        assert_eq!(receipt, PresentedReceipt::NONE);
+    }
+
+    #[test]
+    fn a_matching_loader_receipt_wins_and_a_stale_one_cannot_hide_a_later_publication() {
+        const MARIO: u32 = 0x00;
+        let loaded_mario = Some((CPU_ENTRY, 1, MARIO));
+        // Ordinary cycle only: admission is exactly the loader receipt's.
+        assert_eq!(PresentedReceipt::NONE.admit(loaded_mario, CPU_ENTRY, MARIO), loaded_mario);
+        assert_eq!(PresentedReceipt::NONE.admit(loaded_mario, CPU_ENTRY, FOX), None);
+        // Cycle to Mario, then a replay Switch to Fox through the adapter: `loaded`
+        // still names Mario and must not block Fox.
+        let mut receipt = PresentedReceipt::NONE;
+        receipt.publish(CPU_ENTRY, 1, FOX);
+        assert_eq!(receipt.admit(loaded_mario, CPU_ENTRY, FOX), Some((CPU_ENTRY, 1, FOX)));
+        assert_eq!(receipt.admit(loaded_mario, CPU_ENTRY, MARIO), loaded_mario);
+        // When both name the live body, the loader's receipt is the one returned
+        // (owner 4 here only tells the two receipts apart).
+        let loaded_fox = Some((CPU_ENTRY, 4, FOX));
+        assert_eq!(receipt.admit(loaded_fox, CPU_ENTRY, FOX), loaded_fox);
+        // A later loader replacement retires the adapter receipt; only `loaded` admits.
+        receipt.retire();
+        assert_eq!(receipt.admit(loaded_mario, CPU_ENTRY, FOX), None);
+        assert_eq!(receipt.admit(loaded_mario, CPU_ENTRY, MARIO), loaded_mario);
+    }
+
+    #[test]
+    fn a_native_transformation_carries_the_adapter_receipt_to_the_live_form() {
+        let mut receipt = PresentedReceipt::NONE;
+        // Pokemon Trainer published through the adapter, then Squirtle -> Ivysaur.
+        receipt.publish(CPU_ENTRY, 1, 0x24);
+        receipt.observe(CPU_ENTRY, 1, 0x25);
+        assert_eq!(receipt.admit(None, CPU_ENTRY, 0x25), Some((CPU_ENTRY, 1, 0x25)));
+        assert_eq!(receipt.admit(None, CPU_ENTRY, 0x24), None);
+        // Aegis: Pyra -> Mythra.
+        receipt.publish(CPU_ENTRY, 1, 0x5a);
+        receipt.observe(CPU_ENTRY, 1, 0x5b);
+        assert_eq!(receipt.admit(None, CPU_ENTRY, 0x5b), Some((CPU_ENTRY, 1, 0x5b)));
     }
 }

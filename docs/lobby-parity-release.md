@@ -1,4 +1,26 @@
-# Lobby parity candidate C89, with C90–C92 updates
+# Lobby parity C93
+
+**C93:** recordings can play on the current CPU, with an optional prompt to
+switch to the recorded fighter. Replay Miis retain their custom HUD portrait;
+ordinary fighters retain their portrait and name after a Training reset.
+Quickplay stage selection now recognizes the console waiting-room mode.
+
+The full build passed 394 tests across 12 harnesses, warning-free Clippy and
+the no-default-features build. Eden reproduced the Rosalina → Fox HUD failure
+on the old build and passed the same reset on C93. The saved Gunner capture
+played on both Fox and the exact Gunner, whose portrait survived preview,
+restart and close, with the current console companion plugins.
+
+Installed on the Switch through Yoga with a matching checksum readback;
+console review, including Quickplay direct stage loading, is pending. Other
+plugins and settings were unchanged.
+
+| C93 build | SHA-256 |
+| --- | --- |
+| Full NRO | `aed8262e9eb7080888df5d03e0179bb5efde0773333b83886912b3545c08da33` |
+| Compiled source | `98a9f90697a334db3255655a84706bae5de6f30ea18f1ed92f24be5d243cf986` |
+
+## Earlier updates
 
 **C92 update:** replay preview no longer needs a saved Training setup. **X**
 captures a temporary in-memory checkpoint of both fighters once they are ready;
@@ -18,7 +40,7 @@ The menu tests pass (176 tests across seven harnesses), along with warning-free 
 C89 builds on C72's waiting-room practice (save/load, recordings, macro previews
 and interrupted Mii editing in Quickplay and Local Wireless waiting) and adds the
 changes below. Training and waiting-room emulator checks passed with the
-current console plugins. C89–C92 are not yet a published download; the earlier
+current console plugins. C89–C93 are not yet a published download; the earlier
 [enhancements alpha](experimental-release.md) does not include these changes.
 
 ## New in C89
@@ -45,7 +67,7 @@ current console plugins. C89–C92 are not yet a published download; the earlier
 - **Item icons:** each of the 38 character items shows an icon taken from its
   own game assets, using 35 shared textures. [Character items](character-items.md)
 
-## Build identity
+## C89 build identity
 
 | Field | Value |
 | --- | --- |

@@ -482,6 +482,9 @@ pub unsafe fn handle_final_input_mapping(
                     let result = context.ok_or("current stage context unavailable")
                         .and_then(|context| crate::practice_stage_request::request_in(context, stage));
                     if let Err(why) = result {
+                        crate::logging::diagnostic(format_args!(
+                            "[PracticeStageRequest] menu_refused reason={why} mode={:?}",
+                            crate::common::game_mode::current()));
                         crate::training::ui::notifications::clear_notification("Practice Stage");
                         crate::training::ui::notifications::notification("Practice Stage".into(),
                             format!("Stage unchanged: {why}"), 180);

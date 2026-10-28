@@ -10,6 +10,9 @@ use training_mod_macros::{
 
 use crate::{NX_SUBMENU_COLUMNS, NX_SUBMENU_ROWS};
 
+mod fighter;
+pub use fighter::{gate as fighter_gate, Choice as FighterChoice, Gate as FighterGate, Origin as FighterOrigin};
+
 const PAGE: usize = NX_SUBMENU_ROWS * NX_SUBMENU_COLUMNS;
 /// Matches the legacy recorder's flick-jump bit. Other buttons count as input.
 const FLICK_JUMP: u32 = 0x8000;
@@ -140,6 +143,38 @@ pub enum Effect {
     /// Keyboard confirmed for a payload the runtime still owns.
     NameConfirmed { context: NameContext, name: String },
     NeedCharacter(i32),
+    /// Result of a prompt opened for a replay clip or track. `None` is Cancel.
+    /// A named-library prompt is applied inside [`MacroUi`] and never reports here.
+    ClipFighter(Option<FighterChoice>),
+}
+
+/// Everything the runtime knows about the selection being loaded. The panel
+/// never reads native state; `matches` comes from the exact readiness predicate.
+#[derive(Clone, Debug)]
+pub struct LoadContext {
+    /// Live CPU kind, if a CPU exists.
+    pub cpu_kind: Option<i32>,
+    /// The recorded identity is already the settled CPU (same class with a
+    /// different exact Mii is not a match).
+    pub matches: bool,
+    /// Persistent Fighter Prompt setting. False keeps the current CPU silently.
+    pub prompt_enabled: bool,
+    /// This build can load the recorded identity (an exact Mii needs the Mii
+    /// alpha). False offers nothing to switch to, so the current CPU is kept.
+    pub can_switch: bool,
+    /// Selection revision the runtime will compare before applying the choice.
+    pub revision: u64,
+    pub recorded_label: String,
+    pub current_label: String,
+}
+
+impl LoadContext {
+    /// The gate for `recording`. A Switch needs an exact recorded target that this
+    /// build can load; an older Mii file without its exact Mii has none.
+    pub fn gate(&self, recording: &MacroRecording) -> FighterGate {
+        let switchable = self.can_switch && recording.playback_target().is_ok();
+        fighter::gate(self.prompt_enabled, switchable, self.matches)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -175,9 +210,34 @@ enum Key {
     Empty,
 }
 
+/// Which CPU a loaded macro's inputs are for. The file itself is never changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Plays {
+    /// The recorded fighter (and exact Mii) must be the settled CPU.
+    Recorded,
+    /// An explicit Switch choice waits once for its requested fighter, then
+    /// inputs follow the current CPU; later manual swaps are never undone.
+    SwitchOnce,
+    /// Whatever CPU is settled on stage when playback starts.
+    Current,
+}
+
 struct Loaded {
     id: Option<String>,
     recording: MacroRecording,
+    plays: Plays,
+}
+
+/// A selection waiting for the user's fighter choice. Nothing is committed yet,
+/// so Cancel leaves the previously loaded macro and the CPU untouched.
+struct FighterScreen {
+    prompt: fighter::Prompt,
+    /// Live CPU kind when the prompt opened, for Keep's readiness.
+    cpu_kind: Option<i32>,
+    /// Named library only. A clip prompt keeps its candidate in the editor.
+    candidate: Option<(String, MacroRecording)>,
+    /// Library page to return to on Cancel.
+    prior: Option<Box<LibraryPage>>,
 }
 
 // NameDraft is already boxed and only one draft is active. Keep the exact Mii
@@ -229,12 +289,18 @@ enum Screen {
     Save(Box<NameDraft>),
     Place(Box<PlaceDraft>),
     Library(Box<LibraryPage>),
+    Fighter(Box<FighterScreen>),
 }
 
 /// Menu, naming, placement, and the restore/character sequence for one macro.
 pub struct MacroUi {
     screen: Screen,
     loaded: Option<Loaded>,
+    /// Library page the last A choice came from, for a Cancelled fighter prompt.
+    picked: Option<Box<LibraryPage>>,
+    /// Id and name of a library load a fighter prompt just committed, until the
+    /// runtime has remembered it.
+    prompt_commit: Option<(String, String)>,
     /// Name dialog parked while its placement page is open.
     held_save: Option<Box<NameDraft>>,
     /// CPU position from the latest save-state restore, before the offset.
@@ -256,6 +322,8 @@ impl MacroUi {
         Self {
             screen: Screen::Closed,
             loaded: None,
+            picked: None,
+            prompt_commit: None,
             held_save: None,
             anchor: None,
             anchor_generation: None,
@@ -308,7 +376,12 @@ impl MacroUi {
     pub fn invalidate_character_request(&mut self) {
         self.character_ready = false;
         self.claimed = false;
-        self.pending_kind = self.loaded_target().map(|target| target.kind() as i32);
+        // A macro playing on the current CPU never requests a character.
+        self.pending_kind = if self.plays_current() {
+            None
+        } else {
+            self.loaded_target().map(|target| target.kind() as i32)
+        };
     }
 
     pub fn loaded_placement(&self) -> Option<Placement> {
@@ -390,6 +463,7 @@ impl MacroUi {
         let mut labels = vec![String::new(); PAGE];
         let (title, footer, selected) = match &self.screen {
             Screen::Closed => return None,
+            Screen::Fighter(screen) => return Some(screen.prompt.view()),
             Screen::Save(draft) => {
                 fill_keys(&mut labels, name_keys(draft.page));
                 let detail = match &draft.body {
@@ -435,8 +509,10 @@ impl MacroUi {
                     .get(page.cursor)
                     .map(|row| row.label.as_str())
                     .unwrap_or("No recordings");
+                // A reads the file and arms it for playback; it does not start it.
+                // Y copies the inputs into the numbered Record Slot named by `label`.
                 let action = match (&page.alternate, page.binds_slot) {
-                    (Some(label), true) => format!("A loads, Y binds to {label}, B closes."),
+                    (Some(label), true) => format!("A Load from file, Y Copy to {label}, B closes."),
                     (Some(label), false) => format!("A loads, Y {label}, B closes."),
                     (None, _) => "A loads, B closes.".to_owned(),
                 };
@@ -574,6 +650,7 @@ impl MacroUi {
         binds_slot: bool,
     ) {
         self.playback_on = false;
+        self.picked = None;
         self.screen = Screen::Library(Box::new(LibraryPage {
             rows,
             skipped,
@@ -604,6 +681,9 @@ impl MacroUi {
     }
 
     pub fn on_pad(&mut self, pad: Pad) -> Effect {
+        if matches!(self.screen, Screen::Fighter(_)) {
+            return self.fighter_pad(pad);
+        }
         match pad {
             Pad::Left => self.shift(0, -1),
             Pad::Right => self.shift(0, 1),
@@ -653,12 +733,23 @@ impl MacroUi {
 
     /// Configuration is supplied only after the runtime's exact selection ack.
     pub fn observe_exact_cpu(&mut self, kind: Option<i32>, configuration: Option<training_mod_mii::lifetime::Configuration>, busy: bool) {
+        if self.plays_current() {
+            // Only the recorded-identity match is bypassed: the CPU must still
+            // exist and be settled (not mid-install) before inputs play.
+            self.character_ready = !busy && kind.is_some();
+            self.pending_kind = None;
+            self.claimed = false;
+            return;
+        }
         let target = self.loaded_target();
         self.character_ready = !busy && target.is_some_and(|target|
             kind.is_some_and(|kind| target.ready(kind as u32, configuration)));
         if self.character_ready {
             self.pending_kind = None;
             self.claimed = false;
+            if let Some(loaded) = self.loaded.as_mut() {
+                if loaded.plays == Plays::SwitchOnce { loaded.plays = Plays::Current; }
+            }
         }
     }
 
@@ -791,14 +882,19 @@ impl MacroUi {
 
     pub fn close_transient(&mut self) {
         self.screen = Screen::Closed;
+        self.picked = None;
+        self.prompt_commit = None;
         self.held_save = None;
         self.clear_anchor();
     }
 
     /// Keep exact unfinished panels and draft values across a waiting match, but
     /// invalidate the old stage anchor and all playback/character acknowledgments.
+    /// A fighter prompt is about the old stage's CPU: it is retired, not parked.
     pub fn invalidate_practice_context(&mut self) {
         self.clear_anchor();
+        self.drop_fighter_prompt();
+        self.picked = None;
         self.character_ready = false;
         self.claimed = false;
     }
@@ -819,8 +915,9 @@ impl MacroUi {
         cpu_kind: Option<i32>,
     ) -> Result<Effect, MacroError> {
         let kind = recording.start.fighter_kind;
-        self.loaded = Some(Loaded { id, recording });
+        self.loaded = Some(Loaded { id, recording, plays: Plays::Recorded });
         self.screen = Screen::Closed;
+        self.picked = None;
         self.held_save = None;
         self.playback_on = false;
         self.playback_frame = 0;
@@ -845,6 +942,165 @@ impl MacroUi {
         }
     }
 
+    /// Load a recording the user explicitly selected. The fighter gate decides
+    /// whether it commits at once (same fighter, or Keep), or waits for a choice.
+    /// Nothing is committed, and the previous macro stays loaded, until then.
+    pub fn offer_load(
+        &mut self,
+        id: String,
+        recording: MacroRecording,
+        context: LoadContext,
+    ) -> Result<Effect, MacroError> {
+        recording.validate()?;
+        match context.gate(&recording) {
+            FighterGate::Proceed => Ok(self.install_current(Some(id), recording, context.cpu_kind)),
+            FighterGate::Keep => {
+                let legacy = recording.playback_target().is_err() && !context.matches;
+                let notice = legacy.then(|| {
+                    Effect::Notify("Older Mii macro: playing on the current fighter".into())
+                });
+                let effect = self.install_current(Some(id), recording, context.cpu_kind);
+                Ok(notice.unwrap_or(effect))
+            }
+            FighterGate::Prompt => {
+                let prior = self.picked.take();
+                self.playback_on = false;
+                self.held_save = None;
+                self.screen = Screen::Fighter(Box::new(FighterScreen {
+                    prompt: fighter::Prompt::new(
+                        FighterOrigin::Named,
+                        context.revision,
+                        context.recorded_label,
+                        context.current_label,
+                    ),
+                    cpu_kind: context.cpu_kind,
+                    candidate: Some((id, recording)),
+                    prior,
+                }));
+                Ok(Effect::None)
+            }
+        }
+    }
+
+    /// Prompt for a replay clip or track. The clip editor keeps the candidate and
+    /// receives [`Effect::ClipFighter`]. Refused while another panel is open.
+    pub fn open_fighter_prompt(
+        &mut self,
+        revision: u64,
+        recorded_label: String,
+        current_label: String,
+    ) -> bool {
+        if !matches!(self.screen, Screen::Closed) {
+            return false;
+        }
+        self.playback_on = false;
+        self.screen = Screen::Fighter(Box::new(FighterScreen {
+            prompt: fighter::Prompt::new(FighterOrigin::Clip, revision, recorded_label, current_label),
+            cpu_kind: None,
+            candidate: None,
+            prior: None,
+        }));
+        true
+    }
+
+    /// The library load a fighter prompt just committed, once. The runtime then
+    /// remembers it as the selected macro; a Cancelled or stale prompt yields none.
+    pub fn take_prompt_commit(&mut self) -> Option<(String, String)> {
+        self.prompt_commit.take()
+    }
+
+    /// Origin and selection revision of the prompt on screen, if any.
+    pub fn fighter_prompt(&self) -> Option<(FighterOrigin, u64)> {
+        match &self.screen {
+            Screen::Fighter(screen) => Some((screen.prompt.origin(), screen.prompt.revision())),
+            _ => None,
+        }
+    }
+
+    /// Retire a prompt whose selection or scene ended. Never applies a choice and
+    /// never changes the loaded macro.
+    pub fn drop_fighter_prompt(&mut self) -> bool {
+        if !matches!(self.screen, Screen::Fighter(_)) {
+            return false;
+        }
+        self.screen = Screen::Closed;
+        true
+    }
+
+    /// Plays on the settled CPU, whatever it is. No character request is created,
+    /// and the file's recorded fighter and Mii are untouched.
+    fn install_current(
+        &mut self,
+        id: Option<String>,
+        recording: MacroRecording,
+        cpu_kind: Option<i32>,
+    ) -> Effect {
+        self.loaded = Some(Loaded { id, recording, plays: Plays::Current });
+        self.screen = Screen::Closed;
+        self.picked = None;
+        self.held_save = None;
+        self.playback_on = false;
+        self.playback_frame = 0;
+        self.playback_len = 0;
+        self.character_ready = cpu_kind.is_some();
+        self.pending_kind = None;
+        self.claimed = false;
+        Effect::None
+    }
+
+    /// True when the loaded macro plays on whatever CPU is settled, so the
+    /// runtime has no recorded identity to wait for.
+    pub fn plays_current(&self) -> bool {
+        self.loaded.as_ref().is_some_and(|loaded| loaded.plays == Plays::Current)
+    }
+
+    fn fighter_pad(&mut self, pad: Pad) -> Effect {
+        let Screen::Fighter(screen) = &mut self.screen else { return Effect::None };
+        match screen.prompt.on_pad(pad) {
+            fighter::Outcome::None => Effect::None,
+            fighter::Outcome::Cancelled => self.cancel_fighter(),
+            fighter::Outcome::Chose(choice) => self.choose_fighter(choice),
+        }
+    }
+
+    fn cancel_fighter(&mut self) -> Effect {
+        let Screen::Fighter(screen) = std::mem::replace(&mut self.screen, Screen::Closed) else {
+            return Effect::None;
+        };
+        match screen.prompt.origin() {
+            FighterOrigin::Clip => Effect::ClipFighter(None),
+            FighterOrigin::Named => {
+                // Back to the list the user picked from; the loaded macro never changed.
+                if let Some(page) = screen.prior {
+                    self.screen = Screen::Library(page);
+                }
+                Effect::None
+            }
+        }
+    }
+
+    fn choose_fighter(&mut self, choice: FighterChoice) -> Effect {
+        let Screen::Fighter(screen) = std::mem::replace(&mut self.screen, Screen::Closed) else {
+            return Effect::None;
+        };
+        let FighterScreen { prompt, cpu_kind, candidate, .. } = *screen;
+        let Some((id, recording)) = candidate.filter(|_| prompt.origin() == FighterOrigin::Named) else {
+            return Effect::ClipFighter(Some(choice));
+        };
+        self.prompt_commit = Some((id.clone(), recording.name.clone()));
+        match choice {
+            FighterChoice::Keep => self.install_current(Some(id), recording, cpu_kind),
+            // The existing exact-fighter route. The CPU differs by construction, so
+            // pass no live kind and let install request the recorded target.
+            FighterChoice::Switch => {
+                let effect = self.install(Some(id), recording, None)
+                    .unwrap_or_else(|error| Effect::Notify(error.to_string()));
+                if let Some(loaded) = self.loaded.as_mut() { loaded.plays = Plays::SwitchOnce; }
+                effect
+            },
+        }
+    }
+
     fn shift(&mut self, d_row: i32, d_col: i32) -> Effect {
         match &mut self.screen {
             Screen::Save(draft) => draft.cursor = nudge(draft.cursor, d_row, d_col),
@@ -852,7 +1108,7 @@ impl MacroUi {
             Screen::Library(page) => {
                 page.cursor = move_library(page.cursor, page.rows.len(), d_row, d_col);
             }
-            Screen::Closed => {}
+            Screen::Closed | Screen::Fighter(_) => {}
         }
         Effect::None
     }
@@ -872,17 +1128,21 @@ impl MacroUi {
                 let forward = !page.binds_slot;
                 match id {
                     Some(id) => {
-                        self.screen = Screen::Closed;
+                        let screen = std::mem::replace(&mut self.screen, Screen::Closed);
                         if forward {
                             Effect::ForwardChoose { id }
                         } else {
+                            // Keep the list for a Cancelled fighter prompt.
+                            if let Screen::Library(page) = screen {
+                                self.picked = Some(page);
+                            }
                             Effect::Choose(id)
                         }
                     }
                     None => Effect::Notify("No recordings saved yet".to_owned()),
                 }
             }
-            Screen::Closed => Effect::None,
+            Screen::Closed | Screen::Fighter(_) => Effect::None,
         }
     }
 
@@ -1148,7 +1408,7 @@ impl MacroUi {
         }
         match &self.screen {
             Screen::Place(_) | Screen::Save(_) | Screen::Library(_) => self.discard(),
-            Screen::Closed => Effect::None,
+            Screen::Closed | Screen::Fighter(_) => Effect::None,
         }
     }
 
@@ -1990,10 +2250,244 @@ mod tests {
         let mut labeled = MacroUi::new();
         labeled.open_library_titled(rows, 0, "Named Library", Some("Record Slot 3".into()));
         let footer = labeled.view().unwrap().footer;
-        assert!(footer.contains("Y binds to Record Slot 3"), "{footer}");
+        // A reads the file for playback (it does not start it); Y copies to the slot.
+        assert!(footer.contains("A Load from file, Y Copy to Record Slot 3"), "{footer}");
+        assert!(!footer.contains("binds"), "{footer}");
         let Effect::BindToSlot { id } = labeled.on_pad(Pad::Extra) else { panic!("expected bind") };
         assert_eq!(id, "fox");
         assert!(!labeled.is_open());
+    }
+
+    fn context(cpu_kind: i32, matches: bool, prompt_enabled: bool) -> LoadContext {
+        LoadContext {
+            cpu_kind: Some(cpu_kind),
+            matches,
+            prompt_enabled,
+            can_switch: true,
+            revision: 5,
+            recorded_label: "Kirby".into(),
+            current_label: "Hero".into(),
+        }
+    }
+
+    /// The library A press the runtime sees before it reads the file.
+    fn pick(ui: &mut MacroUi) {
+        let rows = ["id0", "id1"].map(|id| LibraryRow { id: id.into(), label: id.into() });
+        ui.open_library_titled(rows.to_vec(), 0, "Named Library", Some("Record Slot 1".into()));
+        ui.on_pad(Pad::Right);
+        let Effect::Choose(id) = ui.on_pad(Pad::Confirm) else { panic!("expected choose") };
+        assert_eq!(id, "id1");
+    }
+
+    #[test]
+    fn mismatch_prompts_and_keep_plays_the_same_inputs_on_the_current_cpu() {
+        let mut ui = MacroUi::new();
+        ui.commit_loaded("kept".into(), sample(Placement::default()), Some(0x08)).unwrap();
+        let mut candidate = sample(Placement::default());
+        candidate.frames.push(InputFrame { buttons: 0x4, ..InputFrame::default() });
+        let original = candidate.clone();
+        pick(&mut ui);
+        // Recorded fighter 0x08 against a CPU that is 0x12.
+        let effect = ui.offer_load("id1".into(), candidate, context(0x12, false, true)).unwrap();
+        assert!(matches!(effect, Effect::None));
+        assert_eq!(ui.fighter_prompt(), Some((FighterOrigin::Named, 5)));
+        // Nothing is committed, and nothing plays, while the question is open.
+        assert_eq!(ui.loaded_id(), Some("kept"));
+        assert!(!ui.playback_allowed());
+        assert_eq!(ui.claim_character_request(), None);
+        let view = ui.view().unwrap();
+        assert_eq!((view.labels[0].as_str(), view.labels[1].as_str()),
+            ("Keep current fighter", "Switch to recorded fighter"));
+        assert_eq!(view.selected, 0, "Keep is the safe default");
+
+        assert_eq!(ui.take_prompt_commit(), None, "nothing is remembered before the answer");
+        assert!(matches!(ui.on_pad(Pad::Confirm), Effect::None));
+        assert_eq!(ui.fighter_prompt(), None);
+        assert_eq!(ui.take_prompt_commit(), Some(("id1".to_owned(), "Drill".to_owned())));
+        assert_eq!(ui.take_prompt_commit(), None);
+        assert_eq!(ui.loaded_id(), Some("id1"));
+        assert!(ui.plays_current());
+        assert_eq!(ui.claim_character_request(), None, "Keep must not schedule a CPU reload");
+        // The inputs and recorded identity are the file's, untouched.
+        assert_eq!(ui.loaded_frames(), Some(original.frames.as_slice()));
+        assert_eq!(ui.loaded_start(), Some(original.start));
+        assert_eq!(ui.loaded_target().unwrap().kind(), 0x08);
+        // They play on whichever CPU is settled, but never mid-install.
+        ui.observe_cpu(Some(0x12), true);
+        assert!(!ui.playback_allowed());
+        ui.observe_cpu(Some(0x12), false);
+        assert!(ui.playback_allowed());
+        ui.observe_cpu(Some(0x0f), false);
+        assert!(ui.playback_allowed());
+        assert!(ui.arm_playback());
+        assert_eq!(ui.feed_playback(1), Some(original.frames[0]));
+        assert_eq!(ui.feed_playback(2), Some(original.frames[1]));
+        assert_eq!(ui.claim_character_request(), None);
+    }
+
+    #[test]
+    fn switch_uses_the_existing_exact_fighter_request_and_keeps_the_inputs() {
+        let mut ui = MacroUi::new();
+        let candidate = sample(Placement::default());
+        pick(&mut ui);
+        ui.offer_load("id1".into(), candidate.clone(), context(0x12, false, true)).unwrap();
+        ui.on_pad(Pad::Down);
+        assert_eq!(ui.view().unwrap().selected, 1);
+        assert!(matches!(ui.on_pad(Pad::Confirm), Effect::NeedCharacter(0x08)));
+        assert_eq!(ui.loaded_id(), Some("id1"));
+        assert!(!ui.plays_current());
+        assert!(!ui.playback_allowed());
+        assert_eq!(ui.claim_character_request(), Some(0x08));
+        ui.observe_cpu(Some(0x12), false);
+        assert!(!ui.playback_allowed(), "Switch still waits for the recorded fighter");
+        ui.observe_cpu(Some(0x08), false);
+        assert!(ui.playback_allowed());
+        assert!(ui.plays_current(), "an explicit Switch is completed once");
+        ui.observe_cpu(Some(0x12), false);
+        assert!(ui.playback_allowed(), "a later manual swap stays the user's choice");
+        assert_eq!(ui.claim_character_request(), None);
+        assert_eq!(ui.loaded_frames(), Some(candidate.frames.as_slice()));
+    }
+
+    #[test]
+    fn cancel_returns_to_the_list_and_changes_nothing() {
+        let mut ui = MacroUi::new();
+        ui.commit_loaded("kept".into(), sample(Placement::default()), Some(0x08)).unwrap();
+        pick(&mut ui);
+        ui.offer_load("id1".into(), sample(Placement::default()), context(0x12, false, true)).unwrap();
+        assert!(matches!(ui.on_pad(Pad::Back), Effect::None));
+        assert_eq!(ui.fighter_prompt(), None);
+        assert_eq!(ui.take_prompt_commit(), None, "a cancelled load is never remembered");
+        let view = ui.view().unwrap();
+        assert_eq!((view.title.as_str(), view.selected), ("Named Library", 1));
+        assert_eq!(ui.loaded_id(), Some("kept"));
+        assert!(!ui.plays_current());
+        assert_eq!(ui.claim_character_request(), None);
+        assert!(matches!(ui.on_pad(Pad::Back), Effect::None));
+        assert!(ui.playback_allowed(), "the previous macro is still ready on its fighter");
+    }
+
+    #[test]
+    fn same_fighter_never_prompts_and_a_disabled_prompt_keeps_the_cpu_silently() {
+        for enabled in [true, false] {
+            let mut ui = MacroUi::new();
+            pick(&mut ui);
+            let effect = ui.offer_load("id1".into(), sample(Placement::default()), context(0x08, true, enabled)).unwrap();
+            assert!(matches!(effect, Effect::None));
+            assert_eq!(ui.fighter_prompt(), None);
+            assert!(ui.plays_current());
+            assert!(ui.playback_allowed());
+        }
+        let mut ui = MacroUi::new();
+        pick(&mut ui);
+        let effect = ui.offer_load("id1".into(), sample(Placement::default()), context(0x12, false, false)).unwrap();
+        assert!(matches!(effect, Effect::None), "no NeedCharacter and no prompt");
+        assert_eq!(ui.fighter_prompt(), None);
+        assert!(!ui.is_open());
+        assert!(ui.plays_current());
+        assert_eq!(ui.claim_character_request(), None);
+        assert!(ui.playback_allowed());
+    }
+
+    #[test]
+    fn already_matching_exact_mii_loads_without_a_prompt_or_reload() {
+        let configuration = exact_mii();
+        let mut recording = MacroRecording::new("Exact", "13.0.5", StartState::neutral(0x48, 0, 1.0), frames()).unwrap();
+        recording.set_mii(configuration).unwrap();
+        let mut ui = MacroUi::new();
+        let effect = ui.offer_load("same".into(), recording.clone(), context(0x48, true, true)).unwrap();
+        assert!(matches!(effect, Effect::None));
+        assert_eq!(ui.fighter_prompt(), None);
+        assert_eq!(ui.claim_character_request(), None);
+        assert!(ui.playback_allowed());
+        assert_eq!(ui.loaded_target().unwrap().configuration(), Some(configuration));
+        assert_eq!(ui.loaded_frames(), Some(recording.frames.as_slice()));
+    }
+
+    #[test]
+    fn same_class_with_a_different_exact_mii_is_a_mismatch_and_keep_ignores_the_exact_mii() {
+        let configuration = exact_mii();
+        let mut recording = MacroRecording::new("Exact", "13.0.5", StartState::neutral(0x48, 0, 1.0), frames()).unwrap();
+        recording.set_mii(configuration).unwrap();
+        let mut ui = MacroUi::new();
+        pick(&mut ui);
+        // The CPU is the same Brawler class; the runtime's exact predicate says it is another Mii.
+        ui.offer_load("id1".into(), recording, context(0x48, false, true)).unwrap();
+        assert!(ui.fighter_prompt().is_some());
+        ui.on_pad(Pad::Confirm);
+        assert!(ui.plays_current());
+        let mut other = serde_json::to_value(configuration).unwrap();
+        other["charinfo"][0] = serde_json::json!(9);
+        let other = serde_json::from_value(other).unwrap();
+        ui.observe_exact_cpu(Some(0x48), Some(other), false);
+        assert!(ui.playback_allowed());
+        // The file keeps its exact Mii. Keep neither rewrites nor reapplies it.
+        assert_eq!(ui.loaded_target().unwrap().configuration(), Some(configuration));
+        assert_eq!(ui.claim_character_request(), None);
+    }
+
+    #[test]
+    fn an_older_mii_file_without_its_exact_mii_plays_on_the_current_cpu_without_a_prompt() {
+        let legacy = MacroRecording::new("Old", "13.0.5", StartState::neutral(0x48, 0, 1.0), frames()).unwrap();
+        assert!(legacy.playback_target().is_err());
+        let mut ui = MacroUi::new();
+        let effect = ui.offer_load("old".into(), legacy, context(0x08, false, true)).unwrap();
+        assert!(matches!(effect, Effect::Notify(_)));
+        assert_eq!(ui.fighter_prompt(), None);
+        assert!(ui.plays_current());
+        assert_eq!(ui.loaded_id(), Some("old"));
+        assert!(ui.playback_allowed());
+        assert_eq!(ui.claim_character_request(), None);
+    }
+
+    #[test]
+    fn a_build_that_cannot_load_the_recorded_identity_keeps_the_cpu_without_asking() {
+        let mut ui = MacroUi::new();
+        pick(&mut ui);
+        let context = LoadContext { can_switch: false, ..context(0x12, false, true) };
+        let effect = ui.offer_load("id1".into(), sample(Placement::default()), context).unwrap();
+        assert!(matches!(effect, Effect::None), "nothing to switch to, and not an older-file notice");
+        assert_eq!(ui.fighter_prompt(), None);
+        assert!(ui.plays_current());
+        assert_eq!(ui.claim_character_request(), None);
+        assert!(ui.playback_allowed());
+    }
+
+    #[test]
+    fn a_stale_or_departed_prompt_never_commits_and_leaves_the_previous_macro() {
+        let mut ui = MacroUi::new();
+        ui.commit_loaded("kept".into(), sample(Placement::default()), Some(0x08)).unwrap();
+        pick(&mut ui);
+        ui.offer_load("id1".into(), sample(Placement::default()), context(0x12, false, true)).unwrap();
+        ui.invalidate_practice_context(); // The waiting scene changed.
+        assert_eq!(ui.fighter_prompt(), None);
+        assert!(!ui.is_open());
+        assert!(matches!(ui.on_pad(Pad::Confirm), Effect::None));
+        assert_eq!(ui.loaded_id(), Some("kept"));
+
+        // The runtime retires a prompt whose selection revision moved on.
+        pick(&mut ui);
+        ui.offer_load("id1".into(), sample(Placement::default()), context(0x12, false, true)).unwrap();
+        assert!(ui.drop_fighter_prompt());
+        assert!(!ui.drop_fighter_prompt());
+        assert_eq!(ui.loaded_id(), Some("kept"));
+        assert!(!ui.is_open());
+    }
+
+    #[test]
+    fn a_clip_prompt_reports_its_choice_and_leaves_the_candidate_to_the_editor() {
+        let mut ui = MacroUi::new();
+        assert!(ui.open_fighter_prompt(3, "Kirby".into(), "Hero".into()));
+        assert_eq!(ui.fighter_prompt(), Some((FighterOrigin::Clip, 3)));
+        assert!(!ui.open_fighter_prompt(4, "Fox".into(), "Hero".into()), "one prompt at a time");
+        assert!(matches!(ui.on_pad(Pad::Back), Effect::ClipFighter(None)));
+        assert!(!ui.is_open());
+        ui.open_fighter_prompt(3, "Kirby".into(), "Hero".into());
+        ui.on_pad(Pad::Down);
+        assert!(matches!(ui.on_pad(Pad::Confirm), Effect::ClipFighter(Some(FighterChoice::Switch))));
+        ui.open_fighter_prompt(3, "Kirby".into(), "Hero".into());
+        assert!(matches!(ui.on_pad(Pad::Confirm), Effect::ClipFighter(Some(FighterChoice::Keep))));
+        assert_eq!(ui.loaded_id(), None);
     }
 
     #[test]

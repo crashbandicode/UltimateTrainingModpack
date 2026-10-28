@@ -670,8 +670,22 @@ unsafe fn job_tick(base: usize, owner: usize, entry: usize, svc: Option<ServiceC
                     sources::release(lease);
                 }
                 Ok(None) => {
-                    if withheld_wait_expired(owner, &job) {
-                        finish_job(base, svc, owner, policy::HudTerminal::Budget, "native portrait setup did not finish within its callback budget");
+                    let blocker = sources::portrait_admission_blocker();
+                    // No lease is held yet. Playback/restores intentionally block
+                    // installs; do not turn their duration into a permanent generic
+                    // portrait. Log only changed reasons, never every callback.
+                    let reason = blocker.unwrap_or("waiting for qualified helper");
+                    {
+                        let mut s = STATE.lock().unwrap();
+                        if let Some(current) = s.jobs[owner].as_mut() {
+                            if current.generation == job.generation && current.deferral != reason {
+                                current.deferral = reason;
+                                trace!("[MiiPortrait] owner={} helper acquisition: {}", owner, reason);
+                            }
+                        }
+                    }
+                    if withheld_wait_expired(owner, &job, blocker.is_some()) {
+                        finish_job(base, svc, owner, policy::HudTerminal::Budget, "portrait helper acquisition exceeded its active callback budget");
                     }
                 }
                 Err(reason) => {
@@ -707,8 +721,8 @@ unsafe fn job_tick(base: usize, owner: usize, entry: usize, svc: Option<ServiceC
                         }
                     }
                 }
-                if withheld_wait_expired(owner, &job) {
-                    finish_job(base, svc, owner, policy::HudTerminal::Budget, "native portrait setup did not finish within its callback budget");
+                if withheld_wait_expired(owner, &job, false) {
+                    finish_job(base, svc, owner, policy::HudTerminal::Budget, "portrait render admission exceeded its callback budget");
                 }
             }
         },
@@ -1427,7 +1441,7 @@ unsafe fn finish_job(base: usize, svc: Option<ServiceCallback>, owner: usize, te
     }
 }
 
-fn withheld_wait_expired(owner: usize, job: &Job) -> bool {
+fn withheld_wait_expired(owner: usize, job: &Job, admission_blocked: bool) -> bool {
     if !job.hud.is_withheld() {
         return false;
     }
@@ -1436,8 +1450,9 @@ fn withheld_wait_expired(owner: usize, job: &Job) -> bool {
     if current.generation != job.generation || !current.hud.is_withheld() {
         return false;
     }
-    current.pipeline_waits = current.pipeline_waits.saturating_add(1);
-    current.pipeline_waits >= 1200
+    let (waits, expired) = policy::helper_wait_tick(current.pipeline_waits, admission_blocked);
+    current.pipeline_waits = waits;
+    expired
 }
 
 fn framing_proved(job: &Job) -> bool {

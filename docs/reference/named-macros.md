@@ -16,8 +16,11 @@ behavior are unverified.
    the system keyboard to name and save; cancelling or an invalid name keeps the
    draft for a retry. **Y** opens placement. **Recording Crop** optionally trims
    trailing neutral input.
-4. **Named Library** lists saved files. Selecting one requests its CPU fighter;
-   close the menu and let the change finish.
+4. **Named Library** lists saved files. **A** is **Load from file**: it reads the
+   file and readies it for playback without starting it. If its fighter differs
+   from the CPU, [Fighter Prompt](#fighter-prompt) asks whether to keep the
+   current fighter or switch; after a switch, close the menu and let the change
+   finish.
 5. Enable save states and save your Training setup. The **Input Playback** chord
    (default **ZR + D-pad Up**) restores that setup, then starts the macro.
 
@@ -38,12 +41,36 @@ testing is pending.*
 | Action | Rule |
 | --- | --- |
 | **Save Slot to Library** | Exports the current Record Slot as it was captured when that recording locked in: its frames, its own facing, and its start state. A slot with no recording since launch is refused: `Record into this slot first` |
-| **Named Library → Y** | Copies the highlighted file into the current Record Slot (footer `Y binds to Record Slot N`). 1–600 frames replace that slot. An empty file or one longer than 600 frames is refused, and nothing changes. Nothing is cut short |
+| **Named Library → Y** | **Copy to Record Slot N**: copies the highlighted recording and its starting information into the current Record Slot (footer `A Load from file, Y Copy to Record Slot N`). It does not load the file for named playback. 1–600 frames replace that slot. An empty file or one longer than 600 frames is refused, and nothing changes. Nothing is cut short |
 | Exact Mii | A Mii Fighter slot stores the CPU's exact Mii from when recording started. If that was unavailable, export refuses with `Exact Mii was not available when recording started. Record this slot again.` Builds without the Mii alpha features always refuse a Mii slot |
 
 Each slot keeps its own facing. Playing one slot does not change the facing
 used by the others. Named playback from the library still allows up to 36,000
 frames.
+
+## Fighter Prompt
+
+A recording is inputs, so any fighter can play it. **Input Recording → Fighter
+Prompt** (default **On**; older settings files read as On) decides what happens
+when the recorded fighter is not the CPU. A same-class Mii with a different exact
+Mii counts as different.
+
+| Situation | Result |
+| --- | --- |
+| Recorded fighter is the settled CPU | No prompt |
+| Differs, setting On | One prompt per explicit selection: a Named Library **A**, opening a capture, or a changed track or capture. **Keep current fighter** (default) or **Switch to recorded fighter**. **B** cancels and keeps the previous selection. Preview/restart never re-asks |
+| Differs, setting Off | The current CPU is kept, silently |
+| **Keep** | The CPU is not reloaded and the recorded Mii is not re-applied. The same inputs play on the settled CPU, so results differ naturally |
+| **Switch** | The existing exact-fighter load, once. Later manual CPU changes are not undone |
+
+- Files are never rewritten: a saved clip or library file keeps its recorded
+  fighter and, for a Mii, its exact Mii. Its appearance metadata is read before the choice, so **Keep** can save a Mii clip too.
+- A restored selection at launch, and a clip saved right after its own choice,
+  never ask: they play on the CPU that is present.
+- An older Mii file with no exact Mii plays on the current CPU, because there is
+  nothing to switch to.
+- The prompt uses the same panel and controls as the library. A change of scene
+  or selection retires it unanswered.
 
 ## Placement
 
@@ -122,7 +149,7 @@ does not need it. It observes the CPU while the native replay runs.
 
 | Control | Effect |
 | --- | --- |
-| **D-pad Up / Down** | Previous / next captured fighter. Changing kind reloads the CPU and keeps the crop; only a clean Up/Down changes fighter |
+| **D-pad Up / Down** | Previous / next captured fighter. A fighter that differs from the CPU asks [Keep or Switch](#fighter-prompt) first, and **B** leaves the track and crop as they were. The crop is kept either way; only a clean Up/Down changes fighter |
 | **L** / **R** | Select the In / Out handle |
 | **Left / Right** | Move the selected handle. Holding speeds up from one frame to three minutes of replay per second; a diagonal still moves the handle |
 | Hold **ZL** or **ZR** (Z on GameCube) | Start moving at the fast rate |

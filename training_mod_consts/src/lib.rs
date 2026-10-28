@@ -152,6 +152,10 @@ pub struct TrainingModpackMenu {
     pub solo_popo_cpu: OnOff,
     #[serde(default = "macro_source_default")]
     pub macro_source: MacroSource,
+    /// Ask before a replay or named recording uses a fighter other than the CPU's.
+    /// Off keeps the current CPU without asking. Older files default to On.
+    #[serde(default = "fighter_prompt_default")]
+    pub fighter_prompt: OnOff,
     #[cfg(feature = "p1-cpu-control")]
     #[serde(default = "p1_cpu_control_default")]
     pub p1_cpu_control: OnOff,
@@ -172,6 +176,10 @@ fn p1_cpu_level_default() -> P1CpuLevel {
 
 fn macro_source_default() -> MacroSource {
     MacroSource::NUMBERED
+}
+
+fn fighter_prompt_default() -> OnOff {
+    OnOff::ON
 }
 
 fn lobby_practice_default() -> OnOff {
@@ -346,6 +354,7 @@ pub static BASE_MENU: TrainingModpackMenu = TrainingModpackMenu {
     player_kirby_hats: DEFAULT_KIRBY_HATS,
     cpu_kirby_hats: DEFAULT_KIRBY_HATS,
     macro_source: MacroSource::NUMBERED,
+    fighter_prompt: OnOff::ON,
     #[cfg(feature = "p1-cpu-control")]
     p1_cpu_control: OnOff::OFF,
     #[cfg(feature = "p1-cpu-control")]
@@ -768,12 +777,19 @@ pub unsafe fn create_app<'a>() -> App<'a> {
         ToggleSingle,
         false,
         ),
+        OnOff::to_submenu(
+        "Fighter Prompt",
+        "fighter_prompt",
+        "When a replay or named recording was made with a different fighter than the CPU, ask whether to keep the current fighter or switch. Off keeps the current CPU. Only the inputs play either way.",
+        ToggleSingle,
+        false,
+        ),
         // These ids are actions, not stored menu fields. A is intercepted
         // before the toggle page opens. Unknown keys are ignored on load.
         OnOff::to_submenu(
         "Named Library",
         "named_macro_library",
-        "Open the named macro list. A loads the highlighted recording. Y copies it into the current Record Slot when it is 600 frames or fewer.",
+        "Open the named macro list. A loads the highlighted file and readies it for playback without starting it. Y copies it into the current Record Slot when it is 600 frames or fewer.",
         ToggleSingle,
         false,
         ),

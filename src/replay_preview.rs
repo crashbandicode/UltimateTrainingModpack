@@ -15,6 +15,10 @@ struct Session {
     phase: Phase,
     waits: u32,
     cpu: Option<(u32, usize)>,
+    /// The actual CPU's fighter kind when the preview started. A preview plays the
+    /// recording's inputs on whichever fighter is on stage, so the recorded kind is
+    /// not compared; only this fighter changing mid-preview invalidates it.
+    kind: i32,
 }
 static REQUEST: Mutex<Option<Request>> = Mutex::new(None);
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
@@ -128,7 +132,7 @@ pub unsafe fn before_frame(module: &mut BattleObjectModuleAccessor) {
     let replaced = SESSION.lock().unwrap().as_ref().is_some_and(|s|
         matches!(s.phase, Phase::Playing | Phase::Complete)
             && (s.cpu != Some((module.battle_object_id, module as *mut _ as usize))
-                || s.recording.start.fighter_kind != app::utility::get_kind(module)));
+                || s.kind != app::utility::get_kind(module)));
     if replaced {
         input_record::stop_playback();
         clear_session();
@@ -144,13 +148,16 @@ pub unsafe fn before_frame(module: &mut BattleObjectModuleAccessor) {
     let request = REQUEST.lock().unwrap().take();
     match request {
         Some(Request::Play { recording, revision }) => {
-            if !practice::acquire() || recording.validate().is_err() || recording.start.fighter_kind != app::utility::get_kind(module) {
+            // Identity is the editor's decision (Keep or an answered Switch), not
+            // this request's: ownership, scope and restore guards below still apply.
+            if !practice::acquire() || recording.validate().is_err() {
                 fail("Wait for the selected CPU fighter before previewing");
                 return;
             }
             input_record::stop_playback();
             *SESSION.lock().unwrap() = Some(Session {
                 recording: *recording, revision, phase: Phase::Starting, waits: 0, cpu: None,
+                kind: app::utility::get_kind(module),
             });
             if let Err(error) = save_states::request_preview_restore(true) { fail(error); }
             else { println!("[ClipPreview] restore_start revision={}", revision); }
