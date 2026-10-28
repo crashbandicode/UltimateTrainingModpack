@@ -141,25 +141,45 @@ fn copy_changed_control(expected:&[u8;0x70],current:&[u8;0x70],descriptor:&mut [
     Ok(())
 }
 
-/// Origin value plus the qualified current rank and, when it changed, the
-/// qualified current control type. Kind, tokens, records, and index stay.
+// Native fighter control select `main+0x64fb70` also copies FE+0x34 into the
+// controller's operation byte (`main+0x64fc1c`, controller+0x70; 1 takes the CPU
+// path at `main+0x64fc40`) and FE+0x36 into AI+0xc10 (`main+0x64fc9c`). Neither
+// indexes a native table. With FE+0x35 and FE+0x37 they are the CPU's live
+// behavior (Training stop, walk, jump, attack, level or Control), never Mii
+// identity; the generic roster loader carries all four unchanged into its install.
+const NATIVE_OPERATION: usize = 0x34;
+const NATIVE_AI_C10: usize = 0x36;
+
+/// The qualified AI control type plus the live operation and AI+0xc10 bytes.
+fn copy_live_control(expected:&[u8;0x70],current:&[u8;0x70],descriptor:&mut [u8;0x70])
+    ->Result<(),&'static str> {
+    copy_changed_control(expected,current,descriptor)?;
+    descriptor[NATIVE_OPERATION]=current[NATIVE_OPERATION];
+    descriptor[NATIVE_AI_C10]=current[NATIVE_AI_C10];
+    Ok(())
+}
+
+/// Origin value plus the CPU's live behavior: the qualified current rank and control
+/// type, and the current operation and AI+0xc10 bytes. Kind, tokens, records and
+/// index stay the origin's.
 pub fn with_native_live_metadata(original:[u8;0x70],current:&[u8;0x70])->Result<[u8;0x70],&'static str> {
     let mut descriptor=with_native_rank(original,current)?;
-    copy_changed_control(&original,current,&mut descriptor)?;
+    copy_live_control(&original,current,&mut descriptor)?;
     Ok(descriptor)
 }
 
 /// Idle menu/preflight recapture's descriptor-only policy. The native adapter must still run
 /// every non-descriptor ownership check and recheck state/provenance at commit.
 /// Transactions continue comparing their frozen descriptors byte-for-byte.
-/// Rank and a qualified FE+0x35 change are the only descriptor bytes adopted.
+/// Only the live behavior bytes FE+0x34..=0x37 are adopted: rank and a changed
+/// control type inside their native domains, operation and AI+0xc10 as written.
 pub fn recapture_rank(layout:crate::backend::Layout,expected:Binding,current:Binding,
     expected_descriptor:&[u8;0x70],current_descriptor:&[u8;0x70])->Result<[u8;0x70],&'static str> {
     if expected!=current || current.epoch==0 || current.owner!=layout.visible()[1] {
         return Err("CPU rank recapture owner/lifetime changed");
     }
     let mut descriptor=with_native_rank(*expected_descriptor,current_descriptor)?;
-    copy_changed_control(expected_descriptor,current_descriptor,&mut descriptor)
+    copy_live_control(expected_descriptor,current_descriptor,&mut descriptor)
         .map_err(|_| "CPU rank recapture changed non-rank descriptor bytes")?;
     if descriptor!=*current_descriptor {return Err("CPU rank recapture changed non-rank descriptor bytes");}
     Ok(descriptor)
@@ -625,14 +645,19 @@ mod native_rank_tests {
     }
 
     #[test]
-    fn rank_recapture_rejects_each_non_rank_byte_including_adjacent_role_fields() {
+    fn rank_recapture_rejects_each_byte_outside_the_live_behavior_bundle() {
         let (binding,expected)=original(Layout::Ldn);
         let mut current=expected;current[0x37]=50;
         assert_eq!(recapture_rank(Layout::Ldn,binding,binding,&expected,&current),Ok(current));
-        for offset in (0..0x70).filter(|offset|!matches!(*offset,0x35|0x37)) {
+        // FE+0x34..=0x37 are the control select inputs; their neighbours stay identity.
+        for offset in (0..0x70).filter(|offset|!(0x34..=0x37).contains(offset)) {
             let mut changed=current;changed[offset]^=1;
             assert!(recapture_rank(Layout::Ldn,binding,binding,&expected,&changed).is_err(),
                 "unexpected descriptor change at {offset:#x}");
+        }
+        for offset in [0x34,0x36] {
+            let mut changed=current;changed[offset]^=1;
+            assert_eq!(recapture_rank(Layout::Ldn,binding,binding,&expected,&changed),Ok(changed));
         }
     }
 
@@ -651,8 +676,9 @@ mod native_rank_tests {
             assert!(recapture_rank(Layout::Ldn,binding,binding,&origin,&high).is_err());
             assert!(refresh_control_type(Layout::Ldn,binding,binding,&origin,&high).is_err());
         }
+        // AI+0xc10 is live behavior for recapture; the control-type-only helper keeps refusing it.
         let mut adjacent=control_only;adjacent[0x36]^=1;
-        assert!(recapture_rank(Layout::Ldn,binding,binding,&origin,&adjacent).is_err());
+        assert_eq!(recapture_rank(Layout::Ldn,binding,binding,&origin,&adjacent),Ok(adjacent));
         assert!(refresh_control_type(Layout::Ldn,binding,binding,&origin,&adjacent).is_err());
         let stable=[0x40u8;0x70];
         assert_eq!(recapture_rank(Layout::Ldn,binding,binding,&stable,&stable),Ok(stable));
@@ -760,13 +786,92 @@ mod native_rank_tests {
             assert_eq!(classify(current),Ok(Destination {target:Target::ORIGINAL,cursor:None}));
             let mut control=current;control[0x35]=0x22;
             assert_eq!(classify(control),Ok(Destination {target:Target::ORIGINAL,cursor:None}));
-            for offset in [0x34,0x36,0x38,0x43] {
+            // A return to the original under another live behavior is still the original.
+            for offset in [0x34,0x36] {
+                let mut changed=current;changed[offset]^=1;
+                assert_eq!(classify(changed),Ok(Destination {target:Target::ORIGINAL,cursor:None}));
+            }
+            for offset in [0x33,0x38,0x43] {
                 let mut changed=current;changed[offset]^=1;
                 assert_eq!(classify(changed),Ok(Destination {target:Target::fighter(9),cursor:Some(2)}));
             }
             current[0x37]=101;
             assert!(classify(current).is_err());
             assert_eq!(origin[0x37],0);
+        }
+    }
+
+    // Synthetic behaviors: the oracle is each fixture's own FE+0x34..=0x37 bytes and the
+    // unchanged origin bytes around them, not a copied game value. `control` models a
+    // non-CPU operator (operation byte not 1) with its own AI+0xc10 byte.
+    fn behavior(origin:[u8;0x70],operation:u8,control:u8,ai:u8,rank:u8)->[u8;0x70] {
+        let mut descriptor=origin;
+        descriptor[0x34]=operation;descriptor[0x35]=control;descriptor[0x36]=ai;descriptor[0x37]=rank;
+        descriptor
+    }
+
+    #[test]
+    fn every_native_behavior_including_control_is_recaptured_and_returns_to_cpu() {
+        for layout in [Layout::Training,Layout::Ldn,Layout::Quickplay] {
+            let (binding,origin)=original(layout);
+            let stop=behavior(origin,1,0x22,0,0);
+            let attack=behavior(origin,1,0x05,0,0);
+            let level=behavior(origin,1,0x05,0,77);
+            // C94 runtime: selecting Control changed only operation 01>00 and type 01>24.
+            let control=behavior(origin,0,0x24,0,0);
+            // Each idle change from the previously adopted behavior, then back to the CPU origin.
+            let mut expected=origin;
+            for current in [stop,attack,level,control,stop,origin] {
+                assert_eq!(recapture_rank(layout,binding,binding,&expected,&current),Ok(current));
+                expected=current;
+            }
+            assert_eq!(expected,origin);
+        }
+    }
+
+    #[test]
+    fn identity_or_unqualified_bytes_beside_a_control_change_still_refuse() {
+        let (binding,origin)=original(Layout::Training);
+        let control=behavior(origin,0,1,3,0);
+        assert_eq!(recapture_rank(Layout::Training,binding,binding,&origin,&control),Ok(control));
+        // Owner word, kind group, the neighbouring bytes, O header byte, starting form, index.
+        for offset in [0x04,0x18,0x33,0x38,0x41,0x43,0x46] {
+            let mut changed=control;changed[offset]^=1;
+            assert!(recapture_rank(Layout::Training,binding,binding,&origin,&changed).is_err(),
+                "identity change at {offset:#x} was adopted with Control");
+            assert_ne!(with_native_live_metadata(origin,&changed),Ok(changed));
+        }
+        for unqualified in [behavior(origin,0,0x28,3,0),behavior(origin,0,0xff,3,0),behavior(origin,0,1,3,101)] {
+            assert!(recapture_rank(Layout::Training,binding,binding,&origin,&unqualified).is_err());
+            assert!(with_native_live_metadata(origin,&unqualified).is_err());
+        }
+        let retired=Binding {epoch:binding.epoch+1,..binding};
+        assert!(recapture_rank(Layout::Training,binding,retired,&origin,&control).is_err());
+    }
+
+    #[test]
+    fn original_restore_and_exact_mii_staging_keep_the_live_behavior() {
+        use crate::{inventory::MiiClass,lifetime::Tokens,native_values::RowIds};
+        let saved=Configuration::from_observed(MiiClass::Swordfighter,
+            Tokens {outfit:0,hat:0,colour:4,voice:37,specials:[1,0,0,0]},[0;88],
+            RowIds {outfit:0x1300001bfef7a5f7,hat:0x5a00000fa9efa5ea}).unwrap();
+        for layout in [Layout::Training,Layout::Ldn,Layout::Quickplay] {
+            for original_kind in [9u32,0x48,0x4a] {
+                let (binding,mut origin)=original(layout);
+                origin[0x18..0x1c].copy_from_slice(&original_kind.to_le_bytes());
+                let frozen=origin;
+                // Control chosen after the owner was captured.
+                let live=behavior(origin,0,1,3,40);
+                let live_origin=with_native_live_metadata(origin,&live).unwrap();
+                assert_eq!(live_origin,live);
+                let restored=staged_descriptor_in(layout,binding.owner as usize,live_origin,None).unwrap();
+                assert_eq!(restored,live);
+                let exact=staged_descriptor_in(layout,binding.owner as usize,live_origin,Some(saved)).unwrap();
+                assert_eq!(&exact[0x34..0x38],&live[0x34..0x38]);
+                assert_eq!(u32::from_le_bytes(exact[0x18..0x1c].try_into().unwrap()),0x49);
+                assert_eq!(&exact[0x38..0x43],&origin[0x38..0x43]);
+                assert_eq!(origin,frozen);
+            }
         }
     }
 }

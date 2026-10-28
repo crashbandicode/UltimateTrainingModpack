@@ -88,6 +88,19 @@ fn note_non_rank_recapture(expected:&native::Snapshot, now:&native::Snapshot) {
     if print {note(line);}
 }
 
+/// One line per refused preflight, naming which part of the owner snapshot moved
+/// after the idle behavior refresh. Read-only; grants nothing.
+fn note_preflight_mismatch(expected:&native::Snapshot, now:&native::Snapshot) {
+    let diff=non_rank_descriptor_diff(&expected.descriptor,&now.descriptor);
+    let pairs=&diff.pairs[..usize::from(diff.count.min(8))];
+    trace!("[MiiOrdinaryCpu] preflight current configuration changed: descriptor n={} {:02x?} rank={}>{} row_control={:02x?}>{:02x?} index_eq={} scalars_eq={} record_eq={} current_record_eq={} owner_eq={} binding_eq={}",
+        diff.count,pairs,expected.descriptor[0x37],now.descriptor[0x37],expected.control,now.control,
+        expected.index==now.index,expected.scalars==now.scalars,expected.record==now.record,
+        expected.current_record==now.current_record,
+        expected.owners[expected.binding.owner as usize]==now.owners[now.binding.owner as usize],
+        expected.binding==now.binding);
+}
+
 // Called only after the existing ordinary gate's fingerprint/install succeeds.
 pub(super) fn init() {
     ENABLED.store(true,Ordering::Release);
@@ -502,15 +515,15 @@ unsafe fn begin(entry:*mut u8)->bool {
         return false;
     }
     if !ready_descriptor(entry,&expected.descriptor) {return false;}
-    // No ticket exists yet. Waiting practice can change the native AI rank
-    // while the menu is open. Use the same descriptor-only qualification as
-    // menu recapture: FE+0x35 control and FE+0x37 rank, within their native
-    // domains. Every other byte and protected owner field must still match;
+    // No ticket exists yet. Native Training CPU behavior (stop, attack, level,
+    // Control) and waiting practice can change the CPU's live behavior bytes
+    // FE+0x34..=0x37 after capture. Use the same descriptor-only qualification as
+    // menu recapture. Every other byte and protected owner field must still match;
     // commit rechecks INSTALL, reservation, and epoch. The later fresh preflight
     // and all transaction phases remain byte-exact; origin is never updated.
     let expected=refresh_idle_metadata(entry,origin.original_kind,expected,live,request,retained,active.is_some());
-    // Keep the immutable identity/role origin, but carry the qualified native
-    // rank and control type. The fresh preflight and every transaction phase
+    // Keep the immutable identity origin, but carry the CPU's live behavior so the
+    // install preserves it. The fresh preflight and every transaction phase
     // below remain byte-exact against this refreshed expected descriptor.
     let live_origin=match training_mod_consts::mii::ordinary_cpu::with_native_live_metadata(origin.descriptor,&expected.descriptor) {
         Ok(descriptor)=>descriptor,
@@ -630,7 +643,7 @@ unsafe fn begin(entry:*mut u8)->bool {
         Ok(now) if native::same_owned(&now,&expected,retained || active.is_some())=>now,
         Err(provenance::helpers::BUSY)=>return false,
         Err(reason)=>{refuse_request(request,reason);note(reason);return false;}
-        Ok(_)=>{refuse_request(request,"preflight current configuration changed");note("preflight current configuration changed");return false;}
+        Ok(now)=>{refuse_request(request,"preflight current configuration changed");note_preflight_mismatch(&expected,&now);return false;}
     };
     // Include saved/ordinary returns. Admission and phase publication both recheck
     // the current-to-target transition; the origin's hat alone is insufficient.

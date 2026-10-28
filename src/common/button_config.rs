@@ -369,6 +369,12 @@ pub fn consume_player_cycle_request() -> bool {
     combo_passes(ButtonCombo::PlayerCycle)
 }
 
+/// The CPU cycle chord on the controller operating the CPU (native Behavior=Control).
+/// Same edge and modal gates as P1's chord; it never enters P1's shared request set.
+pub fn operator_cpu_cycle_passes(controller: Controller) -> bool {
+    _combo_passes(controller, ButtonCombo::CpuCycle)
+}
+
 fn suppress_pause(controller: &mut Controller, owns_input: bool) {
     if owns_input {
         controller.previous_buttons.set_plus(false);

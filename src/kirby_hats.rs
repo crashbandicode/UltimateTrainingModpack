@@ -11,7 +11,7 @@ use training_mod_sync::read;
 use crate::common::consts::FighterId;
 use crate::common::input::{Buttons, MappedInputs};
 use crate::common::{self, button_config, menu, try_get_module_accessor};
-use crate::kirby_hat_cycle::{HatContinuation, HatCycle, HatSnapshot, ShortcutLatch};
+use crate::kirby_hat_cycle::{operator_clicks, HatContinuation, HatCycle, HatSnapshot, ShortcutLatch};
 use crate::training;
 use crate::character_roster::sources::{self, Lease};
 use crate::source_lifetime::Holder;
@@ -58,6 +58,8 @@ static STATES: [Mutex<State>; 2] = [
     }),
 ];
 static SHORTCUT: Mutex<ShortcutLatch> = Mutex::new(ShortcutLatch::new());
+/// The controller operating the CPU under native Behavior=Control has its own latch.
+static OPERATOR_SHORTCUT: Mutex<ShortcutLatch> = Mutex::new(ShortcutLatch::new());
 static PENDING_ROLES: AtomicU8 = AtomicU8::new(0);
 
 #[cfg(feature = "source-capacity-probe")]
@@ -119,11 +121,24 @@ unsafe fn equipped(body: *mut app::BattleObjectModuleAccessor) -> Option<u32> {
 
 /// Called only for P1, before the ordinary input-delay queue.
 pub unsafe fn handle_input(out: &mut MappedInputs, left_click: bool, right_click: bool) {
+    sample_shortcut(&SHORTCUT, out, left_click, right_click);
+}
+
+/// Called only for the controller operating the CPU under native Behavior=Control
+/// (`practice::cpu_operator`). P1's CPU hat chord (Special plus right stick click), or
+/// its own-fighter alias with the left stick, cycles the CPU's hat; never P1's.
+pub unsafe fn handle_cpu_operator_input(out: &mut MappedInputs, left_click: bool, right_click: bool) {
+    let (left, right) = operator_clicks(left_click, right_click);
+    sample_shortcut(&OPERATOR_SHORTCUT, out, left, right);
+}
+
+/// `left_click` requests role 0 (P1) and `right_click` role 1 (CPU).
+unsafe fn sample_shortcut(latch: &Mutex<ShortcutLatch>, out: &mut MappedInputs, left_click: bool, right_click: bool) {
     let special = out
         .buttons
         .intersects(Buttons::SPECIAL | Buttons::SPECIAL_RAW | Buttons::SPECIAL_RAW2);
     let neutral = out.lstick_x.unsigned_abs() < 20 && out.lstick_y.unsigned_abs() < 20;
-    let mut shortcut = SHORTCUT.lock().unwrap();
+    let mut shortcut = latch.lock().unwrap();
     let mut bodies = [None; 2];
     if shortcut.would_request(special, neutral, left_click, right_click) && permitted() {
         let role = usize::from(right_click);
@@ -395,6 +410,7 @@ fn invalidate_runtime(same_lobby: Option<bool>) {
         let _ = role;
     }
     *SHORTCUT.lock().unwrap() = ShortcutLatch::default();
+    *OPERATOR_SHORTCUT.lock().unwrap() = ShortcutLatch::default();
     PENDING_ROLES.store(0, Ordering::Release);
 }
 

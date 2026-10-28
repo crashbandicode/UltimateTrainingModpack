@@ -122,6 +122,17 @@ pub unsafe fn primary_cpu(module: &mut BattleObjectModuleAccessor) -> bool {
             .is_some_and(|current| std::ptr::eq(current, module))
 }
 
+/// The controller mapping that operates the Training CPU under native CPU
+/// Behavior=Control: the CPU entry's own mapping index, only while a valid native
+/// FighterInformation positively reports a controller operator. P1, waiting scenes,
+/// an AI-owned CPU and every unqualified read refuse.
+pub fn cpu_operator(player_idx: i32) -> bool {
+    player_idx == crate::consts::FighterId::CPU as i32
+        && context() == Some(Context::Training)
+        && common::try_get_module_accessor(crate::consts::FighterId::CPU)
+            .is_some_and(|cpu| common::operation_cpu(unsafe { &mut *cpu }) == Some(false))
+}
+
 /// FE+0x4178 is the native controller owner used by the existing CPU pilot's
 /// verified 13.0.5 entry adapter. Do not confuse its controller slot with entry 4.
 pub unsafe fn owns_cpu_controls(controls: usize) -> bool {

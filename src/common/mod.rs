@@ -92,34 +92,42 @@ pub fn is_fighter(module_accessor: &app::BattleObjectModuleAccessor) -> bool {
 }
 
 pub fn is_operation_cpu(module_accessor: &mut app::BattleObjectModuleAccessor) -> bool {
+    operation_cpu(module_accessor).unwrap_or(false)
+}
+
+/// Native FighterInformation's operator for a qualified practice fighter: `Some(true)`
+/// for its AI, `Some(false)` for a controller. `None` when the body, entry, manager or
+/// information is unqualified; callers must not read that as either operator.
+pub fn operation_cpu(module_accessor: &mut app::BattleObjectModuleAccessor) -> Option<bool> {
     unsafe {
         #[cfg(any(feature = "source-owner-probe", feature = "managed-sources"))]
         if crate::character_roster::sources::legacy_training_owner_reserved(module_accessor) {
-            return false;
+            return None;
         }
         if !is_fighter(module_accessor) {
-            return false;
+            return None;
         }
         if crate::character_roster::sources::reserved(module_accessor) {
-            return false;
+            return None;
         }
 
         let entry_id_int =
             WorkModule::get_int(module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID);
 
         if entry_id_int == 0 || !crate::training::lobby::permits_entry(entry_id_int) {
-            return false;
+            return None;
         }
 
         let entry_id = app::FighterEntryID(entry_id_int);
         let address = read(&FIGHTER_MANAGER_ADDR) as *mut *mut app::FighterManager;
         if address.is_null() || (*address).is_null() {
-            return false;
+            return None;
         }
         let mgr = *address;
         let fighter_information = FighterManager::get_fighter_information(mgr, entry_id);
 
-        !fighter_information.is_null() && FighterInformation::is_operation_cpu(fighter_information)
+        (!fighter_information.is_null())
+            .then(|| FighterInformation::is_operation_cpu(fighter_information))
     }
 }
 

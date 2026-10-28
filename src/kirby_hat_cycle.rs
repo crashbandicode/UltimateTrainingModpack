@@ -121,6 +121,14 @@ impl ShortcutLatch {
     }
 }
 
+/// (left, right) clicks for [`ShortcutLatch::sample`] from the controller operating the
+/// CPU under native Behavior=Control. Its CPU hat chord is P1's (Special plus right stick
+/// click); Special plus left stick click, its own fighter, is an alias. Both clicks hold
+/// the chord without a request, as for P1. It never requests P1's hat.
+pub const fn operator_clicks(left_click: bool, right_click: bool) -> (bool, bool) {
+    (left_click && right_click, left_click || right_click)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +266,35 @@ mod tests {
             latch.sample(true, true, true, true, [true; 2]),
             (None, false)
         );
+    }
+
+    #[test]
+    fn cpu_operator_chords_cycle_only_the_cpu_hat_on_their_own_latch() {
+        let sample = |latch: &mut ShortcutLatch, special, left_click, right_click, available| {
+            let (left, right) = operator_clicks(left_click, right_click);
+            latch.sample(special, true, left, right, available)
+        };
+        let release = |latch: &mut ShortcutLatch| sample(latch, false, false, false, [true; 2]);
+        let (mut p1, mut operator) = (ShortcutLatch::new(), ShortcutLatch::new());
+        // P1 holds its CPU chord (Special + R3); the operator's separate latch still takes
+        // the same chord once, for the CPU.
+        assert_eq!(p1.sample(true, true, false, true, [true; 2]), (Some(1), true));
+        assert_eq!(sample(&mut operator, true, false, true, [true; 2]), (Some(1), true));
+        assert_eq!(sample(&mut operator, true, false, true, [true; 2]), (None, true));
+        release(&mut operator);
+        // Special + L3 is an alias for the same CPU request.
+        assert_eq!(sample(&mut operator, true, true, false, [true; 2]), (Some(1), true));
+        release(&mut operator);
+        // Never P1's hat, even when only P1 is an eligible Kirby.
+        assert_eq!(sample(&mut operator, true, true, false, [true, false]), (None, false));
+        assert_eq!(sample(&mut operator, true, false, true, [true, false]), (None, false));
+        release(&mut operator);
+        // Both clicks hold the chord without a request; releasing one is not a new edge.
+        assert_eq!(operator_clicks(true, true), (true, true));
+        assert_eq!(sample(&mut operator, true, true, true, [true; 2]), (None, false));
+        assert_eq!(sample(&mut operator, true, false, true, [true; 2]), (None, false));
+        release(&mut operator);
+        assert_eq!(operator_clicks(false, false), (false, false));
+        assert_eq!(sample(&mut operator, true, false, false, [true; 2]), (None, false));
     }
 }

@@ -1051,6 +1051,8 @@ unsafe fn handle_final_input_mapping(
     if !is_training_mode() {
         if player_idx == 0 {
             crate::character_roster::suppress_owned_buttons(&mut *out);
+        } else {
+            crate::character_roster::suppress_operator_buttons(player_idx, &mut *out);
         }
         return;
     }
@@ -1111,6 +1113,15 @@ unsafe fn handle_final_input_mapping(
             controller_struct.controller.current_buttons.x(),
         );
         crate::kirby_hats::handle_input(
+            &mut *out,
+            controller_struct.controller.current_buttons.stick_l(),
+            controller_struct.controller.current_buttons.stick_r(),
+        );
+    } else if practice::cpu_operator(player_idx) {
+        // Native CPU Behavior=Control: the CPU's operator may cycle the CPU and its hat.
+        let cycle = button_config::operator_cpu_cycle_passes(*controller_struct.controller);
+        crate::character_roster::handle_cpu_operator_input(player_idx, &mut *out, cycle);
+        crate::kirby_hats::handle_cpu_operator_input(
             &mut *out,
             controller_struct.controller.current_buttons.stick_l(),
             controller_struct.controller.current_buttons.stick_r(),

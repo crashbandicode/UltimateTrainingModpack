@@ -1,7 +1,7 @@
 //! Reload a practice player or CPU through the game's asynchronous entry/resource loader.
 //! Requests contain values and entry identities, never retained game pointers.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use skyline::hooks::{getRegionAddress, InlineCtx, Region};
@@ -140,6 +140,8 @@ fn settled_cpu_mii() -> Option<training_mod_consts::mii::lifetime::Configuration
 static BASE: AtomicUsize = AtomicUsize::new(0);
 static INSTALL: InstallGate = InstallGate::new();
 static OWNED_BUTTONS: AtomicU32 = AtomicU32::new(0);
+/// The CPU operator's consumed chord: mapping index (high word) and buttons (low word).
+static OPERATOR_BUTTONS: AtomicU64 = AtomicU64::new(0);
 // The first ready body of this native entry supplies its character-select kind.
 // Reloads retain the entry, so a practice replacement must not overwrite this.
 static ORIGINAL_KINDS: [AtomicU32; 2] = [AtomicU32::new(u32::MAX), AtomicU32::new(u32::MAX)];
@@ -657,6 +659,33 @@ pub fn suppress_owned_buttons(out: &mut MappedInputs) {
     out.buttons.remove(Buttons::from_bits_truncate(owned));
 }
 
+/// The controller operating the CPU under native Behavior=Control
+/// (`practice::cpu_operator`). Its CPU cycle chord queues the CPU role only, through
+/// P1's gates and loader; P1's chord and its suppression stay separate.
+pub fn handle_cpu_operator_input(player_idx: i32, out: &mut MappedInputs, cycle: bool) {
+    if cycle && !button_config::has_pending_request() && !menu::captures_input() {
+        OPERATOR_BUTTONS.store(operator_buttons(player_idx, out.buttons.bits()), Ordering::Relaxed);
+        queue(Role::Cpu, Selection::Cycle);
+    }
+    suppress_operator_buttons(player_idx, out);
+}
+
+/// The operator's consumed chord stays suppressed on its own mapping only, including
+/// through the native body-loading interval.
+pub fn suppress_operator_buttons(player_idx: i32, out: &mut MappedInputs) {
+    let stored = OPERATOR_BUTTONS.load(Ordering::Relaxed);
+    if stored >> 32 != u64::from(player_idx as u32) {
+        return;
+    }
+    let owned = stored as u32 & out.buttons.bits();
+    OPERATOR_BUTTONS.store(operator_buttons(player_idx, owned), Ordering::Relaxed);
+    out.buttons.remove(Buttons::from_bits_truncate(owned));
+}
+
+fn operator_buttons(player_idx: i32, buttons: u32) -> u64 {
+    (u64::from(player_idx as u32) << 32) | u64::from(buttons)
+}
+
 /// Cancel plugin intent immediately. An already installed native reload belongs
 /// to the native scene teardown; never clear its flags or force its state ahead.
 pub fn scene_changed(mode: game_mode::Mode) {
@@ -689,6 +718,7 @@ pub fn scene_changed(mode: game_mode::Mode) {
     crate::kirby_hats::scene_changed(same_lobby);
     training::named_macros::waiting_scene_changed(same_lobby);
     OWNED_BUTTONS.store(0, Ordering::Relaxed);
+    OPERATOR_BUTTONS.store(0, Ordering::Relaxed);
     for role in [Role::Player, Role::Cpu] {
         ORIGINAL_KINDS[role as usize].store(u32::MAX, Ordering::Release);
         SOLO_ACTIVE[role as usize].store(false, Ordering::Release);

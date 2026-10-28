@@ -12,6 +12,8 @@ that fighter's files. A swap asks the game's own loader to refill the existing
 entry with a different fighter. Nothing is added to character select, and your
 controller, team and costume settings stay as they were.
 
+CPU swaps preserve the native **CPU Behavior** setting, including **Stop**, **Attack** and **Control**. With **Control** selected, Player 2 can use the configured CPU cycle shortcut (default **ZL + D-pad Left**) on their own controller.
+
 The new fighter starts fresh: practice extras that belonged to the old fighter,
 such as a pending hat or item request, are cancelled. Save states keep position
 and damage for whoever is standing there now; they do not bring back the fighter

@@ -14,6 +14,8 @@ Open **Character Extras → Kirby Hats**. Red numbers are Player 1's hat order a
 
 Close the menu. With the left stick neutral, press **L3 + B** (left stick click + Special) for Player 1's Kirby. Press **R3 + B** on Player 1's controller for the CPU's Kirby.
 
+In Training with **CPU Behavior → Control**, Player 2 can press **R3 + B** on their own controller to cycle the CPU's hat. **L3 + B** also works there.
+
 ![Kirby equips Mario's hat and throws a fireball, then equips Link's hat and fires an arrow.](feature-walkthroughs/kirby-hats.gif)
 
 *Two shortcut presses, two copy abilities. Neither source fighter is in the visible match.*

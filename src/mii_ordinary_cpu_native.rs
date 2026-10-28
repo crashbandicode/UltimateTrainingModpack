@@ -246,7 +246,7 @@ pub(super) unsafe fn capture_origin(entry:usize,epoch:u64,kind:u32,catalog:&Cata
                 return Err(reason.into());
             }
         };
-        // Only rank and a qualified FE+0x35 control type differ in this local
+        // Only the CPU's live behavior bytes FE+0x34..=0x37 differ in this local
         // comparison value. All other same_owned checks stay exact.
         let comparison=Snapshot {descriptor,..expected};
         check(same_owned(&now,&comparison,retained),"menu current owner changed")?;
