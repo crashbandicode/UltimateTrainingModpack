@@ -1058,6 +1058,7 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
             // Buff the fighter if they're one of the fighters who can be buffed
             if fighter_is_buffable {
                 save_state.state = ApplyBuff;
+                crate::logging::diagnostic(format_args!("[PracticeSave] buff_restore_started cpu={} active_kind={:#x}", is_cpu, fighter_kind));
             }
             // Perform fighter specific loading actions
             if let Some(load_steve) = save_state.steve_state {
@@ -1132,6 +1133,7 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
             buff::restart_buff(module_accessor);
             // set is_buffing back to false when done
             save_state.state = NoAction;
+            crate::logging::diagnostic(format_args!("[PracticeSave] buff_restore_complete cpu={} active_kind={:#x}", is_cpu, fighter_kind));
         }
     }
 

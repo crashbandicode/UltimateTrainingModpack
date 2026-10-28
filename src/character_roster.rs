@@ -535,15 +535,23 @@ fn queue_request(role: Role, selection: Selection, restoring: bool) {
     let Some(scope) = scope(role) else {
         return;
     };
-    if busy()
-        || training::recording_or_playback()
-        || unsafe { training::save_states::is_loading() }
-        || lobby::native_ui_busy()
-        || button_config::has_pending_request()
-    {
+    let occupied = if busy() {
+        Some("Wait for the character swap to finish")
+    } else if training::recording_or_playback() {
+        Some("Finish recording or playback before swapping")
+    } else if unsafe { training::save_states::is_loading() } {
+        Some("Wait for the save-state restore to finish")
+    } else if lobby::native_ui_busy() {
+        Some("Close the current game menu before swapping")
+    } else if button_config::has_pending_request() {
+        Some("Finish the current shortcut before swapping")
+    } else {
+        None
+    };
+    if let Some(reason) = occupied {
         if !restoring && !matches!(selection, Selection::RefreshPartners) {
-            trace!("[CharacterRoster] request rejected: another operation owns practice");
-            notify(role, "Finish the current practice action first".into());
+            trace!("[CharacterRoster] request rejected: {}", reason);
+            notify(role, reason.into());
         }
         return;
     }

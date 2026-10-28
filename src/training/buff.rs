@@ -4,9 +4,9 @@ use smash::lib::lua_const::*;
 use smash::phx::{Hash40, Vector3f};
 
 use crate::common::consts::*;
-use crate::is_operation_cpu;
 use crate::training::frame_counter;
 use crate::training::handle_add_limit;
+use crate::training::practice;
 
 use training_mod_sync::*;
 
@@ -27,8 +27,14 @@ pub fn clear_session_state() {
 static BUFF_DELAY_COUNTER: LazyLock<usize> =
     LazyLock::new(|| frame_counter::register_counter(frame_counter::FrameCounterType::InGame));
 
+/// These callbacks belong to the two admitted save-state fighters. Selecting
+/// Control changes the operator, never the slot that owns its buff bookkeeping.
+fn cpu_slot(module_accessor: &mut app::BattleObjectModuleAccessor) -> bool {
+    unsafe { practice::role(module_accessor) == Some(1) }
+}
+
 pub fn restart_buff(module_accessor: &mut app::BattleObjectModuleAccessor) {
-    if is_operation_cpu(module_accessor) {
+    if cpu_slot(module_accessor) {
         assign(&IS_BUFFING_CPU, false);
     } else {
         assign(&IS_BUFFING_PLAYER, false);
@@ -36,7 +42,7 @@ pub fn restart_buff(module_accessor: &mut app::BattleObjectModuleAccessor) {
 }
 
 pub fn start_buff(module_accessor: &mut app::BattleObjectModuleAccessor) {
-    if is_operation_cpu(module_accessor) {
+    if cpu_slot(module_accessor) {
         assign(&IS_BUFFING_CPU, true);
     } else {
         assign(&IS_BUFFING_PLAYER, true);
@@ -44,7 +50,7 @@ pub fn start_buff(module_accessor: &mut app::BattleObjectModuleAccessor) {
 }
 
 pub fn is_buffing(module_accessor: &mut app::BattleObjectModuleAccessor) -> bool {
-    if is_operation_cpu(module_accessor) {
+    if cpu_slot(module_accessor) {
         read(&IS_BUFFING_CPU)
     } else {
         read(&IS_BUFFING_PLAYER)
@@ -56,7 +62,7 @@ pub fn is_buffing_any() -> bool {
 }
 
 pub fn set_buff_rem(module_accessor: &mut app::BattleObjectModuleAccessor, new_value: usize) {
-    if is_operation_cpu(module_accessor) {
+    if cpu_slot(module_accessor) {
         assign(&BUFF_REMAINING_CPU, new_value);
     } else {
         assign(&BUFF_REMAINING_PLAYER, new_value);
@@ -64,7 +70,7 @@ pub fn set_buff_rem(module_accessor: &mut app::BattleObjectModuleAccessor, new_v
 }
 
 pub fn get_buff_rem(module_accessor: &mut app::BattleObjectModuleAccessor) -> usize {
-    if is_operation_cpu(module_accessor) {
+    if cpu_slot(module_accessor) {
         read(&BUFF_REMAINING_CPU)
     } else {
         read(&BUFF_REMAINING_PLAYER)

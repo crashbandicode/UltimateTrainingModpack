@@ -3,6 +3,8 @@
 Name a setup once, then load it into any of the five Save State Slots.
 Share its small JSON file with another console.
 
+Restoring also works with **CPU Behavior → Control**; Player 2 keeps control when the restore finishes.
+
 Available in current source; see the [build notes](lobby-parity-release.md) for download availability and validation.
 
 ## Save

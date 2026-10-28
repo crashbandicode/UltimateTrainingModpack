@@ -296,10 +296,16 @@ fn once_per_frame_per_fighter(module_accessor: &mut BattleObjectModuleAccessor) 
                 named_macros::observe_playback_start(module_accessor);
                 input_record::handle_recording();
             }
-            frame_counter::tick_ingame();
             if practice::primary_cpu(module_accessor) {
                 tech::hide_tech(module_accessor);
             }
+        }
+
+        // Practice time belongs to the primary CPU slot, not its AI operator.
+        // Control must still finish timed restores; extra CPUs/Nana must not
+        // advance the shared clock more than once per simulation frame.
+        if practice::primary_cpu(module_accessor) {
+            frame_counter::tick_ingame();
         }
 
         combo::once_per_frame(module_accessor);
