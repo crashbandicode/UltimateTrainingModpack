@@ -66,7 +66,6 @@ impl Editor {
 }
 struct Reload { editor:Editor, requested:bool, ticks:u32, revision:u64,
     resolving:Option<std::sync::mpsc::Receiver<Result<Configuration,String>>> }
-#[cfg(feature="mii-ordinary-cpu-alpha")]
 pub(crate) fn selection_revision()->u64 {SELECTION_REVISION.load(Ordering::Acquire)}
 fn target_ready(target:Target,current:Option<i32>)->bool {
     let Some(kind)=current else {return false;};

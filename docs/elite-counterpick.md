@@ -1,6 +1,6 @@
 # Stages + Counterpick
 
-This separate Skyline plugin limits the stages the game may pick to the ones you check. It can also give the loser of an online 1v1 their preferred stage on an accepted rematch. It is not part of the Training Modpack download. It is an unstable alpha; physical-console acceptance is pending.
+This separate Skyline plugin limits the stages the game may pick to the ones you check. It can also give the loser of an online 1v1 their preferred stage on an accepted rematch. It is not part of the Training Modpack download. It passed reported console tests alongside C72.
 
 ## Install
 

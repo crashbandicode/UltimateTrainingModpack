@@ -116,7 +116,7 @@ pub fn clip_help(view: &ClipView, coarse: &str, chord: &str, pace: i32) -> ClipH
         follow
     };
     let notice = if let Some(start) = view.move_start {
-        format!("Move at {} + {}f setup. Plays from your saved Training position.",
+        format!("Move at {} + {}f setup. Plays from the temporary preview setup.",
             start.action_frame, start.action_frame - start.frame)
     } else if view.clean_start {
         String::new()

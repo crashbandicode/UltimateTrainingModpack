@@ -1,6 +1,6 @@
 # Hot-swap Player 1 and the CPU
 
-Change your fighter, or the CPU's, during Training without going back to character select. This is part of the [unstable enhancements alpha](experimental-release.md); physical-console acceptance is pending. For waiting-room use, see [Lobby Practice](lobby-practice.md).
+Change your fighter, or the CPU's, during Training without going back to character select. Part of the [enhancements alpha](experimental-release.md). For waiting-room use, see [Lobby Practice](lobby-practice.md).
 
 ## Swap with a shortcut
 

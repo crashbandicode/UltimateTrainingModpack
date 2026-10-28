@@ -28,6 +28,8 @@ pub fn request_play(recording: MacroRecording, revision: u64) {
 pub fn request_stop() {
     if occupied() || REQUEST.lock().unwrap().is_some() {
         *REQUEST.lock().unwrap() = Some(Request::Stop);
+    } else {
+        save_states::finish_preview_restore();
     }
 }
 
@@ -51,10 +53,10 @@ pub fn can_emit(module: &mut BattleObjectModuleAccessor) -> bool {
 }
 pub fn status() -> &'static str {
     match STATUS.load(Ordering::Relaxed) {
-        1 => "Restoring saved Training setup...",
+        1 => "Preparing the temporary preview setup...",
         2 => "Native input preview: attacks and effects run normally",
         3 => "Inputs complete; native effects finish normally. Y: restart",
-        4 => "Restoring saved Training setup after preview...",
+        4 => "Restoring the temporary preview setup...",
         // The editor keeps the actual failure in its full-width help strip.
         5 => "Preview stopped. Fix the issue above, then press X.",
         _ => "",
@@ -150,7 +152,7 @@ pub unsafe fn before_frame(module: &mut BattleObjectModuleAccessor) {
             *SESSION.lock().unwrap() = Some(Session {
                 recording: *recording, revision, phase: Phase::Starting, waits: 0, cpu: None,
             });
-            if let Err(error) = save_states::request_preview_restore() { fail(error); }
+            if let Err(error) = save_states::request_preview_restore(true) { fail(error); }
             else { println!("[ClipPreview] restore_start revision={}", revision); }
         }
         Some(Request::Stop) if occupied() => {
@@ -160,7 +162,7 @@ pub unsafe fn before_frame(module: &mut BattleObjectModuleAccessor) {
                 s.waits = 0;
             }
             STATUS.store(4, Ordering::Relaxed);
-            if let Err(error) = save_states::request_preview_restore() { fail(error); }
+            if let Err(error) = save_states::request_preview_restore(false) { fail(error); }
             else { println!("[ClipPreview] restore_stop"); }
         }
         Some(Request::Stop) => STATUS.store(0, Ordering::Relaxed),
@@ -183,7 +185,7 @@ pub unsafe fn after_frame(module: &mut BattleObjectModuleAccessor) {
         }
         if s.phase == Phase::Playing && !input_record::is_playback() {
             drop(session);
-            crate::replay_capture::preview_failed("Preview start did not settle; restoring saved setup");
+            crate::replay_capture::preview_failed("Preview start did not settle; restoring the preview setup");
             request_stop();
             return;
         }
@@ -203,10 +205,13 @@ pub unsafe fn after_frame(module: &mut BattleObjectModuleAccessor) {
             if input_record::playback_preview(recording) {
                 STATUS.store(2, Ordering::Relaxed);
                 println!("[ClipPreview] native_play");
-            } else { fail("Preview could not start; restore the Training setup and retry"); }
+            } else { fail("Preview could not start; close and reopen the editor"); }
         }
         Some(Ok(None)) => {
-            clear_session();
+            REQUEST.lock().unwrap().take();
+            SESSION.lock().unwrap().take();
+            save_states::finish_preview_restore();
+            STATUS.store(0, Ordering::Relaxed);
             println!("[ClipPreview] restored_idle");
         }
         Some(Err(error)) => {

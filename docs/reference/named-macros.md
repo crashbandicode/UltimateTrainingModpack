@@ -95,8 +95,8 @@ without moving the real CPU.
 3. In Training, even after a full restart or with capture turned back off, open
    **Input Recording → Replay Window → Replay Captures**, choose the replay name
    and press **A**.
-4. Choose the fighter, wait for the CPU reload, save a matching Training setup,
-   then crop, preview and name it in the [Replay Window](#replay-window-controls).
+4. Choose the fighter, wait for the CPU reload, then crop, preview and name it
+   in the [Replay Window](#replay-window-controls).
 
 Companions live in `sd:/ultimate/TrainingModpack/replay_captures/`. Each `.smd`
 bundle holds `manifest.json`, `timeline.jsonl` and a Training `.tmrc` cache; keep
@@ -126,8 +126,8 @@ does not need it. It observes the CPU while the native replay runs.
 | **L** / **R** | Select the In / Out handle |
 | **Left / Right** | Move the selected handle. Holding speeds up from one frame to three minutes of replay per second; a diagonal still moves the handle |
 | Hold **ZL** or **ZR** (Z on GameCube) | Start moving at the fast rate |
-| **X** | Play the selection from the saved setup, or stop and restore it. A refusal is written in the editor's help strip |
-| **Y** | Restart from the saved setup |
+| **X** | Play the selection from the temporary preview setup, or stop and restore it. A refusal is written in the editor's help strip |
+| **Y** | Restart from the temporary preview setup |
 | **ZL + X** | Switch latest / previous capture if Vault looped (Z as modifier on GameCube) |
 | **ZL + Y** | Snap In to the move's initiating inputs, including its short movement/jump setup |
 | **A** | Name and save with the system keyboard; cancelling keeps the crop |
@@ -143,20 +143,23 @@ does not need it. It observes the CPU while the native replay runs.
   notification. If a running preview stops on an error, its status reads
   `Preview stopped. Fix the issue above, then press X.`
 - During a fighter load, P1 input is isolated and the CPU must settle to grounded
-  idle. Before previewing, save a setup with the current pair of fighters; after
-  choosing a different CPU, close the editor, save a new setup and reopen.
-- Preview uses the explicitly selected save slot with its original facing and
-  saved damage, ignoring random-slot, mirroring and damage options. It is
-  transient: it does not replace the loaded library entry or change loop,
-  record or playback-on-load settings.
-- Editing a handle stops the preview and restores the setup; it never seeks the
-  game to a recorded pose. The playhead counts emitted inputs, independent of
+  idle. The first **X** after both fighters are ready captures a temporary
+  in-memory pair checkpoint. It needs no save-state file, works with Save States
+  off, and never writes the five numbered slots or setup files. **Y**, and **X**
+  after a crop edit, reuse the same anchor. Closing the editor retires it. If
+  the fighters change or are on a ledge, the help strip asks you to close, let
+  them settle and reopen.
+- Preview is transient: it does not replace the loaded library entry or change
+  loop, record or playback-on-load settings. Named-macro playback outside the
+  editor still uses the saved Training setup.
+- Editing a handle stops the preview and restores the checkpoint; it never seeks
+  the game to a recorded pose. The playhead counts emitted inputs, independent of
   rendering. At the end, input stops while attacks and effects finish normally.
 
 Preview runs the inputs through the native CPU simulation, so attacks, articles
 and effects happen normally and both fighters react; P1's controls stay with the
 editor. Stop, restart and close use the native death/rebirth save-state cleanup
-and restore the saved setup, not the world as it was when the editor opened.
+and restore the temporary checkpoint's fighter positions, not the whole world.
 This is one fighter's input sequence, not a whole-match reconstruction: there is
 no pause, backward seek or frame-step, and starting mid-animation is not
 supported. AI analog values can fall between controller steps; the editor
@@ -183,6 +186,8 @@ could still drive a Training CPU.
 
 | Revision | Passed | Notes |
 | --- | --- | --- |
+| C92 | Temporary preview checkpoint: the 12,692-frame Mii Gunner P2 capture, In 4531 → **ZL+Y** 4470, Out 4615, previewed with no save-state file and Save States off; three **Y** restarts and an Out edit plus **X** kept the same anchor; **B** closed. Eden, normal exit | Physical console review pending |
+| C91 | **ZL+Y** move snap on the same Gunner crop: 145 inputs, forward-smash preview and fresh-process named playback | Short neutral setup, then the move; not a mid-animation pose |
 | 27 | Saved capture reopened after a process restart with capture off; eight-input Pikachu preview; named export. With Deluxe `6c396f10` in active manual LessLag: native match/save, cold Training with capture off, CPU reload, eight-input preview, exact named export | Current capture route |
 | 21 | Native-preview backend: full 1,862-input preview with a visible Dr. Mario capsule, attacks/effects, restart, explicit stop/restore, two eight-input selection runs, held-B close/restore, native-menu exit. Deliberately enabled legacy loop and record/playback-on-load options did not interfere. Strict host/native checks | Evidence: the parent's `research/named-macros/revision21-findings.md` |
 | 20 | Earlier pose-preview backend (since replaced): loading input isolation, B cancellation, grounded CPU acquisition, HUD/statistics hiding, selection restart, anchor restoration, closed-editor Training leave/re-entry. Six short closes and holds up to three seconds without B leaking into gameplay, a fresh-press positive control, held-B loading cancellation; the non-ready loading timeout kept the selection | The fix preserves the physical B level between repeated mappings while consuming gameplay input. Default single-controller King Dedede with Dr. Mario/Lucario |

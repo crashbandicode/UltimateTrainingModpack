@@ -2,9 +2,9 @@
 >
 > Anyone, including the original developers, may reuse, analyze, redistribute, and otherwise use anything and everything in this repository as they see fit.
 
-**UNSTABLE EXPERIMENTAL BUILD:** [Download the enhancements alpha](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-full-experimental.20261024.5). It contains crash-containment guards whose underlying cause is still under investigation. Physical-console stability is not established. See the [enabled features, limits, and validation](docs/experimental-release.md).
+**Download:** [enhancements alpha `v7.1.2-enhancements-full-experimental.20261024.5`](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases/tag/v7.1.2-enhancements-full-experimental.20261024.5), the latest published build. Its [features, validation and known limits](docs/experimental-release.md) include intermittent console startup faults that are still under investigation.
 
-**New in source, not yet in a download:** features marked *New* below are in the full alpha; C90 also clarifies the selected stage form. Console review is pending ([build notes](docs/lobby-parity-release.md)).
+**Current source (C92) is newer than that download:** it adds the features marked *New* below. Console review of C92 is pending ([build notes](docs/lobby-parity-release.md)).
 
 [Download this fork from Forgejo](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases). Version 7.1.2 reduces input-display work in Training; see the [performance checks](docs/input-display-performance.md).
 
@@ -52,7 +52,7 @@ Use the practice tools while waiting for a match; your real match still uses you
 
 ![The Training CPU playing the opponent's captured P2 Hero inputs.](docs/named-macros/images/playback-p2.gif)
 
-Save a replay, pick either player's captured inputs, and trim a sequence for the Training CPU to play ([walkthrough](docs/named-macros.md)). **ZL+Y** snaps to the move's start and includes its short setup; existing replay captures work too.
+Save a replay, pick either player's captured inputs, and trim a sequence for the Training CPU to play ([walkthrough](docs/named-macros.md)). **ZL+Y** snaps to the move's start and includes its short setup; existing replay captures work too. *New:* **X** previews right away, with no saved setup needed.
 
 ### Practice stages
 
@@ -84,7 +84,7 @@ Choose saved Miis for either role or create one in Smash's own editor ([Mii guid
 
 The separate Elite Stages plugin can propose the loser's configured counterpick on an accepted rematch when your preferred rules are used. [Set the legal stage pool and counterpicks.](docs/elite-counterpick.md)
 
-[How these features work](docs/character-changes.md) · [Full guide by menu page](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/wiki) · [Experimental release limits](docs/experimental-release.md)
+[How these features work](docs/character-changes.md) · [Full guide by menu page](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/wiki) · [Release validation and limits](docs/experimental-release.md)
 
 ---
 
@@ -256,7 +256,7 @@ The timing of the CPU option can be influenced by the following settings:
 
 At any time in Training Mode, you can press `Shield + Down Taunt` to save the state of training mode. This will save the position, state, and damage of each fighter, which can then be reverted to at any time with `Shield + Up Taunt`. With the mirroring setting, loading the save state will flip the positions, allowing you to practice your skills facing both directions. Use this instead of the built-in training mode reset!
 
-You can switch Save State slots by using the associated toggle! There are 5 slots you can save, and they are persisted between loads of the game! This fork's unstable C89 source can also save a slot under a name and share it as a file with the [Setup Library](docs/setup-library.md).
+You can switch Save State slots by using the associated toggle! There are 5 slots you can save, and they are persisted between loads of the game! This fork's current source can also save a slot under a name and share it as a file with the [Setup Library](docs/setup-library.md).
 
 The following attributes are saved in the save states:
 

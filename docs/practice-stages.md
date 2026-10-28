@@ -1,6 +1,6 @@
 # Practice Stages
 
-Change the stage you practice on without going back to character select, and choose which stages the waiting room rotates through. This is part of the [unstable enhancements alpha](experimental-release.md); physical-console acceptance is pending.
+Change the stage you practice on without going back to character select, and choose which stages the waiting room rotates through. Part of the [enhancements alpha](experimental-release.md).
 
 ## Change the stage now
 

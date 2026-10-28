@@ -2,7 +2,7 @@
 
 Details behind the [hot-swap guide](../fighter-hotswap.md) and the
 [Solo Popo guide](../solo-popo.md), for the
-[unstable enhancements alpha](../experimental-release.md). Loading, slot 0 and
+[enhancements alpha](../experimental-release.md). Loading, slot 0 and
 source fighters are explained in [how character changes work](../character-changes.md);
 waiting-room rules are in the [Lobby Practice reference](lobby-practice.md).
 

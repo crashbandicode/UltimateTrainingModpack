@@ -1,6 +1,6 @@
 # Keep an opponent's Mii
 
-**[Unstable enhancements alpha](../experimental-release.md).** Save the match, then enter Training: the opponent's Mii becomes available automatically. You do not need to watch the replay. Physical-console acceptance is pending.
+Part of the [enhancements alpha](../experimental-release.md). Save the match, then enter Training: the opponent's Mii becomes available automatically. You do not need to watch the replay.
 
 Before starting Smash, enable [replay capture](../named-macros.md):
 

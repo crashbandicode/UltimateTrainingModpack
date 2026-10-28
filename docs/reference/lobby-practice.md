@@ -6,7 +6,7 @@ Install, troubleshooting, lifecycle rules and test record behind the
 [Practice Stages](../practice-stages.md); grid and cycle details are in the
 [hot-swap reference](fighter-hotswap.md).
 
-This page describes the full experimental build for Smash Ultimate 13.0.5.
+This page describes the full enhancements build for Smash Ultimate 13.0.5.
 See the [implementation and acceptance ledger](../plans/lobby-parity.md) for
 emulator observations and pending physical-console checks.
 

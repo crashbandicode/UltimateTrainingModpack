@@ -9,9 +9,8 @@ below uses an older saved match against an armored Mii Gunner:
 
 ![The opening exchange between Kirby P1 and Hero P2.](named-macros/images/match.gif)
 
-Macro preview/playback runs in Training. Physical-console acceptance of the
-current alpha is pending. Full controls, physics, files and test evidence are in
-the [reference](reference/named-macros.md).
+Macro preview and playback run in Training. Full controls, physics, files and
+test evidence are in the [reference](reference/named-macros.md).
 
 ## Turn on capture
 
@@ -63,28 +62,29 @@ smash. It does not return to the match opening.
 
 ## Preview
 
-Wait for the fighter to finish loading, close the editor, and save a Training
-setup with **ZL + D-pad Down**. Reopen the capture and press **X** to play the
-crop from that setup; **Y** restarts. A setup saved with a different CPU will
-not preview. When X refuses, the reason appears in the editor's wide help strip,
-not in a small notification.
+Wait for the fighter to finish loading, then press **X**. The editor saves a
+temporary preview setup of both fighters by itself; you do not need to save a
+state first, and your five save-state slots are not changed. **Y** restarts, and
+after you move In or Out, **X** plays again from the same spot. **X** again or
+**B** stops and puts the fighters back; closing the editor discards the
+temporary setup. When X refuses, the reason appears in the editor's wide help
+strip, not in a small notification.
 
-Both clips use **In 0 / Out 449**, the match opening above. They start from a
-Training setup, so positions, hits and timing differ from the match.
+Both clips use **In 0 / Out 449**, the match opening above. They start from the
+current Training positions, so hits and timing differ from the match.
 
 **P1 / Kirby's** inputs on the Training CPU, with King Dedede as the Training
 player:
 
 ![The Training CPU playing captured P1 Kirby inputs, with King Dedede as the current Training player.](named-macros/images/playback.gif)
 
-**P2 / Hero's** inputs: select P2, wait for Hero to load, and save a new setup
-before previewing.
+**P2 / Hero's** inputs: select P2 and wait for Hero to load before previewing.
 
 ![The Training CPU playing the opponent's captured P2 Hero inputs.](named-macros/images/playback-p2.gif)
 
 ## Name and keep it
 
-Press **A**. The keyboard suggests the replay name plus the player, such as
+When the preview looks right, press **A** once. The keyboard suggests the replay name plus the player, such as
 **Replay P1**; enter a name and press **Plus**. This clip exports the P1 crop as
 **Kirby opening** and finds it in the named library.
 
@@ -97,6 +97,7 @@ Press **A**. The keyboard suggests the replay name plus the player, such as
    changes to its fighter; close the menu and let the change finish.
 3. Save the Training setup you want, then press **Input Playback** (default
    **ZR + D-pad Up**). The setup is restored, then the inputs play on the CPU.
+   Unlike the editor preview, playback uses this saved setup.
 
 To record by hand instead, keep **Named Library** as the source and press
 **Input Record** (default **ZR + D-pad Down**) to start and again to finish, then

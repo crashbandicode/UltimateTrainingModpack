@@ -1,6 +1,6 @@
 # Mii Fighters
 
-Choose which saved Mii Fighter Player 1 and the CPU use, make a new one with Smash's own editor, and practice against Miis from your saved replays. This is part of the [unstable enhancements alpha](experimental-release.md); physical-console acceptance is pending.
+Choose which saved Mii Fighter Player 1 and the CPU use, make a new one with Smash's own editor, and practice against Miis from your saved replays. Part of the [enhancements alpha](experimental-release.md).
 
 ## Choose a Mii for each role
 

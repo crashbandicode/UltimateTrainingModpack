@@ -1,6 +1,6 @@
 # How character changes work
 
-**Unstable enhancements alpha.** This page explains, in plain terms, what the
+This page explains, in plain terms, what the
 modpack does when you swap fighters, give Kirby a hat, hand Player 1 another
 fighter's item, or use a Mii. See [Release status](experimental-release.md) for
 what has been tested and where.

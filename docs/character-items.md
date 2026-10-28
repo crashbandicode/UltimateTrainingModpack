@@ -1,6 +1,6 @@
 # Character items
 
-Give Player 1 another fighter's item, such as a Peach turnip, Link's Remote Bomb or a Pac-Man fruit, whatever fighter Player 1 is playing. This is part of the [unstable enhancements alpha](experimental-release.md).
+Give Player 1 another fighter's item, such as a Peach turnip, Link's Remote Bomb or a Pac-Man fruit, whatever fighter Player 1 is playing. Part of the [enhancements alpha](experimental-release.md); it passed reported console tests on C72.
 
 ## Pick an item
 

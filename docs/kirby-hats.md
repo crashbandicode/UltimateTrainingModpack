@@ -1,6 +1,8 @@
 # Kirby hats
 
-Give Kirby another fighter's hat and copied neutral special during practice, for Player 1 or the CPU. That fighter does not need to be in the match. This is part of the [unstable enhancements alpha](experimental-release.md); physical-console acceptance is pending.
+Give Kirby another fighter's hat and copied neutral special during practice, for Player 1 or the CPU. That fighter does not need to be in the match. Part of the [enhancements alpha](experimental-release.md); it passed reported console tests on C72.
+
+Changing hats can take several seconds while Smash loads the next ability's resources. Press the shortcut once and wait; Kirby can be hatless during that load.
 
 ## Choose the hats
 

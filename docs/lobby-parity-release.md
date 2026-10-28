@@ -1,4 +1,15 @@
-# Lobby parity candidate C89 — unstable
+# Lobby parity candidate C89, with C90–C92 updates
+
+**C92 update:** replay preview no longer needs a saved Training setup. **X**
+captures a temporary in-memory checkpoint of both fighters once they are ready;
+**Y** and later crop edits replay from that same checkpoint. The five numbered
+slots and setup files are untouched. In an Eden check, the 12,692-frame Gunner
+crop (In 4531 → 4470, Out 4615) previewed with no save-state file and Save
+States off, restarted three times and kept its anchor after an Out edit.
+Installed on the console with a matching checksum readback; console review is
+pending.
+
+**C91 update:** **ZL+Y** snaps a mid-action In to the move's start and its short setup.
 
 **C90 update:** stage-form labels now show only the selected Normal, Omega or Battlefield form. The full build retains C89’s features; this update does not add mid-animation replay starts.
 
@@ -6,10 +17,9 @@ The menu tests pass (176 tests across seven harnesses), along with warning-free 
 
 C89 builds on C72's waiting-room practice (save/load, recordings, macro previews
 and interrupted Mii editing in Quickplay and Local Wireless waiting) and adds the
-changes below. **Training and waiting-room emulator checks passed with the
-current console plugins. Console acceptance is pending.** C89 is not yet a
-published download; the earlier [enhancements alpha](experimental-release.md)
-does not include these changes.
+changes below. Training and waiting-room emulator checks passed with the
+current console plugins. C89–C92 are not yet a published download; the earlier
+[enhancements alpha](experimental-release.md) does not include these changes.
 
 ## New in C89
 
@@ -86,9 +96,9 @@ other mods, settings and saves. Do not install a second Training Modpack NRO.
    bind it to another Record Slot and play it.
 5. **Stage forms:** on Peach's Castle, press **Y** through Normal, Omega and
    Battlefield and apply each with **A**.
-6. **Replay crop:** open the crop you reported and press **X**. If it shows
-   *Needs ZL+Y lead-in*, press **ZL+Y**, then **X**
-   ([Preview](named-macros.md#preview)).
+6. **Replay crop:** open the crop you reported and press **X**; no saved setup
+   is needed. If it shows *Needs ZL+Y lead-in*, press **ZL+Y**, then **X**.
+   Press **Y** to restart, then **B** to close ([Preview](named-macros.md#preview)).
 7. **Waiting room:** choose a Mii for the CPU, wait with the menu open, then
    close it so the change applies; change back the same way. Finish a match and
    return: practice resumes and your real-match fighter is unchanged.
@@ -98,7 +108,8 @@ passed earlier reported console tests on C72.
 
 Installed on the console SD card on October 27, 2026, with checksum readback;
 the other installed plugins, sysmodules and inventoried settings were unchanged.
-Physical console review of C89 is still pending.
+C91 and then C92 replaced it on October 28 the same way. Physical console review
+of C92 is pending.
 
 Known limits:
 Online arenas are unverified. Earlier intermittent startup faults remain

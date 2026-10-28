@@ -1,25 +1,25 @@
 # Image provenance
 
-## Move-start snapping (run161)
+## Move-start snapping and preview without saving (run162)
 
 [move-snap.gif](images/move-snap.gif) shows an existing armored Mii Gunner replay
-capture: **In 4531 → ZL + Y → In 4470**, with Out 4615 unchanged. **X** plays
-those 145 inputs; the final notice confirms completion. This is a nearby move
-start with its short setup, not the beginning of the replay or a restored
-mid-animation pose.
+capture: **In 4531 → ZL + Y → In 4470**, with Out 4615 unchanged. **X** previews
+those 145 inputs without a manual save; the final notice confirms completion.
+The private profile had no save-state file and Save States was off. The editor
+captured its temporary setup automatically. This starts the nearby move with
+its short setup, not the match opening or an arbitrary mid-animation pose.
 
-Recorded on Yoga in Eden `40b6b78a53`, C91 NRO SHA-256
-`5ddc0b344b6d32e2dcecde71afd8645aba66776ca488bdee64bb58f00b898431`.
+Recorded on Yoga in Eden `40b6b78a53`, C92 NRO SHA-256
+`e8a0a01424f199c93c65754f73f2de47b6dc3aa7ebff1bb07e24ebc741a9ae87`.
 The retained capture has 12,692 frames, P2 Gunner, SHA-256
 `2ef198ba9f528f68cb70c64c7fa1bbf1b23f55996cbce08003d3ea930be56384`.
-Local evidence: `replay-move-start161/runtime161-final/gunner-snap-final161/`
-and `MOVE-GIF-RESULT.json`. A separate fresh-process check reloaded the saved
-145-input macro and played the Gunner attack again.
+Local evidence: `preview-checkpoint162/preview-guide162/` and `gif-accepted.json`.
+The earlier run161 fresh-process check also reloaded the saved 145-input macro.
 
-Processing: 100 consecutive frames at 10 fps, 10 seconds. Crop 14 pixels from
+Processing: 120 consecutive frames at 10 fps, 12 seconds. Trim 14 pixels from
 top and bottom of the 1920 × 1108 render window, then downscale to 1280 × 720.
 No game-pixel edits or annotations. GIF SHA-256
-`863c926ec3d0d51a121f959ebd9765b4661e5064c12fbb7ec6e7da6887276824`.
+`fbcf43dae78a3fbdb5edc740878a956239489df74b84838a9bb9a5a94b334aba`.
 
 ## Earlier Kirby/Hero walkthrough
 

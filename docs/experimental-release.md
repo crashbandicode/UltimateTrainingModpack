@@ -1,8 +1,11 @@
-# Full enhancements alpha — UNSTABLE
+# Full enhancements alpha
 
-This opt-in alpha targets Smash Ultimate 13.0.5. Intermittent pre-title console crashes remain unresolved;
-physical-console acceptance is pending. Cleanup guards contain observed null-reference faults; the writer that
-corrupts those references is still unknown. This is not a stable release.
+This opt-in build targets Smash Ultimate 13.0.5 and is the latest published
+download. Current source is newer; see the [C89–C92 build notes](lobby-parity-release.md).
+
+Known limits: intermittent pre-title console crashes remain unresolved. Cleanup
+guards contain observed null-reference faults; the writer that corrupts those
+references is still unknown.
 
 The full alpha includes character cycles and manual portrait selection, Solo
 Popo, Kirby hats, character items, direct practice stages and lobby rotation,
@@ -39,7 +42,7 @@ Mii storage, source-fighter limits, and same-lobby continuation.
 
 ## Install and logs
 
-Use the **full** unstable candidate on [Forgejo releases](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases).
+Use the **full** candidate on [Forgejo releases](https://git.syntaxbyexample.com/intpa/UltimateTrainingModpack/releases).
 Back up the current NRO. Rename the download to `libtraining_modpack.nro` and
 replace only that file in
 `atmosphere/contents/01006A800016E000/romfs/skyline/plugins/`.

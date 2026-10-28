@@ -1,6 +1,6 @@
 # Solo Popo
 
-Practice as Popo without Nana, or give the CPU the same setup. This is part of the [unstable enhancements alpha](experimental-release.md), not the stable 7.1.2 package. Physical-console acceptance is pending.
+Practice as Popo without Nana, or give the CPU the same setup. Part of the [enhancements alpha](experimental-release.md), not the stable 7.1.2 package.
 
 ## Your original Ice Climbers
 

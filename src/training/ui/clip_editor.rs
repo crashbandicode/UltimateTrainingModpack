@@ -483,7 +483,7 @@ pub unsafe fn draw(root: &Pane, view: &ClipView, status: &str) {
     } else if needs_clean_start {
         help.notice
     } else if view.playing {
-        "Y restarts the preview from the saved setup.".to_owned()
+        "Y restarts from the temporary preview setup.".to_owned()
     } else {
         let mut extra = format!("{chord}+Y snaps In to a nearby move start.");
         if view.previous_available {

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use log::{info, warn};
 use parking_lot::Mutex;
@@ -247,15 +247,30 @@ unsafe fn waiting_saved_pair_valid(slot: usize) -> bool {
             && [*SITUATION_KIND_GROUND, *SITUATION_KIND_AIR, *SITUATION_KIND_CLIFF].contains(&s.situation_kind))
 }
 
-// A preview always uses the explicitly selected saved slot, original facing and
-// saved damage. Random/alternate Training options are left untouched.
-static PREVIEW_SLOT: AtomicUsize = AtomicUsize::new(usize::MAX);
+// A preview owns a temporary pair, separate from all five numbered slots. The
+// first X captures it on the game thread; restarts and Stop reuse it. Only value
+// data survives native death/rebirth. Retirement never writes a setup file.
+static PREVIEW_ACTIVE: AtomicBool = AtomicBool::new(false);
+static PREVIEW_SELECTION: AtomicU64 = AtomicU64::new(0);
+static PREVIEW_STATES: Mutex<[SavedState; 2]> = Mutex::new([default_save_state!(); 2]);
 
 pub fn end_preview_restore() {
-    PREVIEW_SLOT.store(usize::MAX, Ordering::Relaxed);
+    PREVIEW_ACTIVE.store(false, Ordering::Release);
+    PREVIEW_SELECTION.store(0, Ordering::Release);
+    *PREVIEW_STATES.lock() = [default_save_state!(); 2];
 }
 
-// A setup-library load pins the slot it was bound to, like a preview, but keeps
+/// Stop retires the native redirect but keeps the original coordinates while
+/// the same captured fighter remains open. Editing In/Out must not accumulate
+/// airborne drift by taking a new snapshot after each restore.
+pub fn finish_preview_restore() {
+    PREVIEW_ACTIVE.store(false, Ordering::Release);
+    if !crate::replay_capture::panel_visible()
+        || PREVIEW_SELECTION.load(Ordering::Acquire) != crate::replay_capture::selection_revision()
+    { end_preview_restore(); }
+}
+
+// A setup-library load pins the numbered slot it was bound to and keeps
 // the user's ordinary mirroring, damage, item, charge and partner handling.
 static LIBRARY_SLOT: AtomicUsize = AtomicUsize::new(usize::MAX);
 static PENDING_BIND: Mutex<Option<SlotBind>> = Mutex::new(None);
@@ -378,39 +393,87 @@ unsafe fn consume_pending_bind() {
     );
 }
 
-pub unsafe fn request_preview_restore() -> Result<(), &'static str> {
-    if !super::practice::enabled() || !super::practice::acquire() || read(&MENU).save_state_enable == OnOff::OFF {
-        return Err("Enable save states and save a practice setup first");
+/// Capture the same value data as an explicit save, without an effect, slot
+/// mutation or disk write. Call only on the game thread with a current body.
+unsafe fn snapshot_live_state(module: &mut app::BattleObjectModuleAccessor, role: usize) -> SavedState {
+    let kind = app::utility::get_kind(module);
+    SavedState {
+        x: PostureModule::pos_x(module),
+        y: PostureModule::pos_y(module),
+        lr: PostureModule::lr(module),
+        percent: DamageModule::damage(module, 0),
+        situation_kind: StatusModule::situation_kind(module),
+        fighter_kind: kind,
+        charge: charge::get_charge(module, kind),
+        held_item: if role == 1 { None } else { Some(crate::character_items::snapshot(module)) },
+        steve_state: steve::save_steve_state(module),
+        saved_stage: Some(stage_id()),
+        mii: crate::character_roster::current_mii_configuration(role),
+        state: NoAction,
     }
-    let pinned = PREVIEW_SLOT.load(Ordering::Relaxed);
-    let slot = if pinned == usize::MAX {
-        read(&MENU).save_state_slot.into_idx().unwrap_or(0)
-    } else {
-        pinned
-    };
-    if !waiting_saved_pair_valid(slot) { return Err("Save a valid practice setup first"); }
-    for (id, saved) in [
-        (FighterId::Player, *save_state_player(slot)),
-        (FighterId::CPU, *save_state_cpu(slot)),
-    ] {
-        let Some(live) = try_get_module_accessor(id) else {
-            return Err("Wait for both Training fighters");
+}
+
+pub unsafe fn request_preview_restore(capture_allowed: bool) -> Result<(), &'static str> {
+    if !super::practice::enabled() || !super::practice::acquire() {
+        return Err("Wait for both practice fighters before previewing");
+    }
+    if QUICK_RESET_ACTIVE.load(Ordering::Acquire)
+        || LIBRARY_SLOT.load(Ordering::Relaxed) != usize::MAX
+    {
+        return Err("Wait for the current practice restore before previewing");
+    }
+    // A queued library bind waits for the editor/preview to close. It may remain
+    // queued: this temporary pair never reads or writes its destination slot.
+    let selection = crate::replay_capture::selection_revision();
+    let previous = PREVIEW_SELECTION.load(Ordering::Acquire);
+    // A selection change must still restore the old active pair before reload.
+    let captured = previous != 0 && (PREVIEW_ACTIVE.load(Ordering::Acquire) || previous == selection);
+    if !captured && !capture_allowed {
+        return Err("Preview setup was lost; press X to start again");
+    }
+    let mut pair = if captured { *PREVIEW_STATES.lock() } else { [default_save_state!(); 2] };
+    for (role, id) in [FighterId::Player, FighterId::CPU].iter().enumerate() {
+        let Some(live) = try_get_module_accessor(*id) else {
+            return Err("Wait for both practice fighters before previewing");
         };
-        if saved.fighter_kind < 0 {
-            return Err("Save a Training setup first");
+        let live = &mut *live;
+        let kind = app::utility::get_kind(live);
+        if !captured {
+            let status = StatusModule::status_kind(live);
+            if is_dead(live) || [*FIGHTER_STATUS_KIND_REBIRTH, *FIGHTER_STATUS_KIND_ENTRY].contains(&status)
+                || (role == 1 && !crate::replay_capture::clean_statuses().contains(&status))
+            {
+                return Err("Close the editor, let both fighters settle, then reopen");
+            }
+            pair[role] = snapshot_live_state(live, role);
         }
-        if app::utility::get_kind(&mut *live) != saved.fighter_kind {
-            return Err("Save a new setup for these fighters before previewing");
+        let saved = &pair[role];
+        // Exact replay-Mii admission belongs to replay_capture's target-ready
+        // check. Catalog capture can temporarily hide current_mii_configuration;
+        // treating that as a body change would reject a valid preview. The
+        // practice entry lease retires this checkpoint on actual replacement.
+        if saved.fighter_kind != kind || saved.saved_stage != Some(stage_id())
+        {
+            return Err("Preview setup changed; close and reopen the editor");
+        }
+        if !saved.x.is_finite() || !saved.y.is_finite() || !saved.percent.is_finite()
+            || saved.percent < 0.0 || !matches!(saved.lr, -1.0 | 1.0)
+        {
+            return Err("Close the editor, let both fighters settle, then reopen");
         }
         if saved.situation_kind != SITUATION_KIND_GROUND
             && saved.situation_kind != SITUATION_KIND_AIR
         {
-            return Err("Preview needs a grounded or airborne saved setup");
+            return Err("Close the editor, leave the ledge, then reopen");
         }
     }
-    PREVIEW_SLOT.store(slot, Ordering::Relaxed);
-    save_state_player(slot).state = KillPlayer;
-    save_state_cpu(slot).state = KillPlayer;
+    // Publish only after both snapshots validate; a refused preview changes no
+    // slot, active restore, or checkpoint. Reuse the existing native cleanup.
+    for state in &mut pair { state.state = KillPlayer; }
+    *PREVIEW_STATES.lock() = pair;
+    if !captured { PREVIEW_SELECTION.store(selection, Ordering::Release); }
+    PREVIEW_ACTIVE.store(true, Ordering::Release);
+    if !captured { println!("[ClipPreview] temporary_setup player={} cpu={}", pair[0].fighter_kind, pair[1].fighter_kind); }
     Ok(())
 }
 
@@ -437,11 +500,14 @@ pub unsafe fn request_macro_restore() -> Result<(), &'static str> {
 }
 
 unsafe fn save_state_player(slot: usize) -> &'static mut SavedState {
+    // Game-thread-only borrows, matching numbered-slot and quick-reset ownership.
+    if PREVIEW_ACTIVE.load(Ordering::Acquire) { return &mut (*PREVIEW_STATES.data_ptr())[0]; }
     if QUICK_RESET_ACTIVE.load(Ordering::Acquire) { return &mut (*QUICK_RESET_STATES.data_ptr())[0]; }
     &mut (*SAVE_STATE_SLOTS.data_ptr()).player[slot]
 }
 
 unsafe fn save_state_cpu(slot: usize) -> &'static mut SavedState {
+    if PREVIEW_ACTIVE.load(Ordering::Acquire) { return &mut (*PREVIEW_STATES.data_ptr())[1]; }
     if QUICK_RESET_ACTIVE.load(Ordering::Acquire) { return &mut (*QUICK_RESET_STATES.data_ptr())[1]; }
     &mut (*SAVE_STATE_SLOTS.data_ptr()).cpu[slot]
 }
@@ -490,10 +556,8 @@ static mut MIRROR_STATE: f32 = 1.0;
 static mut RANDOM_SLOT: usize = 0;
 
 unsafe fn get_slot() -> usize {
-    let preview = PREVIEW_SLOT.load(Ordering::Relaxed);
-    if preview != usize::MAX {
-        return preview;
-    }
+    // The accessors route this token to the temporary pair, never numbered Slot 1.
+    if PREVIEW_ACTIVE.load(Ordering::Acquire) { return 0; }
     let library = LIBRARY_SLOT.load(Ordering::Relaxed);
     if library != usize::MAX {
         return library;
@@ -704,7 +768,10 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
     // per frame, before any slot borrow, even while save states are disabled.
     if role == 0 && super::practice::acquire() { consume_pending_bind(); }
     let quick_reset = QUICK_RESET_ACTIVE.load(Ordering::Acquire);
-    if !quick_reset && read(&MENU).save_state_enable == OnOff::OFF { return; }
+    // Internal preview cleanup remains live even if the user's save-state tool
+    // is disabled. Its setting and numbered slots remain untouched.
+    if !quick_reset && !PREVIEW_ACTIVE.load(Ordering::Acquire)
+        && read(&MENU).save_state_enable == OnOff::OFF { return; }
     // Ordinary Training may contain extra CPUs. They are neither P1 nor the
     // selected practice CPU and must not overwrite P1's saved state.
     if !super::practice::acquire() { return; }
@@ -1107,22 +1174,7 @@ pub unsafe fn save_states(module_accessor: &mut app::BattleObjectModuleAccessor)
 
     if save_state.state == Save && !fighter_is_nana {
         // Don't save states with Nana. Should already be fine, just a safety.
-        save_state.state = NoAction;
-        save_state.x = PostureModule::pos_x(module_accessor);
-        save_state.y = PostureModule::pos_y(module_accessor);
-        save_state.lr = PostureModule::lr(module_accessor);
-        save_state.percent = DamageModule::damage(module_accessor, 0);
-        save_state.situation_kind = StatusModule::situation_kind(module_accessor);
-
-        // Always store fighter kind so that charges are handled properly
-        save_state.fighter_kind = app::utility::get_kind(module_accessor);
-        save_state.charge = charge::get_charge(module_accessor, fighter_kind);
-        save_state.held_item = if is_cpu { None }
-            else { Some(crate::character_items::snapshot(module_accessor)) };
-        // Perform fighter specific saving actions
-        save_state.steve_state = steve::save_steve_state(module_accessor);
-        save_state.saved_stage = Some(stage_id());
-        save_state.mii = crate::character_roster::current_mii_configuration(role);
+        *save_state = snapshot_live_state(module_accessor, role);
         crate::logging::diagnostic(format_args!(
             "[PracticeSave] snapshot_saved slot={} cpu={} kind=0x{:x} x={} y={} damage={}",
             selected_slot, is_cpu, fighter_kind, save_state.x, save_state.y, save_state.percent
