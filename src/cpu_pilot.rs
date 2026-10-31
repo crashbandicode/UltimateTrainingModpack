@@ -1,5 +1,6 @@
 //! Private, default-off native AI-as-pad and command adapter, Training and exact audited online 1v1 scope only.
 //! No operation-CPU change persists beyond the synchronous native initialization.
+//! Inert when the standalone ssbu-cpu-pilot plugin is installed (see `init`).
 use std::convert::TryFrom;
 use std::fs::{self, File};
 use std::io::Read;
@@ -11,6 +12,12 @@ use serde_json::json;
 use skyline::hooks::{getRegionAddress, Region};
 use smash::app::{lua_bind::*, BattleObjectModuleAccessor};
 use smash::lib::lua_const::*;
+// The AI-as-pad primitives (rank ladder, pad encoding, and the native
+// qualify/ready/arm/think/release calls) come from the shared core library.
+// This module keeps the online stage session, request.json, the menu session
+// and the logging.
+use ssbu_cpu_pilot_core::native::{self as core_native, Native};
+use ssbu_cpu_pilot_core::{level as core_level, pad as core_pad};
 
 use crate::common::input::MappedInputs;
 
@@ -234,15 +241,6 @@ struct Snapshot {
     cpu_damage: f32,
 }
 
-#[derive(Clone, Copy)]
-struct Native {
-    ctrl: usize,
-    ai: usize,
-    service: usize,
-    random: usize,
-    slot: u8,
-}
-
 // Required fields are rebound from the current controller/AI callback. The
 // native() checks qualify each owner before use; do not retain these addresses.
 #[inline]
@@ -258,83 +256,20 @@ unsafe fn ptr(address: usize) -> Option<usize> {
     (value != 0 && value.is_multiple_of(8)).then_some(value)
 }
 
+// The qualification itself lives in the core library. It names the service and
+// RNG pointer walks coarsely ("service", "rng_state"); keep the finer gate names
+// this module has always logged.
 unsafe fn native(entry: Entry, slot: u8) -> Result<Native, &'static str> {
     let base = BASE.load(Ordering::Acquire);
-    let ctrl = entry.ctrl;
-    let ai = ptr(ctrl + 0x58).ok_or("ai_pointer")?;
-    let context = ptr(ptr(ai).ok_or("ai_context_root")?).ok_or("ai_context")?;
-    let service = ptr(ptr(base + 0x52b6fd8).ok_or("service_root")?).ok_or("service")?;
-    if read::<usize>(ai + 8) != ctrl {
-        return Err("ai_controller_backlink");
-    }
-    if read::<usize>(context + 0x30) != ai {
-        return Err("context_ai_backlink");
-    }
-    if read::<i32>(ctrl + 8) != i32::from(slot)
-        || read::<i32>(ctrl + 0x6c) != i32::from(slot)
-        || read::<i32>(ai + 0x160) != i32::from(slot)
-    {
-        return Err("native_slot_mismatch");
-    }
-    if read::<u8>(ctrl + 0x69) != 1 {
-        return Err("controller_not_loaded");
-    }
-    if read::<u8>(ctrl + 0x70) != 0 {
-        return Err("controller_operation_cpu");
-    }
-    if read::<u8>(entry.info + 0x92) != 0 {
-        return Err("fighter_info_operation_cpu");
-    }
-    if read::<u8>(service + 0x80 + usize::from(slot & 7)) != 0 {
-        return Err("service_operation_cpu");
-    }
-    if read::<u8>(context + 0x38) == 0 {
-        return Err("context_not_loaded");
-    }
-    if read::<usize>(context + 0x10) == 0 || read::<usize>(context + 0x18) == 0 {
-        return Err("context_scripts_missing");
-    }
-    let random = ptr(ptr(ptr(base + 0x52c35b0).ok_or("rng_root")?).ok_or("rng_owner")?)
-        .ok_or("rng_state")?
-        + 0x50;
-    Ok(Native {
-        ctrl,
-        ai,
-        service,
-        random,
-        slot,
+    core_native::resolve(base, entry.ctrl, entry.info, slot).map_err(|reason| match reason {
+        "service" if ptr(base + core_native::offsets::AI_SERVICE).is_none() => "service_root",
+        "rng_state" => match ptr(base + core_native::offsets::RNG_ROOT) {
+            None => "rng_root",
+            Some(root) if ptr(root).is_none() => "rng_owner",
+            Some(_) => "rng_state",
+        },
+        other => other,
     })
-}
-
-unsafe fn ready(native: Native) -> Result<(), &'static str> {
-    let record = ptr(native.ai + 0x168).ok_or("ai_record_pointer")?;
-    if read::<i32>(native.service + 0x1fc) != 2 {
-        return Err("service_not_battle");
-    }
-    if read::<u8>(native.ctrl + 0x69) == 0 {
-        return Err("ready_controller_not_loaded");
-    }
-    if read::<u32>(native.ai + 0xc44) & 0x8000 == 0 {
-        return Err("ai_active_flag_missing");
-    }
-    if read::<u8>(native.ai + 0xc08) == 0x24 {
-        return Err("ai_control_mode");
-    }
-    if read::<u32>(record + 0x54) & 0x8000_0000 == 0 {
-        return Err("record_active_flag_missing");
-    }
-    if read::<u32>(record + 0x54) & 0x800 != 0 {
-        return Err("record_pause_flag");
-    }
-    if read::<u8>(record + 0x55) & 8 != 0 {
-        return Err("record_inactive_flag");
-    }
-    // Native input arbitration uses LDRB at main+0x6b8000. Adjacent bytes
-    // are unrelated state and can be nonzero for a human online fighter.
-    if read::<u8>(record + 0x260) != 0 {
-        return Err("record_blocked_state");
-    }
-    Ok(())
 }
 
 // Never acquire STATE here, and never hold STAGE across a native call. The
@@ -651,36 +586,6 @@ pub(crate) fn thinking() -> bool {
     THINKING.load(Ordering::Acquire)
 }
 
-unsafe fn set_rank(native: Native, rank: i32, initialize: bool) {
-    let base = BASE.load(Ordering::Relaxed);
-    let call: unsafe extern "C" fn(usize, i32) = std::mem::transmute(base + 0x6b8400);
-    call(native.ctrl, rank);
-    if initialize {
-        // set_rank early-outs when the rank is unchanged. Always initialize the
-        // human slot's loaded scripts explicitly, matching the native 0-to-1 switch.
-        let previous: u8 = read(native.service + 0x80 + usize::from(native.slot & 7));
-        let reset: unsafe extern "C" fn(usize, u32) = std::mem::transmute(base + 0x2d8d40);
-        write(native.service + 0x80 + usize::from(native.slot & 7), 1u8);
-        reset(native.ai, 1);
-        write(
-            native.service + 0x80 + usize::from(native.slot & 7),
-            previous,
-        );
-    }
-}
-
-fn encode(buttons: u32, x: f32, y: f32) -> u64 {
-    let axis = |f: f32| -> u64 {
-        let value = if f.is_finite() {
-            (f * 120.0).round().clamp(-120.0, 120.0)
-        } else {
-            0.0
-        };
-        u64::from(value as i8 as u8)
-    };
-    u64::from(buttons) | (axis(x) << 32) | (axis(y) << 40)
-}
-
 fn clear_output() {
     EMITTING.store(false, Ordering::Release);
     PENDING.store(0, Ordering::Release);
@@ -792,11 +697,7 @@ unsafe fn entry(
     {
         return Err("entry_object_mismatch");
     }
-    let ctrl = ptr(fighter + 0x4178).ok_or("controller_pointer")?;
-    if read::<usize>(ctrl) != BASE.load(Ordering::Acquire) + 0x4f85d30 {
-        return Err("controller_vtable");
-    }
-    let info = ptr(fighter + 0xf8).ok_or("fighter_info_pointer")?;
+    let (ctrl, info) = core_native::controller(BASE.load(Ordering::Acquire), fighter)?;
     Ok(Some(Entry {
         index,
         boid,
@@ -1003,23 +904,10 @@ unsafe fn measured_ranks(level: u8) -> Result<[u8; 9], &'static str> {
     // run05 cpu-level1-mode0 / cpu-level9-mode0: native CPU behavior mode0,
     // controller CPU flag1, CSS+79 and live AI rank agree at0 and100.
     // Native Training Stop mode1 is not difficulty evidence (it forces100).
-    const EXPECTED: [i32; 8] = [15, 21, 31, 42, 48, 60, 75, 100];
-    let values: [i32; 8] = read(BASE.load(Ordering::Acquire) + 0x4470dc0);
-    if values != EXPECTED {
-        return Err("rank_table_mismatch");
-    }
-    // Level1 is zero; the native discrete ladder stores levels2 through9.
-    Ok([
-        0,
-        values[0] as u8,
-        values[1] as u8,
-        values[2] as u8,
-        values[3] as u8,
-        values[4] as u8,
-        values[5] as u8,
-        values[6] as u8,
-        values[7] as u8,
-    ])
+    // The core library owns the 13.0.5 ladder: level1 is zero and the native
+    // table stores levels2 through9. Any other table refuses every level.
+    core_level::ranks(core_native::rank_table(BASE.load(Ordering::Acquire)))
+        .ok_or("rank_table_mismatch")
 }
 
 unsafe fn plan(
@@ -1112,9 +1000,8 @@ unsafe fn finish(mut run: Run, native: Option<Native>, reason: &str) {
     if let Some(n) =
         native.filter(|n| n.ctrl == run.ctrl && n.ai == run.ai && n.slot == run.binding.slot)
     {
-        let global: [u8; 20] = read(n.random);
-        set_rank(n, run.old_rank, false);
-        write(n.random, global);
+        // Restores the saved rank and leaves the shared AI stream unchanged.
+        core_native::release(BASE.load(Ordering::Acquire), n, run.old_rank);
         run.rank_restore_attempted = Some(true);
     } else {
         run.rank_restore_attempted = Some(false);
@@ -1225,21 +1112,13 @@ unsafe fn sample_flags(run: &mut Run, n: Native) {
 }
 
 unsafe fn think(run: &mut Run, n: Native) -> u64 {
-    // Preserve all mutable input fields, including clamped rumble fields.
-    // The AI pointer begins at +0x58, immediately after this range.
-    let controller: [u8; 0x4c] = read(n.ctrl + 0xc);
-    let global: [u8; 20] = read(n.random);
-    write(n.random, run.random);
+    // One AI decision on the run's private stream. The core call preserves all
+    // mutable controller input fields (including clamped rumble) and the shared
+    // stream; THINKING brackets it for the input recorder.
     THINKING.store(true, Ordering::Release);
-    let call: unsafe extern "C" fn(usize) =
-        std::mem::transmute(BASE.load(Ordering::Relaxed) + 0x2da180);
-    call(n.ai);
+    let decision = core_native::think(BASE.load(Ordering::Relaxed), n, &mut run.random);
     THINKING.store(false, Ordering::Release);
-    let decision = encode(read(n.ctrl + 0xc), read(n.ctrl + 0x10), read(n.ctrl + 0x14));
-    write(n.ctrl + 0xc, controller);
-    run.random = read(n.random);
-    write(n.random, global);
-    decision
+    core_pad::pack(decision)
 }
 
 unsafe fn command_output(
@@ -1316,11 +1195,9 @@ unsafe fn arm(
     let cpu = peer.module;
     let p1_id = binding.local_boid;
     let cpu_id = binding.peer_boid;
-    let global: [u8; 20] = read(n.random);
-    let old_rank = read::<i32>(n.ai + 0xc0c);
-    set_rank(n, i32::from(rank), true);
-    let random = read::<[u8; 20]>(n.random);
-    write(n.random, global);
+    // Initializes the human slot's loaded scripts at `rank` on a private copy of
+    // the AI stream; the shared stream is put back before it returns.
+    let (old_rank, random) = core_native::arm(BASE.load(Ordering::Acquire), n, rank);
     let start = snapshot(module, cpu);
     let mut run = Run {
         source,
@@ -1614,7 +1491,8 @@ pub(crate) unsafe fn on_frame(module: &mut BattleObjectModuleAccessor) {
             return;
         }
     }
-    if let Err(reason) = ready(n) {
+    // The core ready gate is the sole native AI readiness check.
+    if let Err(reason) = core_native::ready(n) {
         if let Some(run) = state.active.as_mut() {
             pause(run);
         } else {
@@ -1674,7 +1552,7 @@ pub(crate) unsafe fn on_frame(module: &mut BattleObjectModuleAccessor) {
         pilot_core::Output::Ai => think(run, n),
         pilot_core::Output::Command(pilot_core::Command::WalkOff) => {
             let x = run.command.as_ref().unwrap().direction.axis();
-            encode(
+            core_pad::pack(core_pad::from_ai(
                 0,
                 x,
                 if crate::common::is_grounded(module) {
@@ -1682,7 +1560,7 @@ pub(crate) unsafe fn on_frame(module: &mut BattleObjectModuleAccessor) {
                 } else {
                     -1.0
                 },
-            )
+            ))
         }
         pilot_core::Output::Pad | pilot_core::Output::Command(pilot_core::Command::Release) => {
             let run = state.active.take().unwrap();
@@ -1791,9 +1669,27 @@ pub(crate) unsafe fn input(player_idx: i32, out: *mut MappedInputs) {
     }
 }
 
+// The standalone libssbu_cpu_pilot.nro exports its state when it is installed.
+// It then owns P1, so this module must not drive P1 a second time.
+fn standalone_pilot_export() -> Option<usize> {
+    let mut address = 0usize;
+    unsafe {
+        skyline::nn::ro::LookupSymbol(&mut address, b"ssbu_cpu_pilot_state_v1\0".as_ptr());
+    }
+    (address != 0).then_some(address)
+}
+
 pub(crate) fn init() {
     let base = unsafe { getRegionAddress(Region::Text) as usize };
     crate::logging::diagnostic(format_args!("[CpuPilot] main_base {base:#x}"));
+    // Coexistence: with the standalone plugin installed, install no pilot hook.
+    // BASE stays zero, so on_frame and input never act and P1 is driven once.
+    if let Some(address) = standalone_pilot_export() {
+        crate::logging::diagnostic(format_args!(
+            "[CpuPilot] standalone_pilot_present ssbu_cpu_pilot_state_v1={address:#x}; fork pilot hooks not installed"
+        ));
+        return;
+    }
     // Body bytes remain stable even after the existing set_cpu_controls hook installs.
     let expected: &[(usize, &[u8])] = &[
         (0x6b8420, &[0xa8, 0x03, 0x00, 0xb4, 0x95, 0x2e, 0x40, 0xf9]),

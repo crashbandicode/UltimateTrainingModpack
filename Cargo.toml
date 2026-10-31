@@ -42,6 +42,13 @@ anyhow = "1.0.72"
 # read-only SDK snapshot v0.2.0 (deluxe-plugin-sdk 2.0.0 / deluxe-plugin-abi 2.0.0);
 # its `skyline = "=0.6.0"` switch-target dependency resolves through the patch below.
 deluxe-plugin-sdk = { path = "../research/named-macros/revision28-external/deluxe-sdk-v0.2.0/sdk", optional = true }
+# P1-as-CPU primitives (rank ladder, pad encoding, native arm/think/release) shared
+# with the standalone ssbu-cpu-pilot plugin. No dependencies and no Skyline
+# dependency; the raw game calls (`native`) exist on the Switch target only.
+ssbu-cpu-pilot-core = { git = "https://git.syntaxbyexample.com/intpa/ssbu-cpu-pilot", rev = "0162eed" }
+
+[target.'cfg(target_os = "switch")'.dependencies]
+ssbu-cpu-pilot-core = { git = "https://git.syntaxbyexample.com/intpa/ssbu-cpu-pilot", rev = "0162eed", features = ["native"] }
 
 [patch.crates-io]
 nnsdk = { git = "https://github.com/ultimate-research/nnsdk-rs" }

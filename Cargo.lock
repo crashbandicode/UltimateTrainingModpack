@@ -800,6 +800,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssbu-cpu-pilot-core"
+version = "0.1.0"
+source = "git+https://git.syntaxbyexample.com/intpa/ssbu-cpu-pilot?rev=0162eed#0162eedfe7d6360a7d08c763e30c29135db8caba"
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -971,6 +976,7 @@ dependencies = [
  "skyline",
  "skyline_smash",
  "smush_info_shared",
+ "ssbu-cpu-pilot-core",
  "strum 0.21.0",
  "strum_macros 0.21.1",
  "toml",
