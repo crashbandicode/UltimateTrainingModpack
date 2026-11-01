@@ -45,10 +45,10 @@ deluxe-plugin-sdk = { path = "../research/named-macros/revision28-external/delux
 # P1-as-CPU primitives (rank ladder, pad encoding, native arm/think/release) shared
 # with the standalone ssbu-cpu-pilot plugin. No dependencies and no Skyline
 # dependency; the raw game calls (`native`) exist on the Switch target only.
-ssbu-cpu-pilot-core = { git = "https://git.syntaxbyexample.com/intpa/ssbu-cpu-pilot", rev = "0162eed" }
+ssbu-cpu-pilot-core = { git = "https://git.syntaxbyexample.com/intpa/ssbu-cpu-pilot", tag = "v0.2.1" }
 
 [target.'cfg(target_os = "switch")'.dependencies]
-ssbu-cpu-pilot-core = { git = "https://git.syntaxbyexample.com/intpa/ssbu-cpu-pilot", rev = "0162eed", features = ["native"] }
+ssbu-cpu-pilot-core = { git = "https://git.syntaxbyexample.com/intpa/ssbu-cpu-pilot", tag = "v0.2.1", features = ["native"] }
 
 [patch.crates-io]
 nnsdk = { git = "https://github.com/ultimate-research/nnsdk-rs" }

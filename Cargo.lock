@@ -801,8 +801,8 @@ dependencies = [
 
 [[package]]
 name = "ssbu-cpu-pilot-core"
-version = "0.1.0"
-source = "git+https://git.syntaxbyexample.com/intpa/ssbu-cpu-pilot?rev=0162eed#0162eedfe7d6360a7d08c763e30c29135db8caba"
+version = "0.1.1"
+source = "git+https://git.syntaxbyexample.com/intpa/ssbu-cpu-pilot?tag=v0.2.1#8b03e3bffea8a156628f76cd9ca31c346f52ac70"
 
 [[package]]
 name = "static_assertions"
